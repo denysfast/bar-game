@@ -65,11 +65,16 @@ void AiTaskAdded(IUnitTask@ task)
 		if (ai.frame - lastWaveFrame > MINUTE)  // groups promoting together within a minute are one wave
 			AiLog("[custom] ATTACK wave launched at " + int(ai.frame / MINUTE) + "min, quota.attack=" + int(aiMilitaryMgr.quota.attack) + " armyCost=" + int(aiMilitaryMgr.armyCost));
 		lastWaveFrame = ai.frame;
+		AiLog("[custom-dbg] ATTACK task created at " + int(ai.frame / MINUTE) + "min f=" + ai.frame);
 	}
 }
 
 void AiTaskRemoved(IUnitTask@ task, bool done)
 {
+	IFighterTask@ ft = cast<IFighterTask>(task);
+	if (ft !is null && ft.GetFightType() == Task::FightType::ATTACK) {
+		AiLog("[custom-dbg] ATTACK task removed at " + int(ai.frame / MINUTE) + "min done=" + done + " units=" + ft.GetUnits().length());
+	}
 }
 
 void AiUnitAdded(CCircuitUnit@ unit, Unit::UseAs usage)

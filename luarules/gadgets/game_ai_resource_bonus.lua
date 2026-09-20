@@ -22,6 +22,7 @@ local bonusStart = tonumber(modOptions.ai_bonus_start) or 0
 local rampMinutes = tonumber(modOptions.ai_bonus_ramp) or 30
 local delayMinutes = tonumber(modOptions.ai_bonus_delay) or 0
 local curve = modOptions.ai_bonus_curve or "linear"
+local reveal = modOptions.ai_reveal or "buildings" -- none | buildings | all
 
 local DEBUG_BONUS = false
 -- Once per second, in the middle of the engine's 30-frame income window (reset happens at frame % 30 == 0):
@@ -29,6 +30,7 @@ local DEBUG_BONUS = false
 local UPDATE_FRAMES = 30
 local UPDATE_PHASE = 15
 local NUKE_SCAN_FRAMES = 150
+local REVEAL_FRAMES = 15 -- the engine refreshes LOS state often; keep the radar flag alive
 
 local spGetTeamResources = Spring.GetTeamResources
 local spAddTeamResource = Spring.AddTeamResource
@@ -39,6 +41,7 @@ local spGetUnitDefID = Spring.GetUnitDefID
 local spGetUnitAllyTeam = Spring.GetUnitAllyTeam
 local spGetUnitLosState = Spring.GetUnitLosState
 local spGetAllUnits = Spring.GetAllUnits
+local spSetUnitLosState = Spring.SetUnitLosState
 local gaiaTeamID = Spring.GetGaiaTeamID()
 
 -- AI teams: skirmish AIs (BARb, SimpleAI...) but not the Lua "gamemode" AIs (Raptors/Scavengers) which have their own economy
@@ -71,6 +74,39 @@ for unitDefID, ud in pairs(UnitDefs) do
 	end
 end
 
+-- what an AI ally team is allowed to "see": enemy structures + commanders, or everything
+local revealDefs = {}
+if reveal ~= "none" then
+	for unitDefID, ud in pairs(UnitDefs) do
+		if reveal == "all" or not ud.canMove or ud.customParams.iscommander then
+			revealDefs[unitDefID] = true
+		end
+	end
+end
+local aiAllyTeams = {}
+for _, teamID in ipairs(aiTeamList) do
+	aiAllyTeams[aiTeams[teamID].allyTeamID] = true
+end
+
+-- CircuitAI attacks only enemies it has a contact for; without scouts that finds nothing, and its waves roam.
+-- Mark the chosen enemy units as permanent radar contacts for every AI ally team.
+local function revealEnemies()
+	for _, unitID in ipairs(spGetAllUnits()) do
+		if revealDefs[spGetUnitDefID(unitID)] then
+			local unitAllyTeam = spGetUnitAllyTeam(unitID)
+			for allyTeamID in pairs(aiAllyTeams) do
+				if allyTeamID ~= unitAllyTeam then
+					local los = spGetUnitLosState(unitID, allyTeamID, false)
+					if not (los and los.los) then
+						-- full LOS, not just radar: CircuitAI ignores radar blips whose UnitDef it does not know
+						spSetUnitLosState(unitID, allyTeamID, { los = true, radar = true, prevLos = true, contRadar = true })
+					end
+				end
+			end
+		end
+	end
+end
+
 local function bonusFraction(frame)
 	local minutes = frame / 1800
 	local t = (minutes - delayMinutes) / math.max(rampMinutes, 0.01)
@@ -87,8 +123,8 @@ function gadget:Initialize()
 	if #aiTeamList == 0 or (bonusMax <= 0 and bonusStart <= 0) then
 		Spring.Log(gadget:GetInfo().name, LOG.INFO, "inactive (ai teams: " .. #aiTeamList .. ", max: " .. bonusMax .. "%)")
 	else
-		Spring.Log(gadget:GetInfo().name, LOG.INFO, string.format("active for %d AI team(s): %d%% -> %d%% over %d min after %d min (%s)",
-			#aiTeamList, bonusStart, bonusMax, rampMinutes, delayMinutes, curve))
+		Spring.Log(gadget:GetInfo().name, LOG.INFO, string.format("active for %d AI team(s): %d%% -> %d%% over %d min after %d min (%s), reveal=%s",
+			#aiTeamList, bonusStart, bonusMax, rampMinutes, delayMinutes, curve, reveal))
 	end
 	for _, teamID in ipairs(aiTeamList) do
 		spSetTeamRulesParam(teamID, "ai_bonus_pct", 0)
@@ -151,6 +187,9 @@ function gadget:GameFrame(frame)
 	end
 	if frame % NUKE_SCAN_FRAMES == 7 then
 		scanEnemyNukes(frame)
+	end
+	if reveal ~= "none" and frame % REVEAL_FRAMES == 3 then
+		revealEnemies()
 	end
 	if frame % UPDATE_FRAMES ~= UPDATE_PHASE then
 		return

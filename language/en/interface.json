@@ -3958,6 +3958,10 @@
 			"name": "AI Bonus: Delay (minutes)",
 			"desc": "Minutes of game time before the bonus starts growing."
 		},
+		"ai_reveal": {
+			"name": "AI Bonus: Reveal enemy",
+			"desc": "What the AI teams always see, so their attack waves have targets: nothing, enemy buildings and commanders, or everything."
+		},
 		"ai_bonus_curve": {
 			"name": "AI Bonus: Curve",
 			"desc": "Shape of the growth between start and maximum."

@@ -663,6 +663,21 @@ local options = {
 
 	-- NOTE: update language/en/interface.json when you change name or desc
 	{
+		key = "ai_reveal",
+		name = "AI Bonus: Reveal enemy",
+		desc = "What the AI teams always see, so their attack waves have targets: nothing, enemy buildings and commanders, or everything.",
+		type = "list",
+		section = "ai_bonus",
+		def = "buildings",
+		items = {
+			{ key = "none", name = "Nothing", desc = "AI relies on its own scouting" },
+			{ key = "buildings", name = "Buildings + commanders", desc = "Enemy structures and commanders are always visible to the AI" },
+			{ key = "all", name = "Everything", desc = "All enemy units are always visible to the AI" },
+		},
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
 		key = "ai_bonus_curve",
 		name = "AI Bonus: Curve",
 		desc = "Shape of the growth between start and maximum.",
