@@ -3938,6 +3938,30 @@
 			"name": "Dynamic Ally Victory",
 			"desc": "Ingame alliance should count for game over condition."
 		},
+		"ai_bonus": {
+			"name": "AI Bonus",
+			"desc": "Resource bonus for AI teams that grows over time"
+		},
+		"ai_bonus_max": {
+			"name": "AI Bonus: Maximum (%)",
+			"desc": "Extra metal and energy income for AI teams once the ramp is complete, in percent of their own income. 0 = off, 100 = double income, 5000 = 51x income."
+		},
+		"ai_bonus_start": {
+			"name": "AI Bonus: Start (%)",
+			"desc": "Bonus at game start; grows towards the maximum during the ramp time."
+		},
+		"ai_bonus_ramp": {
+			"name": "AI Bonus: Ramp time (minutes)",
+			"desc": "Minutes of game time it takes the bonus to grow from the start value to the maximum."
+		},
+		"ai_bonus_delay": {
+			"name": "AI Bonus: Delay (minutes)",
+			"desc": "Minutes of game time before the bonus starts growing."
+		},
+		"ai_bonus_curve": {
+			"name": "AI Bonus: Curve",
+			"desc": "Shape of the growth between start and maximum."
+		},
 		"ai_incomemultiplier": {
 			"name": "AI Income Multiplier",
 			"desc": "Multiplies AI resource income"

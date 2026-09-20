@@ -50,7 +50,7 @@
 			"coruwfus": [50, 100, 35, 600, 2.8]  // efficiency=2.756296
 		},
 
-		"factor": [[6.0, 1], [20, 300], [30, 420], [60.0, 3600]], //desired energy factor at a certain time
+		"factor": [[6.0, 1], [25, 240], [40, 420], [80.0, 3000]], // custom: higher energy targets, reached earlier
 		// desired energy rule #1: e-income >= m-income * factor
 		// income factor for energy, time is in seconds
 		// [[<start_factor>, <start_time>], [<end_factor>, <end_time>]]
@@ -91,12 +91,12 @@
 
 //mspull - // Mobile constructor to static constructor metal pull ratio; [[<value>, <start_mex_percent>], [<value>, <end_mex_percent>]]
 
-	"mex_up": 4,  // maximum number of simultaneous mex upgrades 2/3
+	"mex_up": 6,  // custom  // maximum number of simultaneous mex upgrades 2/3
 	"calc_mex": false,  // always calculate mex spots (global)
 	"goal_exec": 50.0,  // assign builders till targeted time (in s) to build reached => low value: builders focus on few projects; high value: builder do more task; old values: 45, 50
 	"build_mod": 1000.0,  // default build_mod for UnitDef, if it's not specified
 	"eps_step": 0.2,
-	"buildpower": 1.2, //1.25, 1.5, 1.3
+	"buildpower": 2.0, // custom (was 1.2): more buildpower per income; mobile cons capped in behaviour.json, so it lands on nanos
 	"excess": -1.0, 	// Metal excess to income ratio, -1 to disable
 
 	"ms_pull":  [[0.57, 0.0], [0.66, 0.34]],
@@ -118,7 +118,7 @@
 	// [1] - energy-expenditure multiplier for build condition of new factory or assistant
 	// [2] - multiplier for total factory metal-expenditure, used as condition for new factory or assistant
 	// [3] - multiplier for total factory energy-expenditure, used as condition for new factory or assistant
-	"production": [0.8, 0.8, 1.0, 0.8],
+	"production": [0.6, 0.6, 0.7, 0.6],  // custom: new factories / assistants sooner
 
 	//"terra": "armsy",
 	"assist": {

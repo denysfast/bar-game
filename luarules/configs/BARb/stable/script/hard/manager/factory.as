@@ -2,6 +2,7 @@
 #include "../../unit.as"
 #include "../../task.as"
 #include "../misc/commander.as"
+#include "../misc/base.as"
 
 
 namespace Factory {
@@ -72,6 +73,7 @@ void AiUnitAdded(CCircuitUnit@ unit, Unit::UseAs usage)
 		return;
 
 	const CCircuitDef@ facDef = unit.circuitDef;
+	Base::Add(unit.GetPos(ai.frame));  // custom: remember base anchors for anti-nuke / shield placement
 	if (userData[facDef.id].attr & Attr::T3 != 0) {
 		// if (ai.teamId != ai.GetLeadTeamId()) then this change affects only target selection,
 		// while threatmap still counts "ignored" here units.

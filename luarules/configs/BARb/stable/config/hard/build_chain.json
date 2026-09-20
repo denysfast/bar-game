@@ -14,20 +14,24 @@
 		},
 		
 	// Actual number of defences per cluster bounded by income - the order of defenses that should be build with numbers as above.
-	"land":  [0, 3, 5, 6, 4, 8, 10, 12],
+	"land":  [0, 3, 4, 6, 8, 10, 12, 11, 13, 4, 8, 12],  // custom: longer, heavier tower ladder per cluster
 	"water": [1, 1, 4, 9, 10, 9, 10],
-	"prevent": 1,  // number of preventive defences
+	"prevent": 3,  // custom: number of preventive defences (was 1)
 	"amount": {  // income bound factor
 		"offset": [-2.0, 2.0],
 		// Amount factor: 10x10 ~ 48.0, 20x20 ~ 32.0
-		"factor": [48.0, 32.0],
+		"factor": [80.0, 56.0],  // custom: more defences per cluster (was 48/32)
 		"map": [10, 20]
 	},
 	"point_range": 600.0,  // maximum distance between 2 points in hierarchical cluster within economy cluster
 
 	// Base defence and time to build it, in seconds
+	// custom: dense base timeline; 14 = anti-nuke (duplicated over the game), 28 = shield generator (late game),
+	// 12 = annihilator/doomsday, 10 = flak, 8 = pitbull/viper, 22 = target facility
 	"base": [
-		[3, 420], [2, 520], [4, 760], [10, 1200], [14, 1250], [12, 1600], [22, 1800]
+		[3, 420], [2, 520], [4, 700], [8, 900], [10, 1100], [14, 1250], [12, 1500], [14, 1500], [28, 1600],
+		[22, 1800], [12, 2000], [14, 2100], [28, 2200], [10, 2400], [14, 2700], [12, 2900], [28, 3000],
+		[14, 3300], [28, 3600], [12, 4000], [14, 4200], [28, 4500]
 	],
 
 	//superweapons get only build when there is nothing else to do
@@ -38,7 +42,7 @@
 		},
 		"weight":     [    0.5,      0.1  ],
 
-		"condition": [40, 600]  // [<Minimum income>, <maximum seconds to build>]
+		"condition": [30, 900]  // custom: superweapons from 30 income (was 40/600)
 	},
 
 	// Fallback defence

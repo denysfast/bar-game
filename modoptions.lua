@@ -597,6 +597,87 @@ local options = {
 
 	---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 	---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+	-- AI Bonus (custom): time-scaled resource bonus for AI teams, see luarules/gadgets/game_ai_resource_bonus.lua
+	---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+	---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
+		key = "ai_bonus",
+		name = "AI Bonus",
+		desc = "Resource bonus for AI teams that grows over time",
+		type = "section",
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
+		key = "ai_bonus_max",
+		name = "AI Bonus: Maximum (%)",
+		desc = "Extra metal and energy income for AI teams once the ramp is complete, in percent of their own income. 0 = off, 100 = double income, 5000 = 51x income.",
+		type = "number",
+		section = "ai_bonus",
+		def = 0,
+		min = 0,
+		max = 5000,
+		step = 10,
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
+		key = "ai_bonus_start",
+		name = "AI Bonus: Start (%)",
+		desc = "Bonus at game start; grows towards the maximum during the ramp time.",
+		type = "number",
+		section = "ai_bonus",
+		def = 0,
+		min = 0,
+		max = 5000,
+		step = 10,
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
+		key = "ai_bonus_ramp",
+		name = "AI Bonus: Ramp time (minutes)",
+		desc = "Minutes of game time it takes the bonus to grow from the start value to the maximum.",
+		type = "number",
+		section = "ai_bonus",
+		def = 30,
+		min = 1,
+		max = 240,
+		step = 1,
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
+		key = "ai_bonus_delay",
+		name = "AI Bonus: Delay (minutes)",
+		desc = "Minutes of game time before the bonus starts growing.",
+		type = "number",
+		section = "ai_bonus",
+		def = 0,
+		min = 0,
+		max = 120,
+		step = 1,
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
+		key = "ai_bonus_curve",
+		name = "AI Bonus: Curve",
+		desc = "Shape of the growth between start and maximum.",
+		type = "list",
+		section = "ai_bonus",
+		def = "linear",
+		items = {
+			{ key = "linear", name = "Linear", desc = "Grows evenly over the ramp time" },
+			{ key = "slow_start", name = "Slow start", desc = "Grows slowly at first, then fast (quadratic)" },
+			{ key = "fast_start", name = "Fast start", desc = "Grows fast at first, then slows down (square root)" },
+		},
+	},
+
+	---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+	---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Other Options
 	---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 	---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------

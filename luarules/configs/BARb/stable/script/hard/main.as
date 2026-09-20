@@ -36,6 +36,7 @@ void AiMain()  // Initialize config params
 
 void AiUpdate()  // SlowUpdate, every 30 frames with initial offset of skirmishAIId
 {
+	Military::AiCustomUpdate();  // custom: army size schedule, anti-nukes, shields, air scouting
 }
 
 }  // namespace Main

@@ -6,9 +6,9 @@
     //But there's possibility that AI will just run from enemy till it has big enough group, but it may lose its base. So if with attack=0.8..1.0 AI is not losing base then everything is ok and i think this range is optimal.
 
 	"quota": {
-		"scout": 2,  // max scout units out of raiders
-		"raid": [6.0, 150.0],  // [<min>, <avg>] power of raider squad 2.5,48
-		"attack": 60.0,  // min power of attack group ---- was 40
+		"scout": 2,  // custom: base air-scout quota; Military::UpdateAirScouting pulses it to 8
+		"raid": [40.0, 200.0],  // custom: ground raiders join the army (military.as); this only shapes air raider packs
+		"attack": 100.0,  // custom: overridden every SlowUpdate by Military::UpdateArmySize (100 + 35/min, cap 1200)
 		"thr_mod": {				//AI attacks everything with final threat (after all calculations) <= 1
 			"attack": [0.6, 0.8],  // [<min>, <max>] enemy threat multiplier for target selection of attack task |  values <1 makes enemy group seem less of an thread for ai => ai attacks stronger groups than it own | org=0.25, 0.3
 			"defence": [0.3, 0.5],  // [<min>, <max>] enemy threat modifier for group size calculation of defence task; org=0.95, 0.95 | high values = low risk; low values = high risk 
@@ -45,7 +45,7 @@
     // If unit's health drops below specified percent it will retreat
 	"retreat": {
 		"builder": [0.85, 1.0],  // [<default>, <UnitDef modifier>] for all builders
-		"fighter": [0.50, 1.0],  // [<default>, <UnitDef modifier>] for all not-builder units
+		"fighter": [0.0, 0.0, 0.0],  // custom: combat units never retreat to repair ([default min, default max, UnitDef modifier=0 zeroes per-unit values])
 		"shield": [0.25, 0.275]  // [<empty>, <full>] shield power
 	},
 
@@ -55,7 +55,7 @@
    		"infl_rad": 5,  // influenece cell radius for defendAlly map
     	"base_rad": [800.0, 1400.0],  // BASE DEFENDING RADIUS: defend if enemy within clamp(distance(lane_pos, base_pos), 1000, 2000)
     	"comm_rad": [800.0, 400.0],  // 0 distance from base ~ 1000, base_rad ~ 500.0 => comm_rad is radius within which it checks for enemy. It's largest near base and smaller at the edge of base_rad
-		"escort": [3, 1, 540]  // [<builders_count>, <defenders_count>, <escort rule until this time>]  2,2,360
+		"escort": [2, 1, 360]  // [<builders_count>, <defenders_count>, <escort rule until this time>]  2,2,360
 	},
     // read of "escort":  [number of builders with defenders, number of defenders for each builder, timeframe were only escorted builders are able to expand (=build mex, porc)]
     // base radius: ai checks if is within base_rad. if there is enemy it checks if it is within comm radius which is variable and depend on distance from base
@@ -123,62 +123,62 @@
 		"armlab": {
 			"role": ["static"],
 			"build_speed": 5.0, //bp 100
-            "limit": 1
+            "limit": 2
 		},
 		"armalab": {
 			"role": ["static"],
 			"attribute": ["support"], //facory with support is build only in base
-			"limit": 1,
+			"limit": 3,
 			"build_speed": 15.0 //bp 300
 		},
 		"armshltx": {
 			"role": ["static"],
 			"attribute": ["support"],
 			"midposoffset": [0, 0, -16],
-			"limit": 1,
+			"limit": 3,
 			"build_speed": 1.0 // bp 600
 		},
 		"armvp": {
 			"role": ["static"],
 			"build_speed": 5.0, // bp 100
-            "limit": 1
+            "limit": 2
 		},
 		"armavp": {
 			"role": ["static"],
 			"attribute": ["support"],
-			"limit": 1,
+			"limit": 3,
 			"build_speed": 15.0 //bp 300
 		},
 
 		"corlab": {
 			"role": ["static"],
 			"build_speed": 5.0,  //bp 100
-            "limit": 1,
+            "limit": 2,
 			"midposoffset": [-3.239746, 0, -2]
 		},
 		"coralab": {
 			"role": ["static"],
 			"midposoffset": [0, 0, -4],
 			//"attribute": ["support"],
-			"limit": 1,
+			"limit": 3,
 			"build_speed": 15.0 // bp 300
 		},
 		"corgant": {
 			"role": ["static"],
 			"attribute": ["support"],
-			"limit": 1,
+			"limit": 3,
 			"build_speed": 1.0 //bp 300
 		},
 		"corvp": {
 			"role": ["builder"],
 			"build_speed": 5.0, // bp 100
-            "limit": 1
+            "limit": 2
 
 		},
 		"coravp": {
 			"role": ["static"],
 			"attribute": ["support"],
-			"limit": 1,
+			"limit": 3,
 			"build_speed": 15.0  //bp 300
 		},
 
@@ -193,7 +193,7 @@
 			"role": ["static"],
 			"attribute": ["support"],
             "since": 420,
-			"limit": 1,
+			"limit": 3,
 			"build_speed": 10.0 //bp 200
 		},
 		"corap": {
@@ -206,7 +206,7 @@
 			"role": ["static"],
 			"attribute": ["support"],
             "since": 420,
-			"limit": 1,
+			"limit": 3,
 			"build_speed": 10.0 //bp 200
 		},
 
@@ -790,25 +790,25 @@
 		//Mobile Builders 	
 		"armck": {
 			"role": ["builder"],
-			"limit": 12,
+			"limit": 4,
 			"build_speed": 4.0  //bp 80
 		},
         "corck": {
 			"role": ["builder"],
 			//"attribute": ["solo"],
-			"limit": 12,
+			"limit": 4,
 			"build_speed": 4.0  
 		},
 		"armack": {
 			"role": ["builderT2"],
 			"attribute": ["solo"],
-			"limit": 10,
+			"limit": 5,
 			"build_speed": 9.0  //bp 180
 		},
         "corack": {
 			"role": ["builderT2"],
 			"attribute": ["solo"],
-			"limit": 10,
+			"limit": 5,
 			"build_speed": 9.0  
 		},
 		"armfark": {
@@ -826,24 +826,24 @@
 		},
 		"armcv": {
 			"role": ["builder"],
-			"limit": 10,
+			"limit": 4,
 			"build_speed": 4.5  //bp 90
 		},
         "corcv": {
 			"role": ["builder"],
-			"limit": 10,
+			"limit": 4,
 			"build_speed": 4.5  //bp 90
 		},
 		"armbeaver": {
 			"role": ["builder"],
 			"attribute": ["solo"],
-			"limit": 6,
+			"limit": 2,
 			"build_speed": 4.0  //bp 80
 		},
         "cormuskrat": {
 			"role": ["builder"],
 			"attribute": ["solo"],
-			"limit": 6,
+			"limit": 2,
 			"build_speed": 4.0
 		},
         "cormlv": {
@@ -853,13 +853,13 @@
 		"armacv": {
 			"role": ["builderT2"],
 			"attribute": ["solo"],
-			"limit": 15,
+			"limit": 5,
 			"build_speed": 12.5  //bp 250
 		},
         "coracv": {
 			"role": ["builderT2"],
 			"attribute": ["solo"],
-			"limit": 15,
+			"limit": 5,
 			"build_speed": 12.5  //bp 250
 		},
 		"armconsul": {
@@ -995,7 +995,7 @@
 			"threat":{"air": 0.0, "water": 0.0,
 					"vs":{"artillery": 2.0, "anti_air": 2.0}
 			},
-			"limit": 5
+			"limit": 0
 		},
 
 
@@ -1143,7 +1143,7 @@
 		},
 		"armfav": {
 			"role": ["scout"],
-			"limit": 5
+			"limit": 0
 		},
 		"armflash": {
 			"role": ["raider"],
@@ -1202,7 +1202,7 @@
 		},
 		"armgremlin": {
 				"role": ["scout"],
-				"limit": 5	
+				"limit": 0	
 		},
 		"armbull": {
 			"role": ["skirmish"],
@@ -1249,7 +1249,7 @@
 
 		"armpeep": {
 			"role": ["scout", "air"],
-			"limit": 3
+			"limit": 10
 		},
 		"armfig": {
 			"role": ["anti_air", "air"],
@@ -1572,6 +1572,7 @@
 
 		"corfav": {
 			"role": ["scout"],
+			"limit": 0,
 			"threat":{"vs":{"artillery": 2.0}}
 		},
 		"corgator": {
@@ -1749,7 +1750,7 @@
 		"corfink": {
 			"role": ["scout", "air"],
 			"retreat": 0.8,
-			"limit": 5
+			"limit": 10
 		},
 		"corveng": {
 			"role": ["anti_air", "air"],
