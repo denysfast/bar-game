@@ -20,8 +20,9 @@ const float ATTACK_BASE    = 100.f;
 const float ATTACK_PER_MIN = 35.f;
 const float ATTACK_CAP     = 1200.f;
 // if no wave went out for WAVE_MAX_GAP, lower the threshold to what the army already has
-const int   WAVE_MAX_GAP     = 7 * MINUTE;
-const float POWER_PER_METAL  = 0.035f;
+// (measured: a mixed T1-T3 army launches at ~0.013 power per metal); after 1.5x the gap, launch anything
+const int   WAVE_MAX_GAP     = 6 * MINUTE;
+const float POWER_PER_METAL  = 0.012f;
 
 // anti-nuke: base coverage + per known enemy nuke launcher
 const int ANTINUKE_BASE     = 2;
@@ -133,9 +134,12 @@ void UpdateArmySize()
 	const float minutes = float(ai.frame) / float(MINUTE);
 	float attack = ATTACK_BASE + ATTACK_PER_MIN * minutes;
 	if (attack > ATTACK_CAP) attack = ATTACK_CAP;
-	if (ai.frame - lastWaveFrame > WAVE_MAX_GAP && ai.frame > 6 * MINUTE) {
+	const int sinceWave = ai.frame - lastWaveFrame;
+	if (sinceWave > WAVE_MAX_GAP && ai.frame > 6 * MINUTE) {
 		// army has been sitting at home too long: launch with whatever it has
 		attack = AiMin(attack, AiMax(ATTACK_BASE, aiMilitaryMgr.armyCost * POWER_PER_METAL));
+		if (sinceWave > WAVE_MAX_GAP * 3 / 2)
+			attack = ATTACK_BASE;
 	}
 	aiMilitaryMgr.quota.attack = attack;
 	// raid quota only matters for air raiders now; keep them in bigger packs too
