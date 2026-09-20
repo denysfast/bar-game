@@ -11,7 +11,7 @@
 		"attack": 100.0,  // custom: overridden every SlowUpdate by Military::UpdateArmySize (100 + 35/min, cap 1200)
 		"thr_mod": {				//AI attacks everything with final threat (after all calculations) <= 1
 			"attack": [0.6, 0.8],  // [<min>, <max>] enemy threat multiplier for target selection of attack task |  values <1 makes enemy group seem less of an thread for ai => ai attacks stronger groups than it own | org=0.25, 0.3
-			"defence": [0.3, 0.5],  // [<min>, <max>] enemy threat modifier for group size calculation of defence task; org=0.95, 0.95 | high values = low risk; low values = high risk 
+			"defence": [1.0, 1.0],  // custom: was [0.3, 0.5]; DEFEND groups promote to ATTACK at exactly quota.attack (maxPower = power / mod), so waves launch on schedule
 			"mobile": 1.0,  // initial modifier for power of attack group based on mobile enemy threat; org=1.05
 			"static": 1.0,  // initial modifier for power of attack group based on static enemy threat; org= 1.2
 			"comm": 0.003   // because of power of dgun
@@ -995,7 +995,7 @@
 			"threat":{"air": 0.0, "water": 0.0,
 					"vs":{"artillery": 2.0, "anti_air": 2.0}
 			},
-			"limit": 0
+			"limit": 2
 		},
 
 
@@ -1143,7 +1143,7 @@
 		},
 		"armfav": {
 			"role": ["scout"],
-			"limit": 0
+			"limit": 2
 		},
 		"armflash": {
 			"role": ["raider"],
@@ -1572,7 +1572,7 @@
 
 		"corfav": {
 			"role": ["scout"],
-			"limit": 0,
+			"limit": 2,
 			"threat":{"vs":{"artillery": 2.0}}
 		},
 		"corgator": {

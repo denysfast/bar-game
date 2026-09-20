@@ -14,10 +14,14 @@
  */
 namespace Military {
 
-// army size schedule: power = ATTACK_BASE + ATTACK_PER_MIN * minutes, capped
+// army size schedule: power = ATTACK_BASE + ATTACK_PER_MIN * minutes, capped.
+// Rough scale: a T1 tank ~ 9 power, a T3 super ~ 250; power ~ 0.04 x metal cost of the army.
 const float ATTACK_BASE    = 100.f;
 const float ATTACK_PER_MIN = 35.f;
 const float ATTACK_CAP     = 1200.f;
+// if no wave went out for WAVE_MAX_GAP, lower the threshold to what the army already has
+const int   WAVE_MAX_GAP     = 7 * MINUTE;
+const float POWER_PER_METAL  = 0.035f;
 
 // anti-nuke: base coverage + per known enemy nuke launcher
 const int ANTINUKE_BASE     = 2;
@@ -35,6 +39,7 @@ const uint SCOUT_QUOTA_MASS = 8;
 const uint SCOUT_BURST      = 4;
 
 int lastAntiNukeFrame = 0;
+int lastWaveFrame = 0;
 int lastShieldFrame = 0;
 int lastScoutPulseFrame = 0;
 int shieldsOrdered = 0;
@@ -54,6 +59,12 @@ IUnitTask@ AiMakeTask(CCircuitUnit@ unit)
 
 void AiTaskAdded(IUnitTask@ task)
 {
+	IFighterTask@ ft = cast<IFighterTask>(task);
+	if (ft !is null && ft.GetFightType() == Task::FightType::ATTACK) {
+		if (ai.frame - lastWaveFrame > MINUTE)  // groups promoting together within a minute are one wave
+			AiLog("[custom] ATTACK wave launched at " + int(ai.frame / MINUTE) + "min, quota.attack=" + int(aiMilitaryMgr.quota.attack) + " armyCost=" + int(aiMilitaryMgr.armyCost));
+		lastWaveFrame = ai.frame;
+	}
 }
 
 void AiTaskRemoved(IUnitTask@ task, bool done)
@@ -70,12 +81,12 @@ void AiUnitRemoved(CCircuitUnit@ unit, Unit::UseAs usage)
 
 void AiLoad(IStream& istream)
 {
-	istream >> lastAntiNukeFrame >> lastShieldFrame >> lastScoutPulseFrame >> shieldsOrdered >> knownNukesHandled;
+	istream >> lastAntiNukeFrame >> lastShieldFrame >> lastScoutPulseFrame >> shieldsOrdered >> knownNukesHandled >> lastWaveFrame;
 }
 
 void AiSave(OStream& ostream)
 {
-	ostream << lastAntiNukeFrame << lastShieldFrame << lastScoutPulseFrame << shieldsOrdered << knownNukesHandled;
+	ostream << lastAntiNukeFrame << lastShieldFrame << lastScoutPulseFrame << shieldsOrdered << knownNukesHandled << lastWaveFrame;
 }
 
 void AiMakeDefence(int cluster, const AIFloat3& in pos)
@@ -122,6 +133,10 @@ void UpdateArmySize()
 	const float minutes = float(ai.frame) / float(MINUTE);
 	float attack = ATTACK_BASE + ATTACK_PER_MIN * minutes;
 	if (attack > ATTACK_CAP) attack = ATTACK_CAP;
+	if (ai.frame - lastWaveFrame > WAVE_MAX_GAP && ai.frame > 6 * MINUTE) {
+		// army has been sitting at home too long: launch with whatever it has
+		attack = AiMin(attack, AiMax(ATTACK_BASE, aiMilitaryMgr.armyCost * POWER_PER_METAL));
+	}
 	aiMilitaryMgr.quota.attack = attack;
 	// raid quota only matters for air raiders now; keep them in bigger packs too
 	aiMilitaryMgr.quota.raid.min = 40.f;
