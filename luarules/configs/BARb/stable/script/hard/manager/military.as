@@ -39,6 +39,11 @@ const uint SCOUT_QUOTA_IDLE = 2;
 const uint SCOUT_QUOTA_MASS = 8;
 const uint SCOUT_BURST      = 4;
 
+// Raiders: false = default RAID squads sized by quota.raid (min 40 power ~ 20 Flashes, no lone harassers);
+// true = raiders gather with the army. Measured: only raid squads reliably hunt a lone/passive enemy
+// commander — ATTACK groups go for bases (targets with influence), so keep raids on.
+const bool RAIDERS_JOIN_ARMY = false;
+
 int lastAntiNukeFrame = 0;
 int lastWaveFrame = 0;
 int lastShieldFrame = 0;
@@ -49,7 +54,7 @@ int knownNukesHandled = -1;
 IUnitTask@ AiMakeTask(CCircuitUnit@ unit)
 {
 	const CCircuitDef@ cdef = unit.circuitDef;
-	if (cdef.GetMainRole() == Unit::Role::RAIDER.type
+	if (RAIDERS_JOIN_ARMY && cdef.GetMainRole() == Unit::Role::RAIDER.type
 		&& !cdef.IsRoleAny(Unit::Role::AIR.mask | Unit::Role::SCOUT.mask | Unit::Role::SUB.mask))
 	{
 		// gather at base with everyone else; promoted to ATTACK when the group reaches quota.attack
@@ -65,16 +70,12 @@ void AiTaskAdded(IUnitTask@ task)
 		if (ai.frame - lastWaveFrame > MINUTE)  // groups promoting together within a minute are one wave
 			AiLog("[custom] ATTACK wave launched at " + int(ai.frame / MINUTE) + "min, quota.attack=" + int(aiMilitaryMgr.quota.attack) + " armyCost=" + int(aiMilitaryMgr.armyCost));
 		lastWaveFrame = ai.frame;
-		AiLog("[custom-dbg] ATTACK task created at " + int(ai.frame / MINUTE) + "min f=" + ai.frame);
 	}
 }
 
 void AiTaskRemoved(IUnitTask@ task, bool done)
 {
-	IFighterTask@ ft = cast<IFighterTask>(task);
-	if (ft !is null && ft.GetFightType() == Task::FightType::ATTACK) {
-		AiLog("[custom-dbg] ATTACK task removed at " + int(ai.frame / MINUTE) + "min done=" + done + " units=" + ft.GetUnits().length());
-	}
+
 }
 
 void AiUnitAdded(CCircuitUnit@ unit, Unit::UseAs usage)
@@ -147,9 +148,11 @@ void UpdateArmySize()
 			attack = ATTACK_BASE;
 	}
 	aiMilitaryMgr.quota.attack = attack;
-	// raid quota only matters for air raiders now; keep them in bigger packs too
-	aiMilitaryMgr.quota.raid.min = 40.f;
-	aiMilitaryMgr.quota.raid.avg = 200.f;
+	// raid squads grow with time: ~10 Flashes at start, ~40 later (a Flash is ~2 power, a Stumpy ~9)
+	float raidMin = 20.f + 2.f * minutes;
+	if (raidMin > 80.f) raidMin = 80.f;
+	aiMilitaryMgr.quota.raid.min = raidMin;
+	aiMilitaryMgr.quota.raid.avg = raidMin * 3.f;
 	if (ai.frame % (2 * MINUTE) < SECOND) {
 		AiLog("[custom] t=" + int(minutes) + "min quota.attack=" + int(attack)
 			+ " m-income=" + int(aiEconomyMgr.metal.income) + " e-income=" + int(aiEconomyMgr.energy.income)

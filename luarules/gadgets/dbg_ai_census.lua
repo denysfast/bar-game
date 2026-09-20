@@ -8,7 +8,7 @@ function gadget:GetInfo()
 		date = "2026-09-21",
 		license = "GNU GPL, v2 or later",
 		layer = 0,
-		enabled = true,
+		enabled = false,
 	}
 end
 
@@ -17,7 +17,7 @@ if not gadgetHandler:IsSyncedCode() then
 end
 
 local PERIOD = 9000 -- frames = 5 minutes
-local DEBUG_ALL_TEAMS = true
+local DEBUG_ALL_TEAMS = false
 
 function gadget:GameFrame(frame)
 	if frame % PERIOD ~= 100 then
