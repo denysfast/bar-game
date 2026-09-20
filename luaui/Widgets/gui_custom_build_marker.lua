@@ -9,7 +9,7 @@
 
 local widget = widget ---@type Widget
 
-local CUSTOM_BUILD = "custom-v2"
+local CUSTOM_BUILD = "custom-v3"
 
 function widget:GetInfo()
 	return {
@@ -23,14 +23,32 @@ function widget:GetInfo()
 	}
 end
 
-local glText = gl.Text
 local spGetViewGeometry = Spring.GetViewGeometry
 local vsx, vsy = spGetViewGeometry()
+local font, fontSize
+
+local function getFont()
+	-- BAR renders text through its font handler (gl.Text is a no-op with the BAR UI);
+	-- fall back to the engine default font when the handler is not loaded yet
+	if WG.fonts and WG.fonts.getFont then
+		font, fontSize = WG.fonts.getFont(2, 1.6)
+	else
+		font, fontSize = gl.LoadFont("fonts/Exo2-SemiBold.otf", 24, 4, 1.5), 24
+	end
+	return font
+end
 
 function widget:ViewResize()
 	vsx, vsy = spGetViewGeometry()
+	font = nil -- font handler re-creates its fonts on resize
 end
 
 function widget:DrawScreen()
-	glText("BAR custom build " .. CUSTOM_BUILD, 8, vsy - 14, 12, "o")
+	if not font and not getFont() then
+		return
+	end
+	font:Begin()
+	font:SetTextColor(1, 0.85, 0.2, 1)
+	font:Print("BAR custom build " .. CUSTOM_BUILD, vsx / 2, vsy - fontSize * 3, fontSize, "co")
+	font:End()
 end
