@@ -9,16 +9,16 @@
 
 local widget = widget ---@type Widget
 
-local CUSTOM_BUILD = "custom-v1"
+local CUSTOM_BUILD = "custom-v2"
 
 function widget:GetInfo()
 	return {
 		name = "Custom Build Marker",
-		desc = "Draws the custom build tag in the top-left corner",
+		desc = "Draws the custom build tag top-centre, above every other widget",
 		author = "denysfast",
 		date = "2026-09-20",
 		license = "GNU GPL, v2 or later",
-		layer = 0,
+		layer = 9999, -- draw after the minimap and the rest of the HUD so it is never covered
 		enabled = true,
 	}
 end
