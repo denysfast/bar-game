@@ -14,8 +14,8 @@
 			//"armgeo": [4, 8, 16, 300, 0.6], //eff 0.6
 			"armgmm":[4, 8, 25, 600, 2.2],
 			//"armageo":[0, 1, 35, 1000, 3.0], //eff 3.0
-			"armfus": [3, 4, 50, 900, 1.9],		// efficiency=1.937984
-			"armckfus": [1, 3, 50, 2000, 0.230], // efficiency=2.400266
+			"armfus": [8, 12, 50, 900, 1.9],   // custom: keep scaling, was [3,4]		// efficiency=1.937984
+			"armckfus": [2, 5, 50, 2000, 0.230],  // custom: was [1,3] // efficiency=2.400266
 			"armafus": [50,100, 70, 4000, 6.44],
 			"armuwfus": [6, 12, 35, 600, 2.8],  // efficiency=6.443299
 			"corwin": [30, 60],
@@ -23,7 +23,7 @@
 			"coradvsol": [20, 30, 12, 220, 0.220], //efficiency=0.237542
 			//"corgeo": [4, 8, 16, 300, 0.6], //0.6
 			// "corageo": [0, 1, 35, 1000, 3.0], //eff 3.0
-			"corfus": [4, 6, 50, 600, 2.06],  // efficiency=2.057844
+			"corfus": [8, 12, 50, 600, 2.06],  // custom: keep scaling, was [4,6]  // efficiency=2.057844
 			"corafus": [50, 100, 60, 4000, 6.44],
 			"coruwfus": [6, 12, 35, 600, 2.8] // efficiency=6.443299
 		},
@@ -50,7 +50,7 @@
 			"coruwfus": [50, 100, 35, 600, 2.8]  // efficiency=2.756296
 		},
 
-		"factor": [[6.0, 1], [25, 240], [40, 420], [80.0, 3000]], // custom: higher energy targets, reached earlier
+		"factor": [[6.0, 1], [15, 240], [22, 420], [30.0, 3000]], // custom v8: was 25/40/80 - with the AI bonus 80x m-income burned most metal on unused energy
 		// desired energy rule #1: e-income >= m-income * factor
 		// income factor for energy, time is in seconds
 		// [[<start_factor>, <start_time>], [<end_factor>, <end_time>]]
@@ -99,7 +99,7 @@
 	"buildpower": 2.0, // custom (was 1.2): more buildpower per income; mobile cons capped in behaviour.json, so it lands on nanos
 	"excess": -1.0, 	// Metal excess to income ratio, -1 to disable
 
-	"ms_pull":  [[0.57, 0.0], [0.66, 0.34]],
+	"ms_pull":  [[0.36, 0.0], [0.40, 0.34]],  // custom v8: more metal to factories (army scale), upstream [[0.57,0],[0.66,0.34]]
     // AI balances metal spent on tasks for mobile cons / metal spent on tasks for factories. (mobile to static reatio in%)
     // [[<value1>, <start_mex_percent>], [<value2>, <end_mex_percent>]]
     // mex percent = % of mex of whole map 
@@ -118,7 +118,7 @@
 	// [1] - energy-expenditure multiplier for build condition of new factory or assistant
 	// [2] - multiplier for total factory metal-expenditure, used as condition for new factory or assistant
 	// [3] - multiplier for total factory energy-expenditure, used as condition for new factory or assistant
-	"production": [0.6, 0.6, 0.7, 0.6],  // custom: new factories / assistants sooner
+	"production": [0.5, 0.5, 0.55, 0.5],  // custom: new factories / assistants sooner (v8: 0.5)
 
 	//"terra": "armsy",
 	"assist": {

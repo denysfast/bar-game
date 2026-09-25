@@ -123,62 +123,62 @@
 		"armlab": {
 			"role": ["static"],
 			"build_speed": 5.0, //bp 100
-            "limit": 2
+            "limit": 4
 		},
 		"armalab": {
 			"role": ["static"],
 			"attribute": ["support"], //facory with support is build only in base
-			"limit": 3,
+			"limit": 6,
 			"build_speed": 15.0 //bp 300
 		},
 		"armshltx": {
 			"role": ["static"],
 			"attribute": ["support"],
 			"midposoffset": [0, 0, -16],
-			"limit": 3,
+			"limit": 4,
 			"build_speed": 1.0 // bp 600
 		},
 		"armvp": {
 			"role": ["static"],
 			"build_speed": 5.0, // bp 100
-            "limit": 2
+            "limit": 4
 		},
 		"armavp": {
 			"role": ["static"],
 			"attribute": ["support"],
-			"limit": 3,
+			"limit": 6,
 			"build_speed": 15.0 //bp 300
 		},
 
 		"corlab": {
 			"role": ["static"],
 			"build_speed": 5.0,  //bp 100
-            "limit": 2,
+            "limit": 4,
 			"midposoffset": [-3.239746, 0, -2]
 		},
 		"coralab": {
 			"role": ["static"],
 			"midposoffset": [0, 0, -4],
 			//"attribute": ["support"],
-			"limit": 3,
+			"limit": 6,
 			"build_speed": 15.0 // bp 300
 		},
 		"corgant": {
 			"role": ["static"],
 			"attribute": ["support"],
-			"limit": 3,
+			"limit": 4,
 			"build_speed": 1.0 //bp 300
 		},
 		"corvp": {
 			"role": ["builder"],
 			"build_speed": 5.0, // bp 100
-            "limit": 2
+            "limit": 4
 
 		},
 		"coravp": {
 			"role": ["static"],
 			"attribute": ["support"],
-			"limit": 3,
+			"limit": 6,
 			"build_speed": 15.0  //bp 300
 		},
 
@@ -629,7 +629,7 @@
 		"armestor" : {
 			"role": ["static"],
 			"since": 240,
-			"limit": 1
+			"limit": 5
 		},
 		"armuwes" : {
 			"role": ["static"],
@@ -639,7 +639,7 @@
 		"armmstor" : {
 			"role": ["static"],
 			"since": 500,
-			"limit": 1
+			"limit": 4
 		},
 		"armuwadvms" : {
 			"role": ["static"],
@@ -670,7 +670,7 @@
 		"cormstor" : {
 			"role": ["static"],
 			"since": 500,
-			"limit": 1
+			"limit": 4
 		},
 		"coruwms" : {
 			"role": ["static"],
@@ -684,7 +684,7 @@
 		"corestor" : {
 			"role": ["static"],
 			"since": 240,
-			"limit": 1
+			"limit": 5
 		},
 		"coruwes" : {
 			"role": ["static"],
@@ -790,25 +790,25 @@
 		//Mobile Builders 	
 		"armck": {
 			"role": ["builder"],
-			"limit": 4,
+			"limit": 6,
 			"build_speed": 4.0  //bp 80
 		},
         "corck": {
 			"role": ["builder"],
 			//"attribute": ["solo"],
-			"limit": 4,
+			"limit": 6,
 			"build_speed": 4.0  
 		},
 		"armack": {
 			"role": ["builderT2"],
 			"attribute": ["solo"],
-			"limit": 5,
+			"limit": 7,
 			"build_speed": 9.0  //bp 180
 		},
         "corack": {
 			"role": ["builderT2"],
 			"attribute": ["solo"],
-			"limit": 5,
+			"limit": 7,
 			"build_speed": 9.0  
 		},
 		"armfark": {
@@ -826,12 +826,12 @@
 		},
 		"armcv": {
 			"role": ["builder"],
-			"limit": 4,
+			"limit": 6,
 			"build_speed": 4.5  //bp 90
 		},
         "corcv": {
 			"role": ["builder"],
-			"limit": 4,
+			"limit": 6,
 			"build_speed": 4.5  //bp 90
 		},
 		"armbeaver": {
@@ -853,13 +853,13 @@
 		"armacv": {
 			"role": ["builderT2"],
 			"attribute": ["solo"],
-			"limit": 5,
+			"limit": 7,
 			"build_speed": 12.5  //bp 250
 		},
         "coracv": {
 			"role": ["builderT2"],
 			"attribute": ["solo"],
-			"limit": 5,
+			"limit": 7,
 			"build_speed": 12.5  //bp 250
 		},
 		"armconsul": {

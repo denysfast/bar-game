@@ -16,11 +16,11 @@
 	// Actual number of defences per cluster bounded by income - the order of defenses that should be build with numbers as above.
 	"land":  [0, 3, 4, 6, 8, 10, 12, 11, 13, 4, 8, 12],  // custom: longer, heavier tower ladder per cluster
 	"water": [1, 1, 4, 9, 10, 9, 10],
-	"prevent": 3,  // custom: number of preventive defences (was 1)
+	"prevent": 2,  // custom: preventive defences (upstream 1)
 	"amount": {  // income bound factor
 		"offset": [-2.0, 2.0],
 		// Amount factor: 10x10 ~ 48.0, 20x20 ~ 32.0
-		"factor": [80.0, 56.0],  // custom: more defences per cluster (was 48/32)
+		"factor": [60.0, 42.0],  // custom v8: fewer towers than v4 (80/56), enough that one wave does not flatten a base
 		"map": [10, 20]
 	},
 	"point_range": 600.0,  // maximum distance between 2 points in hierarchical cluster within economy cluster
@@ -29,9 +29,8 @@
 	// custom: dense base timeline; 14 = anti-nuke (duplicated over the game), 28 = shield generator (late game),
 	// 12 = annihilator/doomsday, 10 = flak, 8 = pitbull/viper, 22 = target facility
 	"base": [
-		[3, 420], [2, 520], [4, 700], [8, 900], [10, 1100], [14, 1250], [12, 1500], [14, 1500], [28, 1600],
-		[22, 1800], [12, 2000], [14, 2100], [28, 2200], [10, 2400], [14, 2700], [12, 2900], [28, 3000],
-		[14, 3300], [28, 3600], [12, 4000], [14, 4200], [28, 4500]
+		[3, 420], [2, 520], [4, 700], [8, 900], [10, 1100], [12, 1500], [22, 1800], [12, 2000],
+		[10, 2400], [12, 2900], [8, 3400], [12, 4000], [10, 4600]
 	],
 
 	//superweapons get only build when there is nothing else to do
@@ -103,7 +102,7 @@
 		"armfus": {
 			"hub": [
 				[ 
-					//{"unit": "armpb", "category": "defence", "offset": [200, 0], "condition": {"chance": 0.5}},
+					{"unit": "armmmkr", "category": "convert", "offset": [120, 120], "condition": {"energy": true}},
 					{"unit": "armferret", "category": "defence", "offset": [-80, 80], "condition": {"air": true}},
 					{"unit": "armnanotc", "category": "defence", "offset": {"front": 100}},
 					{"unit": "armsilo", "category": "defence", "offset": [200, 0], "condition": {"chance": 0.2}}
@@ -122,14 +121,9 @@
 		"armafus": {
 			"hub": [
 				[  // chain1
-//					{"unit": "armmmkr", "category": "convert", "offset": [120, 120]},
-//					{"unit": "armmmkr", "category": "convert", "offset": [150, 120]},
-//					{"unit": "armmmkr", "category": "convert", "offset": [120, 150]},
-//					{"unit": "armmmkr", "category": "convert", "offset": [150, 150]},
-//					{"unit": "armmmkr", "category": "convert", "offset": [120, -120]},
-		
-					
-	
+					{"unit": "armmmkr", "category": "convert", "offset": [120, 120]},
+					{"unit": "armmmkr", "category": "convert", "offset": [150, 120]},
+					{"unit": "armmmkr", "category": "convert", "offset": [120, 150]},
 					{"unit": "armferret", "category": "defence", "offset": [-80, 80], "condition": {"air": true}}
 				]
 			]
@@ -144,6 +138,7 @@
 		"corfus": {
 			"hub": [
 				[  
+					{"unit": "cormmkr", "category": "convert", "offset": [120, 120], "condition": {"energy": true}},
                     {"unit": "cornanotc", "category": "defence", "offset": {"front": 100}},	
                     {"unit": "cormadsam", "category": "defence", "offset": [-80, 80], "condition": {"air": true}},
 					{"unit": "corsilo", "category": "defence", "offset": [200, 0], "condition": {"chance": 0.2}}
@@ -153,6 +148,9 @@
 		"corafus": {
 			"hub": [
 				[
+					{"unit": "cormmkr", "category": "convert", "offset": [120, 120]},
+					{"unit": "cormmkr", "category": "convert", "offset": [150, 120]},
+					{"unit": "cormmkr", "category": "convert", "offset": [120, 150]},
 					{"unit": "cordoom", "category": "defence", "offset": [-180, 180]},
 					{"unit": "cormadsam", "category": "defence", "offset": [-80, 80], "condition": {"air": true}}
 				]

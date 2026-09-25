@@ -18,20 +18,50 @@ namespace Military {
 // Rough scale: a T1 tank ~ 9 power, a T3 super ~ 250; power ~ 0.04 x metal cost of the army.
 const float ATTACK_BASE    = 100.f;
 const float ATTACK_PER_MIN = 35.f;
-const float ATTACK_CAP     = 1200.f;
+const float ATTACK_CAP     = 3000.f;  // v8: was 1200; 5000 kept split armies at home
+// v8: the wave size also follows the economy, so a rich AI gathers a proportionally big army
+const float ATTACK_PER_INCOME = 1.6f;  // power per m-income
+const int   WAVE_FALLBACK_SINCE = 14 * MINUTE;  // no "launch what you have" before this
 // if no wave went out for WAVE_MAX_GAP, lower the threshold to what the army already has
 // (measured: a mixed T1-T3 army launches at ~0.013 power per metal); after 1.5x the gap, launch anything
-const int   WAVE_MAX_GAP     = 6 * MINUTE;
+const int   WAVE_MAX_GAP     = 8 * MINUTE;  // v8: was 6
 const float POWER_PER_METAL  = 0.012f;
 
-// anti-nuke: base coverage + per known enemy nuke launcher
-const int ANTINUKE_BASE     = 2;
-const int ANTINUKE_PER_NUKE = 2;
-const int ANTINUKE_MAX      = 8;
+// anti-nuke: base coverage + per known enemy nuke launcher.
+// Gated on economy: static defence of this size competes with expansion, so it only goes up
+// once the team actually earns enough (and never while energy is stalling).
+const int   ANTINUKE_BASE     = 2;
+const int   ANTINUKE_PER_NUKE = 2;
+const int   ANTINUKE_MAX      = 8;
+const float ANTINUKE_MIN_INCOME = 35.f;  // m-income before the first (unprovoked) anti-nuke
+const float ANTINUKE_SEEN_INCOME = 20.f; // once enemy nukes are seen, react at a lower income
 
-// shields: from this minute, one per base anchor, then more
-const int SHIELD_SINCE_MIN  = 25;
-const int SHIELD_STEP_MIN   = 8;
+// shields: late game only, and only on top of a real economy
+const int   SHIELD_SINCE_MIN  = 25;
+const int   SHIELD_STEP_MIN   = 8;
+const float SHIELD_MIN_INCOME = 70.f;
+// above this m-income static projects are cheap relative to income: queue them at NORMAL, not LOW
+const float RICH_INCOME = 150.f;
+
+// economy expansion: the AI must keep scaling energy, converters and storage all game,
+// not stop at the opening base. Checked every ECO_STEP.
+const int   ECO_STEP            = 40 * SECOND;
+const float ECO_CONVERT_E_RATIO = 12.f;  // e-income per m-income above which metal makers pay off
+const float ECO_ENERGY_MARGIN   = 0.85f; // build more energy while income < margin x target
+const int   ECO_CONVERT_BASE    = 2;     // converter cap: base + per minute
+const float ECO_CONVERT_PER_MIN = 1.0f;
+const int   ECO_CONVERT_MAX     = 60;
+const int   ECO_STORE_SINCE_MIN = 8;
+
+// production expansion: CircuitAI adds factories far slower than income grows (measured: one T1
+// factory at 12 min with 300 m/s income), so metal ends up in towers instead of an army.
+// Target one factory per PROD_METAL_PER_FACTORY of income; nano turrets when metal floats.
+const int   PROD_STEP              = 30 * SECOND;
+const float PROD_METAL_PER_FACTORY = 25.f;
+const int   PROD_MAX_FACTORIES     = 24;
+// nano turrets assisting factories: 2 + income / PROD_METAL_PER_NANO (a T1 nano is 200 bp, ~10 m/s of army)
+const float PROD_METAL_PER_NANO    = 8.f;
+const int   PROD_NANO_MAX          = 90;
 
 // air scouting pulse: every SCOUT_PERIOD minutes recruit SCOUT_BURST air scouts and widen the scout quota
 const int  SCOUT_PERIOD_MIN = 6;
@@ -41,13 +71,16 @@ const uint SCOUT_BURST      = 4;
 
 // Raiders: false = default RAID squads sized by quota.raid (min 40 power ~ 20 Flashes, no lone harassers);
 // true = raiders gather with the army. Measured: only raid squads reliably hunt a lone/passive enemy
-// commander — ATTACK groups go for bases (targets with influence), so keep raids on.
+// commander ï¿½ ATTACK groups go for bases (targets with influence), so keep raids on.
 const bool RAIDERS_JOIN_ARMY = false;
 
 int lastAntiNukeFrame = 0;
 int lastWaveFrame = 0;
 int lastShieldFrame = 0;
 int lastScoutPulseFrame = 0;
+int lastEcoFrame = 0;
+int lastProdFrame = 0;
+int attackTasks = 0;  // ATTACK tasks added since the last status line (diagnostics)
 int shieldsOrdered = 0;
 int knownNukesHandled = -1;
 
@@ -67,6 +100,7 @@ void AiTaskAdded(IUnitTask@ task)
 {
 	IFighterTask@ ft = cast<IFighterTask>(task);
 	if (ft !is null && ft.GetFightType() == Task::FightType::ATTACK) {
+		++attackTasks;
 		if (ai.frame - lastWaveFrame > MINUTE)  // groups promoting together within a minute are one wave
 			AiLog("[custom] ATTACK wave launched at " + int(ai.frame / MINUTE) + "min, quota.attack=" + int(aiMilitaryMgr.quota.attack) + " armyCost=" + int(aiMilitaryMgr.armyCost));
 		lastWaveFrame = ai.frame;
@@ -88,12 +122,12 @@ void AiUnitRemoved(CCircuitUnit@ unit, Unit::UseAs usage)
 
 void AiLoad(IStream& istream)
 {
-	istream >> lastAntiNukeFrame >> lastShieldFrame >> lastScoutPulseFrame >> shieldsOrdered >> knownNukesHandled >> lastWaveFrame;
+	istream >> lastAntiNukeFrame >> lastShieldFrame >> lastScoutPulseFrame >> shieldsOrdered >> knownNukesHandled >> lastWaveFrame >> lastEcoFrame >> lastProdFrame;
 }
 
 void AiSave(OStream& ostream)
 {
-	ostream << lastAntiNukeFrame << lastShieldFrame << lastScoutPulseFrame << shieldsOrdered << knownNukesHandled << lastWaveFrame;
+	ostream << lastAntiNukeFrame << lastShieldFrame << lastScoutPulseFrame << shieldsOrdered << knownNukesHandled << lastWaveFrame << lastEcoFrame << lastProdFrame;
 }
 
 void AiMakeDefence(int cluster, const AIFloat3& in pos)
@@ -124,24 +158,29 @@ CCircuitDef@ SideDef(const string& in arm, const string& in cor, const string& i
 	return cdef;
 }
 
-void EnqueueAtBases(CCircuitDef@ cdef, int perBase, Task::Priority prio, float shake)
+void EnqueueAtBasesAs(Task::BuildType type, CCircuitDef@ cdef, int perBase, Task::Priority prio, float shake)
 {
 	if (cdef is null || Base::positions.length() == 0)
 		return;
 	for (uint i = 0; i < Base::positions.length(); ++i) {
 		for (int j = 0; j < perBase; ++j) {
-			aiBuilderMgr.Enqueue(TaskB::Common(Task::BuildType::DEFENCE, prio, cdef, Base::positions[i], shake));
+			aiBuilderMgr.Enqueue(TaskB::Common(type, prio, cdef, Base::positions[i], shake));
 		}
 	}
+}
+
+void EnqueueAtBases(CCircuitDef@ cdef, int perBase, Task::Priority prio, float shake)
+{
+	EnqueueAtBasesAs(Task::BuildType::DEFENCE, cdef, perBase, prio, shake);
 }
 
 void UpdateArmySize()
 {
 	const float minutes = float(ai.frame) / float(MINUTE);
-	float attack = ATTACK_BASE + ATTACK_PER_MIN * minutes;
+	float attack = AiMax(ATTACK_BASE + ATTACK_PER_MIN * minutes, ATTACK_PER_INCOME * aiEconomyMgr.metal.income);
 	if (attack > ATTACK_CAP) attack = ATTACK_CAP;
 	const int sinceWave = ai.frame - lastWaveFrame;
-	if (sinceWave > WAVE_MAX_GAP && ai.frame > 6 * MINUTE) {
+	if (sinceWave > WAVE_MAX_GAP && ai.frame > WAVE_FALLBACK_SINCE) {
 		// army has been sitting at home too long: launch with whatever it has
 		attack = AiMin(attack, AiMax(ATTACK_BASE, aiMilitaryMgr.armyCost * POWER_PER_METAL));
 		if (sinceWave > WAVE_MAX_GAP * 3 / 2)
@@ -158,7 +197,9 @@ void UpdateArmySize()
 			+ " m-income=" + int(aiEconomyMgr.metal.income) + " e-income=" + int(aiEconomyMgr.energy.income)
 			+ " armyCost=" + int(aiMilitaryMgr.armyCost) + " workers=" + aiBuilderMgr.GetWorkerCount()
 			+ " factories=" + aiFactoryMgr.GetFactoryCount()
-			+ " bonus=" + int(ai.GetTeamRulesParam("ai_bonus_pct", 0.f)) + "%");
+			+ " bonus=" + int(ai.GetTeamRulesParam("ai_bonus_pct", 0.f)) + "%"
+			+ " attackTasks=" + attackTasks);
+		attackTasks = 0;
 	}
 }
 
@@ -173,11 +214,21 @@ void UpdateAntiNukes()
 	anti.maxThisUnit = want;
 	const bool moreNukes = known > knownNukesHandled;
 	const bool periodic = ai.frame - lastAntiNukeFrame > 5 * MINUTE;
+	// economy gate: an anti-nuke costs a small base, so never trade expansion for it
+	const float income = aiEconomyMgr.metal.income;
+	const float needIncome = (known > 0) ? ANTINUKE_SEEN_INCOME : ANTINUKE_MIN_INCOME;
+	if (income < needIncome || aiEconomyMgr.isEnergyStalling) {
+		knownNukesHandled = known;  // don't let a missed window queue a burst later
+		return;
+	}
 	if ((moreNukes || periodic) && ai.frame > 12 * MINUTE && anti.count < want) {
-		EnqueueAtBases(anti, 1, moreNukes ? Task::Priority::HIGH : Task::Priority::NORMAL, SQUARE_SIZE * 24);
+		// unprovoked coverage is background work; a seen enemy nuke is worth jumping the queue
+		EnqueueAtBases(anti, 1, moreNukes ? Task::Priority::HIGH
+			: (income >= RICH_INCOME ? Task::Priority::NORMAL : Task::Priority::LOW), SQUARE_SIZE * 24);
 		lastAntiNukeFrame = ai.frame;
 		knownNukesHandled = known;
-		AiLog("[custom] anti-nuke: known enemy nukes=" + known + " want=" + want + " have=" + anti.count);
+		AiLog("[custom] anti-nuke: known enemy nukes=" + known + " want=" + want + " have=" + anti.count
+			+ " m-income=" + int(income));
 	}
 }
 
@@ -190,11 +241,15 @@ void UpdateShields()
 	CCircuitDef@ gate = SideDef("armgate", "corgate", "leggatet3");
 	if (gate is null)
 		return;
+	// economy gate: shields are pure upkeep, they only make sense on a fat economy
+	if (aiEconomyMgr.metal.income < SHIELD_MIN_INCOME || aiEconomyMgr.isEnergyStalling)
+		return;
 	gate.maxThisUnit = 12;
-	EnqueueAtBases(gate, 1, Task::Priority::NORMAL, SQUARE_SIZE * 40);
+	EnqueueAtBases(gate, 1, aiEconomyMgr.metal.income >= RICH_INCOME ? Task::Priority::NORMAL : Task::Priority::LOW, SQUARE_SIZE * 40);
 	lastShieldFrame = ai.frame;
 	++shieldsOrdered;
-	AiLog("[custom] shields: ordered round " + shieldsOrdered + " (have " + gate.count + ")");
+	AiLog("[custom] shields: ordered round " + shieldsOrdered + " (have " + gate.count
+		+ ") m-income=" + int(aiEconomyMgr.metal.income));
 }
 
 void UpdateAirScouting()
@@ -216,9 +271,157 @@ void UpdateAirScouting()
 	}
 }
 
+// Energy income the AI should be aiming for right now, mirroring economy.json "factor"
+// ([[6,1],[15,240],[22,420],[30,3000]]): e-income >= m-income * factor(time).
+float EnergyTargetFactor()
+{
+	const float t = float(ai.frame) / float(SECOND);
+	if (t <= 1.f)    return 6.f;
+	if (t <= 240.f)  return 6.f  + (15.f - 6.f)  * (t - 1.f)   / 239.f;
+	if (t <= 420.f)  return 15.f + (22.f - 15.f) * (t - 240.f) / 180.f;
+	if (t <= 3000.f) return 22.f + (30.f - 22.f) * (t - 420.f) / 2580.f;
+	return 30.f;
+}
+
+// true once the team owns a T2 constructor: T2 eco (advanced fusion, T2 converters) is only
+// worth queueing when someone can build it, otherwise the task idles until its timeout
+bool HasT2Builder()
+{
+	CCircuitDef@ a = SideDef("armack", "corack", "legack");
+	CCircuitDef@ v = SideDef("armacv", "coracv", "legacv");
+	return (a !is null && a.count > 0) || (v !is null && v.count > 0);
+}
+
+CCircuitDef@ FirstAvailable(const string& in arm, const string& in cor, const string& in leg)
+{
+	CCircuitDef@ cdef = SideDef(arm, cor, leg);
+	if (cdef is null || !cdef.IsAvailable(ai.frame))
+		return null;
+	return cdef;
+}
+
+/*
+ * Keep scaling the economy for the whole game instead of stopping at the opening base:
+ *  - more energy while income lags the target factor (advanced fusion first, then fusion);
+ *  - metal makers whenever energy outruns metal (that is what "secondary economy" means here);
+ *  - storage so the surplus is not wasted between build orders.
+ * All of it goes in at NORMAL/LOW priority next to the bases, so it competes with defence
+ * spending rather than with the factory queue.
+ */
+void UpdateEcoExpansion()
+{
+	if (ai.frame - lastEcoFrame < ECO_STEP)
+		return;
+	lastEcoFrame = ai.frame;
+	if (Base::positions.length() == 0)
+		return;
+
+	const float minutes = float(ai.frame) / float(MINUTE);
+	const SResourceInfo@ metal = aiEconomyMgr.metal;
+	const SResourceInfo@ energy = aiEconomyMgr.energy;
+
+	// 1. energy: chase the target factor, newest available generator first
+	const float target = metal.income * EnergyTargetFactor();
+	if (energy.income < target * ECO_ENERGY_MARGIN) {
+		const bool t2 = HasT2Builder();
+		CCircuitDef@ gen = t2 ? FirstAvailable("armafus", "corafus", "legafus") : null;
+		if (gen is null && t2) @gen = FirstAvailable("armfus", "corfus", "legfus");
+		if (gen is null) @gen = FirstAvailable("armadvsol", "coradvsol", "legadvsol");
+		if (gen !is null) {
+			EnqueueAtBasesAs(Task::BuildType::ENERGY, gen, 1, Task::Priority::NORMAL, SQUARE_SIZE * 48);
+			AiLog("[custom] eco: +energy " + gen.GetName() + " e-income=" + int(energy.income)
+				+ "/" + int(target) + " m-income=" + int(metal.income));
+		}
+	}
+
+	// 2. converters: surplus energy turned into metal, capped by game time
+	if (energy.income > metal.income * ECO_CONVERT_E_RATIO || aiEconomyMgr.isEnergyFull) {
+		CCircuitDef@ conv = HasT2Builder() ? FirstAvailable("armmmkr", "cormmkr", "legadveconv") : null;
+		if (conv is null) @conv = FirstAvailable("armmakr", "cormakr", "legeconv");
+		if (conv !is null) {
+			int cap = ECO_CONVERT_BASE + int(ECO_CONVERT_PER_MIN * minutes);
+			if (cap > ECO_CONVERT_MAX) cap = ECO_CONVERT_MAX;
+			conv.maxThisUnit = cap;
+			if (conv.count < cap) {
+				EnqueueAtBasesAs(Task::BuildType::CONVERT, conv, 1, Task::Priority::NORMAL, SQUARE_SIZE * 32);
+				AiLog("[custom] eco: +converter " + conv.GetName() + " have=" + conv.count + "/" + cap
+					+ " e-income=" + int(energy.income) + " m-income=" + int(metal.income));
+			}
+		}
+	}
+
+	// 3. storage: a big income with a tiny buffer is income thrown away
+	if (minutes >= ECO_STORE_SINCE_MIN) {
+		if (energy.storage < energy.income * 25.f) {
+			CCircuitDef@ est = FirstAvailable("armestor", "corestor", "legestor");
+			if (est !is null)
+				EnqueueAtBasesAs(Task::BuildType::STORE, est, 1, Task::Priority::LOW, SQUARE_SIZE * 32);
+		}
+		if (metal.storage < metal.income * 25.f) {
+			CCircuitDef@ mst = FirstAvailable("armmstor", "cormstor", "legmstor");
+			if (mst !is null)
+				EnqueueAtBasesAs(Task::BuildType::STORE, mst, 1, Task::Priority::LOW, SQUARE_SIZE * 32);
+		}
+	}
+}
+
+CCircuitDef@ ReprDef(CCircuitDef@ fac)
+{
+	CCircuitDef@ r = aiFactoryMgr.GetRoleDef(fac, Unit::Role::ASSAULT.type);
+	if (r is null) @r = aiFactoryMgr.GetRoleDef(fac, Unit::Role::RAIDER.type);
+	if (r is null) @r = aiFactoryMgr.GetRoleDef(fac, Unit::Role::SKIRM.type);
+	if (r is null) @r = aiFactoryMgr.GetRoleDef(fac, Unit::Role::BUILDER.type);
+	return r;
+}
+
+void UpdateProduction()
+{
+	if (ai.frame - lastProdFrame < PROD_STEP)
+		return;
+	lastProdFrame = ai.frame;
+	if (Base::positions.length() == 0 || ai.frame < 4 * MINUTE)
+		return;
+
+	const SResourceInfo@ metal = aiEconomyMgr.metal;
+	const int facs = aiFactoryMgr.GetFactoryCount();
+	int want = 1 + int(metal.income / PROD_METAL_PER_FACTORY);
+	if (want > PROD_MAX_FACTORIES) want = PROD_MAX_FACTORIES;
+	const bool floating = metal.current > metal.storage * 0.5f;
+
+	if (facs < want || (floating && facs < PROD_MAX_FACTORIES)) {
+		// catch up faster when far behind the income (2 per step at a deficit of 3+)
+		const int orders = (want - facs >= 3) ? 2 : 1;
+		for (int k = 0; k < orders; ++k) {
+			const AIFloat3 pos = Base::positions[(ai.frame / PROD_STEP + k) % Base::positions.length()];
+			CCircuitDef@ fac = aiFactoryMgr.DefaultGetFactoryToBuild(pos, false, false);
+			if (fac is null || !fac.IsAvailable(ai.frame))
+				continue;
+			CCircuitDef@ repr = ReprDef(fac);
+			if (repr is null)
+				continue;
+			aiBuilderMgr.Enqueue(TaskB::Factory(Task::Priority::HIGH, fac, pos, repr, SQUARE_SIZE * 64));
+			AiLog("[custom] prod: +factory " + fac.GetName() + " have=" + facs + " want=" + want
+				+ " m-income=" + int(metal.income) + (floating ? " (metal floating)" : ""));
+		}
+	}
+	// assist: factories alone cannot spend a big income â€” nanos at the factories turn it into units
+	CCircuitDef@ nano = FirstAvailable("armnanotc", "cornanotc", "legnanotc");
+	if (nano !is null) {
+		int wantNano = 2 + int(metal.income / PROD_METAL_PER_NANO);
+		if (wantNano > PROD_NANO_MAX) wantNano = PROD_NANO_MAX;
+		nano.maxThisUnit = wantNano;
+		if (nano.count < wantNano) {
+			EnqueueAtBasesAs(Task::BuildType::NANO, nano, floating ? 3 : 2, Task::Priority::NORMAL, SQUARE_SIZE * 16);
+			AiLog("[custom] prod: +nano have=" + nano.count + " want=" + wantNano);
+		}
+	}
+}
+
 void AiCustomUpdate()
 {
+	UpdateProduction();
 	UpdateArmySize();
+	UpdateEcoExpansion();
 	UpdateAntiNukes();
 	UpdateShields();
 	UpdateAirScouting();

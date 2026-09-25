@@ -37,14 +37,17 @@
 | Требование | Где | Что сделано |
 |---|---|---|
 | Не отводить раненых юнитов | `behaviour.json` → `retreat.fighter = [0,0,0]` | третий элемент — множитель per-unit `retreat`, 0 обнуляет и их; строители отступают как раньше |
-| Меньше рабочих, больше башен | `behaviour.json` лимиты `armck/corck/armcv/corcv=4`, `beaver/muskrat=2`, T2 cons=5; `factory.json` вероятность строителей ×0.6; `build_chain.json` `prevent=3`, `amount.factor=[80,56]`, длинная лестница `land`; `economy.json` `buildpower=2.0` (нано-турели) | |
+| Строители и башни (v8) | `behaviour.json` лимиты T1-строителей `armck/corck/armcv/corcv=6`, T2 `=7`, `beaver/muskrat=2`; `build_chain.json` `prevent=2`, `amount.factor=[60,42]` (v4 был 80/56 — металл уходил в башни, армия была 1–20 юнитов); `economy.json` `buildpower=2.0` | |
 | Супер-юниты | `factory.json` T3 (`armshltx`/`corgant`) `income_tier=[60,120,200,300]`, веса Bantha/Thor/Korgoth/Juggernaut подняты; лимит T3-фабрик 3 | |
 | Без ранней беготни одиночек | рейдеры остаются в RAID-отрядах, но отряд не выходит, пока не наберёт `quota.raid.min = 20 + 2/мин` мощи (~10 Flash на старте, ~40 позже; `military.as` `UpdateArmySize`). Вариант «рейдеры в общей армии» (`RAIDERS_JOIN_ARMY = true`) проверен и выключен: ATTACK-группы идут только на базы (цели с influence), а пассивного/одинокого командира находят и добивают именно рейд-отряды. Наземных скаутов по 2 на тип; из открывашек убраны SCOUT | |
-| Армия волнами | `military.as` `UpdateArmySize`: `quota.attack = 100 + 35/мин`, потолок 1200 (мощь ~ 9 за Stumpy, ~250 за Bantha, ≈ 0.035 × металл армии); группа копится на базе (DEFEND) и уходит в ATTACK, достигнув порога. `behaviour.json` `thr_mod.defence = [1,1]` — иначе порог случайно умножается на 2–3.3 и волны не выходят. Если волны не было `WAVE_MAX_GAP` (6 мин) — порог опускается до текущей армии (0.012 × металл), после 9 мин — до 100 (проверено: волны на 6/11/17-й минуте в headless, живой матч с бонусом 800% — ИИ выносит базу одной волной). Каждая волна пишется в infolog: `[custom] ATTACK wave launched at Nmin` | константы `ATTACK_BASE/PER_MIN/CAP`, `WAVE_MAX_GAP` |
-| Больше экономики | `economy.json`: `factor` энергии выше и раньше, `production` ниже (новые фабрики раньше), `mex_up=6`; лимит T1-фабрик 2, T2 3 | |
-| Антиядерки с дублированием | `build_chain.json` `base`: индекс 14 (`armamd`/`corfmd`) на 1250, 1500, 2100, 2700, 3300, 4200 с; `military.as` `UpdateAntiNukes`: `maxThisUnit = 2 + 2 × известных ядерок врага` (до 8), при росте числа — заказ с приоритетом HIGH у каждой базы | |
+| Армия волнами | `military.as` `UpdateArmySize`: `quota.attack = max(100 + 35/мин, 1.6 × m-income)`, потолок 3000 — размер волны растёт вместе с экономикой (5000 держал раздробленную армию дома). `behaviour.json` `thr_mod.defence = [1,1]`. Страховка «атакуй тем, что есть» — не раньше 14-й минуты и если волны не было 8 мин (`WAVE_MAX_GAP`, `WAVE_FALLBACK_SINCE`); после 12 мин без волны порог падает до 100. Раз в 2 мин в infolog `[custom] t=… attackTasks=N` (сколько групп ушло в ATTACK) | `ATTACK_BASE/PER_MIN/PER_INCOME/CAP` |
+| Экономика и энергия | `economy.json` `factor` энергии `[[6,1],[15,240],[22,420],[30,3000]]` (v4–v7: до 80× — с бонусом ИИ сжигал металл на неиспользуемую энергию: 290k/с при 50k потребления конвертерами), `production=[0.5,0.5,0.55,0.5]`, `ms_pull=[[0.36,0],[0.40,0.34]]` (доля металла мобильным строителям; upstream 0.57–0.66 — армии не хватало металла), `mex_up=6` | |
+| Экономика растёт всю игру | `military.as` `UpdateEcoExpansion` (раз в 40 с): пока `e-income < 0.85 × m-income × factor(время)` — заказ генератора (afus → fus → advsol) у каждой базы; при `e-income > 12 × m-income` или полном хранилище энергии — конвертеры (`armmmkr`/`cormmkr`, лимит `2 + 1/мин`, максимум 60); с 8-й минуты хранилища, пока `storage < 25 × income`. Плюс конвертеры в `build_chain` у каждого fusion/advanced fusion, лимиты `armfus`/`corfus` подняты с 3–6 до 8–12, хранилищ — с 1 до 4–5 | |
+| Производство растёт с доходом (v8) | `military.as` `UpdateProduction` (раз в 30 с, с 4-й минуты): цель — фабрика на каждые 25 м/с дохода (до 24; при отставании ≥3 — две за шаг) через `aiFactoryMgr.DefaultGetFactoryToBuild` + `TaskB::Factory`; нано-турели у баз `2 + доход/8` (до 90). Без этого CircuitAI держал 1–2 фабрики при доходе 300 м/с и копил металл в постройках. Лимиты фабрик: T1 4, T2 6, T3 4 | `PROD_*` |
+| Массовые армии (v8) | `factory.json`: T1-фабрики (`armlab/armvp/corlab/corvp`) `importance=[1.0,0.35]` — ИИ продолжает ставить их по ходу игры (было 0.0: после старта только T2/T3, ~1000 металла за юнит); старшие tier этих фабрик переписаны с «одни строители» на боевой состав (Pawn/Hammer/Warrior, Flash/Stumpy/Janus, Grunt/Thud, Gator/Raider/Leveler) | |
+| Антиядерки без ущерба экономике | из `build_chain.json` `base` убраны все плановые антиядерки (индекс 14) и щиты (28) — их заказывает только скрипт и только по доходу; `military.as` `UpdateAntiNukes`: `maxThisUnit = 2 + 2 × известных ядерок врага` (до 8), порог `m-income ≥ 35` (≥ 20, если вражеские ядерки уже видели), не при энергетическом сталле, приоритет LOW, при `m-income ≥ 150` — NORMAL (на LOW их никто не брал: 18 заказов, 0 построено), HIGH — на новую вражескую ядерку | |
 | Массовая авиаразведка | `military.as` `UpdateAirScouting`: каждые 6 мин квота скаутов 8 и +4 `armpeep`/`corfink` с фабрики, потом квота 2; лимит peep/fink 10, вес в `factory.json` ×1.6 | |
-| Щиты на поздней стадии | `build_chain.json` `base`: индекс 28 (`armgate`/`corgate`) с 1600 с и далее; `military.as` `UpdateShields`: с 25-й минуты каждые 8 мин по щиту на каждую базу (лимит 12) | |
+| Щиты на поздней стадии | `military.as` `UpdateShields`: с 25-й минуты каждые 8 мин по щиту на базу (лимит 12), но только при `m-income ≥ 70` и без энергетического сталла, приоритет LOW, при `m-income ≥ 150` — NORMAL | |
 
 Базы для заказов (`misc/base.as`) — позиции собственных фабрик (`Factory::AiUnitAdded`).
 Каждые 2 минуты ИИ пишет в infolog строку `[custom] t=… quota.attack=… m-income=… armyCost=…`.
@@ -62,3 +65,18 @@ spring-headless.exe --isolation --write-dir <data> <startscript>
 В infolog: `[custom] …` (ИИ), `[census] …` (гаджет `dbg_ai_census.lua`, включить на время
 теста `enabled = true`), ошибки Lua/AngelScript. Визуально — e2e из репо
 `beyond-all-reason` (`tools/desktop/bar-e2e.py`) с BARbarian вместо Inactive AI.
+
+Грабли стенда (проверено 2026-09-26 на Linux, `.142`):
+
+- Игрок в стартскрипте должен быть **зрителем** (`[PLAYER0] Spectator=1`): с игроком-участником
+  при двух ИИ сервер так и не даёт старт — движок крутит пре-гейм на кадре −1 бесконечно.
+- В write-dir нужен `springsettings.cfg` с `LogFlushLevel = 0`, иначе infolog буферизуется и
+  выглядит как зависание.
+- Движок из образа SPADS идёт без `AI/Skirmish` (`unknown skirmish AI`): брать полный релиз
+  `recoil_<версия>_amd64-linux.7z` — в нём `AI/Skirmish/BARb/stable/libSkirmishAI.so`.
+  Конфиги и скрипты ИИ при этом всё равно грузятся из игры (`Load script: LuaRules/Configs/BARb/...`).
+- Один матч — шумная метрика (исход решают мелочи); сравнивать итерации по среднему минимум двух
+  сидов (`FixedRNGSeed`). 45 игровых минут ≈ 6–7 мин реального времени, 4 матча параллельно влезают.
+
+Замер масштаба в v8 (два матча, бонус 300%, Supreme Isthmus): армия на 30/40-й минуте
+23/63 → 344/862, юнитов на карте к 40-й 293 → 1300–1800, уничтожено металла за матч 250k → 600k.
