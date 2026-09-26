@@ -626,24 +626,61 @@
             "role": ["static"],
             "build_mod": 4000
         },
+		// custom v10: the AI builds no energy/metal storage (pointless at this economy)
+		"armuwms": {
+			"role": ["static"],
+			"limit": 0
+		},
+		"armuwadves": {
+			"role": ["static"],
+			"limit": 0
+		},
+		"coruwadves": {
+			"role": ["static"],
+			"limit": 0
+		},
+		"legestor": {
+			"role": ["static"],
+			"limit": 0
+		},
+		"legmstor": {
+			"role": ["static"],
+			"limit": 0
+		},
+		"legadvestore": {
+			"role": ["static"],
+			"limit": 0
+		},
+		"legamstor": {
+			"role": ["static"],
+			"limit": 0
+		},
+		"leguwestore": {
+			"role": ["static"],
+			"limit": 0
+		},
+		"leguwmstore": {
+			"role": ["static"],
+			"limit": 0
+		},
 		"armestor" : {
 			"role": ["static"],
 			"since": 240,
-			"limit": 5
+			"limit": 0
 		},
 		"armuwes" : {
 			"role": ["static"],
 			"since": 240,
-			"limit": 1
+			"limit": 0
 		},
 		"armmstor" : {
 			"role": ["static"],
 			"since": 500,
-			"limit": 4
+			"limit": 0
 		},
 		"armuwadvms" : {
 			"role": ["static"],
-			"limit": 1
+			"limit": 0
 		},
 		"cormex" : {
 			"role": ["static"],
@@ -670,26 +707,26 @@
 		"cormstor" : {
 			"role": ["static"],
 			"since": 500,
-			"limit": 4
+			"limit": 0
 		},
 		"coruwms" : {
 			"role": ["static"],
 			"since": 500,
-			"limit": 1
+			"limit": 0
 		},
 		"coruwadvms" : {
 			"role": ["static"],
-			"limit": 1
+			"limit": 0
 			},
 		"corestor" : {
 			"role": ["static"],
 			"since": 240,
-			"limit": 5
+			"limit": 0
 		},
 		"coruwes" : {
 			"role": ["static"],
 			"since": 240,
-			"limit": 1
+			"limit": 0
 		},
 
 

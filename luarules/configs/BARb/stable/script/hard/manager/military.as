@@ -55,7 +55,6 @@ const float ECO_ENERGY_MARGIN   = 0.85f; // build more energy while income < mar
 const int   ECO_CONVERT_BASE    = 2;     // converter cap: base + per minute
 const float ECO_CONVERT_PER_MIN = 1.0f;
 const int   ECO_CONVERT_MAX     = 60;
-const int   ECO_STORE_SINCE_MIN = 8;
 
 // production expansion: CircuitAI adds factories far slower than income grows (measured: one T1
 // factory at 12 min with 300 m/s income), so metal ends up in towers instead of an army.
@@ -318,7 +317,6 @@ CCircuitDef@ FirstAvailable(const string& in arm, const string& in cor, const st
  * Keep scaling the economy for the whole game instead of stopping at the opening base:
  *  - more energy while income lags the target factor (advanced fusion first, then fusion);
  *  - metal makers whenever energy outruns metal (that is what "secondary economy" means here);
- *  - storage so the surplus is not wasted between build orders.
  * All of it goes in at NORMAL/LOW priority next to the bases, so it competes with defence
  * spending rather than with the factory queue.
  */
@@ -363,20 +361,7 @@ void UpdateEcoExpansion()
 			}
 		}
 	}
-
-	// 3. storage: a big income with a tiny buffer is income thrown away
-	if (minutes >= ECO_STORE_SINCE_MIN) {
-		if (energy.storage < energy.income * 25.f) {
-			CCircuitDef@ est = FirstAvailable("armestor", "corestor", "legestor");
-			if (est !is null)
-				EnqueueAtBasesAs(Task::BuildType::STORE, est, 1, Task::Priority::LOW, SQUARE_SIZE * 32);
-		}
-		if (metal.storage < metal.income * 25.f) {
-			CCircuitDef@ mst = FirstAvailable("armmstor", "cormstor", "legmstor");
-			if (mst !is null)
-				EnqueueAtBasesAs(Task::BuildType::STORE, mst, 1, Task::Priority::LOW, SQUARE_SIZE * 32);
-		}
-	}
+	// (v10: no storage - the AI never builds energy/metal storage)
 }
 
 CCircuitDef@ ReprDef(CCircuitDef@ fac)
