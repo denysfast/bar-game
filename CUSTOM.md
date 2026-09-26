@@ -95,6 +95,21 @@ T2/T3-наземной фабрики превращается в T4-кузни�
 (350 энергии на выстрел) и щиты без неё не работают. Дуэль тогда показывает, что «Тор не
 пробивает Банту», хотя это ложь.
 
+## Внешний командир ИИ (v12)
+
+Claude (или любой внешний процесс) командует союзом BARb-ботов: забирает отряды у ИИ, отдаёт им
+приказы и задаёт ИИ доктрину. Демон и MCP живут в репо `beyond-all-reason` (`server/commander`).
+
+| Часть | Файл | Что делает |
+|---|---|---|
+| Гаджет | `luarules/gadgets/cmd_ai_commander.lua` | `SendLuaRulesMsg("aicmd:"..json)`: `order` (move/fight/attack/patrol/guard/build/…, юниты становятся «перехваченными»: ИИ получает `detach`, `AllowCommand` режет не-Lua команды им до `release`), `release`, `ai` (строка в скрипт ИИ). Право приказывать — только у хоста ИИ этой команды или ника из модопции `commander_players`. Результаты — в `Script.LuaUI.AICommanderEvent` |
+| Скрипт ИИ | `script/hard/misc/aicmdr.as` + `AiLuaMessage` в `main.as` | `detach/attach` (`ai.UnitControl`), `posture <x>\|hold\|normal` (множитель `quota.attack`), `wave [мин]`, `build <def> <n> <type> <x> <z> [prio]`, `recruit <def> <n>`, `limit <def> <n>`, `status`; ответы — `ai.CallRules("aicmd_reply\|aicmd_status {json}")` |
+| Виджет | `luaui/Widgets/ai_commander_bridge.lua` | мёртв, пока в springsettings нет `AICommanderBridge = host:port`. Иначе TCP: `hello` (карта, каталог юнитов, команды), `snap` раз в `AICommanderSnapFrames` (свои юниты союза + враги по LOS/радару/памяти этого союза), события; принимает `cmd`/`console`/`say` |
+
+Грабли: `ai.CallUI` из скрипта ИИ в BAR не доходит (в `barwidgets.lua` нет обработчика
+`RecvSkirmishAIMessage`) — ответы идут через `CallRules` в synced-часть гаджета и `SendToUnsynced`.
+Директивы работают только в профиле `hard` (профиль по умолчанию).
+
 ## Поведение BARbarian (профиль `hard` = профиль по умолчанию)
 
 Сам ИИ — бинарник CircuitAI в движке; игра несёт только конфиги
