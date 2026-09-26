@@ -149,7 +149,8 @@ local function buildCatalog()
 			local maxRange, dps = 0, 0
 			for _, w in ipairs(ud.weapons) do
 				local wd = WeaponDefs[w.weaponDef]
-				if wd and not wd.customParams.bogus then
+				-- sustained fire only: manual-fire (D-gun) and stockpiled (nukes, EMP) weapons are specials
+				if wd and not wd.customParams.bogus and not wd.manualFire and not wd.stockpile then
 					if wd.range > maxRange then
 						maxRange = wd.range
 					end
