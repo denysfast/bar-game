@@ -46,3 +46,9 @@ void AiUpdate()  // SlowUpdate, every 30 frames with initial offset of skirmishA
 }
 
 }  // namespace Main
+
+// external commander directives (gadget cmd_ai_commander.lua -> Spring.SendSkirmishAIMessage)
+void AiLuaMessage(const string& in data)
+{
+	AiCmdr::OnMessage(data);
+}

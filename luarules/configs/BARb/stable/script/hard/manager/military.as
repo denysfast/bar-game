@@ -2,6 +2,7 @@
 #include "../../unit.as"
 #include "../../task.as"
 #include "../misc/base.as"
+#include "../misc/aicmdr.as"
 
 
 /*
@@ -189,6 +190,7 @@ void UpdateArmySize()
 		if (sinceWave > WAVE_MAX_GAP * 3 / 2)
 			attack = ATTACK_BASE;
 	}
+	attack = AiCmdr::AdjustAttack(attack);  // external commander: posture / forced waves
 	aiMilitaryMgr.quota.attack = attack;
 	// raid squads grow with time: ~10 Flashes at start, ~40 later (a Flash is ~2 power, a Stumpy ~9)
 	float raidMin = 20.f + 2.f * minutes;
