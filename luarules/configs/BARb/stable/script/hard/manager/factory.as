@@ -139,9 +139,54 @@ bool AiIsSwitchAllowed(CCircuitDef@ facDef)
 	return true;
 }
 
+/*
+ * custom v9: tech follows the economy. Past TECH_T2_INCOME a new T1 factory is replaced by its T2
+ * counterpart, past TECH_T3_INCOME a new T2 land factory by a T3 gantry (when buildable). Obsolete
+ * factories that already exist are recycled by the gadget game_ai_unjam.lua (tech ladder part).
+ */
+const float TECH_T2_INCOME = 150.f;
+const float TECH_T3_INCOME = 800.f;
+
+CCircuitDef@ Upgrade(CCircuitDef@ d, const string& in from, const string& in to)
+{
+	if (d.GetName() != from)
+		return null;
+	CCircuitDef@ u = ai.GetCircuitDef(to);
+	if (u is null || !u.IsAvailable(ai.frame) || u.count >= u.maxThisUnit)
+		return null;
+	return u;
+}
+
+CCircuitDef@ TechUp(CCircuitDef@ d)
+{
+	const float income = aiEconomyMgr.metal.income;
+	CCircuitDef@ u = null;
+	if (income >= TECH_T2_INCOME && (userData[d.id].attr & (Attr::T2 | Attr::T3)) == 0) {
+		array<string> from = {armlab, armvp, armap, armsy, corlab, corvp, corap, corsy, leglab, legvp, legap, legsy};
+		array<string> to   = {armalab, armavp, armaap, armasy, coralab, coravp, coraap, corasy, legalab, legavp, legaap, legadvshipyard};
+		for (uint i = 0; i < from.length() && u is null; ++i)
+			@u = Upgrade(d, from[i], to[i]);
+		if (u !is null)
+			@d = u;
+	}
+	if (income >= TECH_T3_INCOME && (userData[d.id].attr & Attr::T2) != 0) {
+		array<string> from = {armalab, armavp, coralab, coravp, legalab, legavp};
+		array<string> to   = {armshltx, armshltx, corgant, corgant, leggant, leggant};
+		for (uint i = 0; i < from.length(); ++i) {
+			CCircuitDef@ t3 = Upgrade(d, from[i], to[i]);
+			if (t3 !is null)
+				return t3;
+		}
+	}
+	return d;
+}
+
 CCircuitDef@ AiGetFactoryToBuild(const AIFloat3& in pos, bool isStart, bool isReset)
 {
-	return aiFactoryMgr.DefaultGetFactoryToBuild(pos, isStart, isReset);
+	CCircuitDef@ d = aiFactoryMgr.DefaultGetFactoryToBuild(pos, isStart, isReset);
+	if (d is null || isStart)
+		return d;
+	return TechUp(d);
 }
 
 /* --- Utils --- */

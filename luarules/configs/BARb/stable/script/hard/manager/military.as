@@ -39,6 +39,10 @@ const float ANTINUKE_SEEN_INCOME = 20.f; // once enemy nukes are seen, react at 
 // shields: late game only, and only on top of a real economy
 const int   SHIELD_SINCE_MIN  = 25;
 const int   SHIELD_STEP_MIN   = 8;
+// v9: shields were ordered once per base (= per factory, up to 24 at a time, cap 12);
+// now one per round, total cap 1 + income / SHIELD_INCOME_PER, at most SHIELD_MAX
+const float SHIELD_INCOME_PER = 500.f;
+const int   SHIELD_MAX        = 4;
 const float SHIELD_MIN_INCOME = 70.f;
 // above this m-income static projects are cheap relative to income: queue them at NORMAL, not LOW
 const float RICH_INCOME = 150.f;
@@ -223,8 +227,12 @@ void UpdateAntiNukes()
 	}
 	if ((moreNukes || periodic) && ai.frame > 12 * MINUTE && anti.count < want) {
 		// unprovoked coverage is background work; a seen enemy nuke is worth jumping the queue
-		EnqueueAtBases(anti, 1, moreNukes ? Task::Priority::HIGH
-			: (income >= RICH_INCOME ? Task::Priority::NORMAL : Task::Priority::LOW), SQUARE_SIZE * 24);
+		// v9: order only what is missing (was one per base = per factory), spread over the bases
+		const Task::Priority prio = moreNukes ? Task::Priority::HIGH
+			: (income >= RICH_INCOME ? Task::Priority::NORMAL : Task::Priority::LOW);
+		const uint nb = Base::positions.length();
+		for (int k = 0; k < want - anti.count && nb > 0; ++k)
+			aiBuilderMgr.Enqueue(TaskB::Common(Task::BuildType::DEFENCE, prio, anti, Base::positions[(anti.count + k) % nb], SQUARE_SIZE * 24));
 		lastAntiNukeFrame = ai.frame;
 		knownNukesHandled = known;
 		AiLog("[custom] anti-nuke: known enemy nukes=" + known + " want=" + want + " have=" + anti.count
@@ -244,8 +252,14 @@ void UpdateShields()
 	// economy gate: shields are pure upkeep, they only make sense on a fat economy
 	if (aiEconomyMgr.metal.income < SHIELD_MIN_INCOME || aiEconomyMgr.isEnergyStalling)
 		return;
-	gate.maxThisUnit = 12;
-	EnqueueAtBases(gate, 1, aiEconomyMgr.metal.income >= RICH_INCOME ? Task::Priority::NORMAL : Task::Priority::LOW, SQUARE_SIZE * 40);
+	int cap = 1 + int(aiEconomyMgr.metal.income / SHIELD_INCOME_PER);
+	if (cap > SHIELD_MAX) cap = SHIELD_MAX;
+	gate.maxThisUnit = cap;
+	if (gate.count >= cap || Base::positions.length() == 0)
+		return;
+	const AIFloat3 pos = Base::positions[shieldsOrdered % Base::positions.length()];
+	aiBuilderMgr.Enqueue(TaskB::Common(Task::BuildType::DEFENCE,
+		aiEconomyMgr.metal.income >= RICH_INCOME ? Task::Priority::NORMAL : Task::Priority::LOW, gate, pos, SQUARE_SIZE * 40));
 	lastShieldFrame = ai.frame;
 	++shieldsOrdered;
 	AiLog("[custom] shields: ordered round " + shieldsOrdered + " (have " + gate.count
@@ -393,7 +407,7 @@ void UpdateProduction()
 		const int orders = (want - facs >= 3) ? 2 : 1;
 		for (int k = 0; k < orders; ++k) {
 			const AIFloat3 pos = Base::positions[(ai.frame / PROD_STEP + k) % Base::positions.length()];
-			CCircuitDef@ fac = aiFactoryMgr.DefaultGetFactoryToBuild(pos, false, false);
+			CCircuitDef@ fac = Factory::AiGetFactoryToBuild(pos, false, false);  // v9: includes the income tech-up
 			if (fac is null || !fac.IsAvailable(ai.frame))
 				continue;
 			CCircuitDef@ repr = ReprDef(fac);

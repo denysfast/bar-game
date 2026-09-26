@@ -663,6 +663,31 @@ local options = {
 
 	-- NOTE: update language/en/interface.json when you change name or desc
 	{
+		key = "ai_techup",
+		name = "AI Bonus: Tech follows economy",
+		desc = "AI teams stop building T1 factories and recycle them (90% refund) once they earn 150 metal/s with two T2 factories, and do the same with T2 land factories at 800 metal/s with two T3 gantries.",
+		type = "bool",
+		section = "ai_bonus",
+		def = true,
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
+		key = "ai_unjam",
+		name = "AI Bonus: Keep base exits clear",
+		desc = "AI teams dismantle their own (or an allied AI\'s) buildings when their units are trapped inside the base and cannot path out (90% metal refund). Human buildings are never touched.",
+		type = "list",
+		section = "ai_bonus",
+		def = "on",
+		items = {
+			{ key = "on", name = "On", desc = "Dismantle AI buildings that trap AI units in the base" },
+			{ key = "lanes", name = "On + strict lanes", desc = "Also forbid AI buildings in front of AI factories (experimental)" },
+			{ key = "off", name = "Off", desc = "Upstream behaviour (jams are only logged)" },
+		},
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
 		key = "ai_reveal",
 		name = "AI Bonus: Reveal enemy",
 		desc = "What the AI teams always see, so their attack waves have targets: nothing, enemy buildings and commanders, or everything.",

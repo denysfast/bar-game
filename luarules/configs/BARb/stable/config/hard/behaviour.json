@@ -135,7 +135,7 @@
 			"role": ["static"],
 			"attribute": ["support"],
 			"midposoffset": [0, 0, -16],
-			"limit": 4,
+			"limit": 8,
 			"build_speed": 1.0 // bp 600
 		},
 		"armvp": {
@@ -166,7 +166,7 @@
 		"corgant": {
 			"role": ["static"],
 			"attribute": ["support"],
-			"limit": 4,
+			"limit": 8,
 			"build_speed": 1.0 //bp 300
 		},
 		"corvp": {
