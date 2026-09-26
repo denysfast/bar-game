@@ -149,6 +149,48 @@
 	},
 
 	//T3 factory
+	// custom T4 tier (denysfast/bar-game): T4 foundry, chosen by Factory::TechUp past 2500 m/s
+	"armt4gant": {
+		"importance": [0.0, 4.0],
+		"require_energy": true,
+		"income_tier": [3000, 5000, 8000],
+		"unit":      ["armt4atlas", "armt4olympus", "armt4aegis", "armt4zeus"],
+		"land": {
+			"tier0": [ 0.40, 0.15, 0.25, 0.20],
+			"tier1": [ 0.35, 0.20, 0.20, 0.25],
+			"tier2": [ 0.35, 0.25, 0.15, 0.25],
+			"tier3": [ 0.35, 0.25, 0.15, 0.25]
+		},
+		"water": {
+			"tier0": [ 0.60, 0.00, 0.40, 0.00],
+			"tier1": [ 0.60, 0.00, 0.40, 0.00],
+			"tier2": [ 0.60, 0.00, 0.40, 0.00],
+			"tier3": [ 0.60, 0.00, 0.40, 0.00]
+		},
+		"caretaker": 40
+	},
+
+	// custom T4 tier (denysfast/bar-game): T4 foundry, chosen by Factory::TechUp past 2500 m/s
+	"cort4gant": {
+		"importance": [0.0, 4.0],
+		"require_energy": true,
+		"income_tier": [3000, 5000, 8000],
+		"unit":      ["cort4colossus", "cort4bastion", "cort4armageddon", "cort4hellwalker"],
+		"land": {
+			"tier0": [ 0.30, 0.20, 0.20, 0.30],
+			"tier1": [ 0.30, 0.25, 0.25, 0.20],
+			"tier2": [ 0.35, 0.20, 0.25, 0.20],
+			"tier3": [ 0.35, 0.20, 0.25, 0.20]
+		},
+		"water": {
+			"tier0": [ 0.60, 0.40, 0.00, 0.00],
+			"tier1": [ 0.60, 0.40, 0.00, 0.00],
+			"tier2": [ 0.60, 0.40, 0.00, 0.00],
+			"tier3": [ 0.60, 0.40, 0.00, 0.00]
+		},
+		"caretaker": 40
+	},
+
 	"armshltx": {
 		"importance": [0.0, 3.0],
 

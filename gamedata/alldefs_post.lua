@@ -838,6 +838,16 @@ local function unitDef_Post(name, uDef)
 		end
 	end
 
+	-- custom T4 tier (denysfast/bar-game, gamedata/custom_t4.lua): T2 constructors build the T4 foundry
+	local t4Foundry = {
+		armack = "armt4gant", armacv = "armt4gant", armaca = "armt4gant",
+		corack = "cort4gant", coracv = "cort4gant", coraca = "cort4gant",
+		legack = "legt4gant", legacv = "legt4gant", legaca = "legt4gant",
+	}
+	if t4Foundry[name] and buildoptions then
+		buildoptions[#buildoptions + 1] = t4Foundry[name]
+	end
+
 	if next(buildoptions) then
 		-- Remove invalid unit defs.
 		for index, option in pairs(buildoptions) do

@@ -469,6 +469,47 @@ local moveDatas = {
 		speedModClass = SPEED_CLASS.Hover,
 	},
 
+	-- custom T4 tier (denysfast/bar-game, gamedata/custom_t4.lua): scaled T3 models
+	-- armt4atlas armt4aegis cort4armageddon cort4hellwalker legt4tempest
+	T4BOT8 = {
+		crushstrength = CRUSH.MASSIVE,
+		depthMod = 0,
+		footprint = 8,
+		maxslope = SLOPE.DIFFICULT,
+		maxwaterdepth = DEPTH.AMPHIBIOUS,
+		maxwaterslope = SLOPE.DIFFICULT,
+		speedModClass = SPEED_CLASS.KBot,
+	},
+	-- cort4colossus cort4bastion legt4helios legt4starfall
+	T4BOT11 = {
+		crushstrength = CRUSH.MASSIVE,
+		depthMod = 0,
+		footprint = 11,
+		maxslope = SLOPE.DIFFICULT,
+		maxwaterdepth = DEPTH.AMPHIBIOUS,
+		maxwaterslope = SLOPE.DIFFICULT,
+		speedModClass = SPEED_CLASS.KBot,
+	},
+	-- armt4olympus (all-terrain walker like armvang)
+	T4TBOT9 = {
+		crushstrength = CRUSH.MASSIVE,
+		footprint = 9,
+		maxslope = SLOPE.MAXIMUM,
+		maxwaterdepth = DEPTH.MAX_SHALLOW,
+		depthModParams = depthModGeneric,
+		speedModClass = SPEED_CLASS.KBot,
+	},
+	-- armt4zeus legt4longinus
+	T4TANK9 = {
+		crushstrength = CRUSH.MASSIVE,
+		footprint = 9,
+		maxslope = SLOPE.MODERATE,
+		slopeMod = SLOPE_MOD.GLACIAL,
+		maxwaterdepth = DEPTH.MAX_SHALLOW,
+		depthModParams = depthModGeneric,
+		speedModClass = SPEED_CLASS.Tank,
+	},
+
 	-- armpwt4 corakt4 armmeatball armassimilator armlunchbox
 	EPICBOT = {
 		crushstrength = CRUSH.MASSIVE,

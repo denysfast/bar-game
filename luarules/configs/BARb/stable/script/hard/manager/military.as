@@ -370,6 +370,8 @@ CCircuitDef@ ReprDef(CCircuitDef@ fac)
 	if (r is null) @r = aiFactoryMgr.GetRoleDef(fac, Unit::Role::RAIDER.type);
 	if (r is null) @r = aiFactoryMgr.GetRoleDef(fac, Unit::Role::SKIRM.type);
 	if (r is null) @r = aiFactoryMgr.GetRoleDef(fac, Unit::Role::BUILDER.type);
+	if (r is null) @r = aiFactoryMgr.GetRoleDef(fac, Unit::Role::SUPER.type);  // T4 foundries: titans only
+	if (r is null) @r = aiFactoryMgr.GetRoleDef(fac, Unit::Role::HEAVY.type);
 	return r;
 }
 
@@ -393,8 +395,13 @@ void UpdateProduction()
 		for (int k = 0; k < orders; ++k) {
 			const AIFloat3 pos = Base::positions[(ai.frame / PROD_STEP + k) % Base::positions.length()];
 			CCircuitDef@ fac = Factory::AiGetFactoryToBuild(pos, false, false);  // v9: includes the income tech-up
-			if (fac is null || !fac.IsAvailable(ai.frame))
+			if (fac is null || !fac.IsAvailable(ai.frame)) {
+				if (fac is null && ai.frame % 9000 < 900)
+					AiLog("[custom] prod: no factory pick");
+				else if (fac !is null)
+					AiLog("[custom] prod: skip " + fac.GetName() + " (unavailable, count=" + fac.count + " max=" + fac.maxThisUnit + ")");
 				continue;
+			}
 			CCircuitDef@ repr = ReprDef(fac);
 			if (repr is null)
 				continue;

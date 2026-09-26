@@ -30,6 +30,12 @@ void AiMain()  // Initialize config params
 		if (cdef !is null)
 			Factory::userData[cdef.id].attr |= Factory::Attr::T3;
 	}
+	names = {Factory::armt4gant, Factory::cort4gant, Factory::legt4gant};  // custom T4 foundries
+	for (uint i = 0; i < names.length(); ++i) {
+		CCircuitDef@ cdef = ai.GetCircuitDef(names[i]);
+		if (cdef !is null)
+			Factory::userData[cdef.id].attr |= Factory::Attr::T4;
+	}
 
 	Init::EnableWallTargets();
 }

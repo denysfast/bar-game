@@ -51,11 +51,49 @@ string legsy   ("legsy");
 string legadvshipyard   ("legadvshipyard");
 string legaap  ("legaap");
 string leggant ("leggant");
+string armt4gant("armt4gant");  // custom T4 foundries
+string cort4gant("cort4gant");
+string legt4gant("legt4gant");
 
 float switchLimit = MakeSwitchLimit();
 
+/*
+ * custom T4 tier: a T4 foundry keeps its four titans in a mixed army. The stock pick leans on the
+ * response system and a batch of the last pick, and one titan of the four took the whole
+ * production. Next titan = the one with the smallest count / weight.
+ */
+array<string> t4Titans = {
+	"armt4atlas", "armt4olympus", "armt4aegis", "armt4zeus",
+	"cort4colossus", "cort4bastion", "cort4armageddon", "cort4hellwalker",
+	"legt4helios", "legt4starfall", "legt4longinus", "legt4tempest"};
+array<float> t4Weights = {
+	3.f, 2.f, 1.5f, 2.f,
+	3.f, 2.f, 2.f, 2.f,
+	2.5f, 2.f, 2.f, 2.5f};
+
 IUnitTask@ AiMakeTask(CCircuitUnit@ unit)
 {
+	if ((userData[unit.circuitDef.id].attr & Attr::T4) != 0) {
+		const string side = unit.circuitDef.GetName().substr(0, 3);
+		CCircuitDef@ pick = null;
+		float best = 1e9f;
+		for (uint i = 0; i < t4Titans.length(); ++i) {
+			if (t4Titans[i].substr(0, 3) != side)
+				continue;
+			CCircuitDef@ d = ai.GetCircuitDef(t4Titans[i]);
+			if (d is null || !d.IsAvailable(ai.frame))
+				continue;
+			const float score = (d.count + 1) / t4Weights[i];
+			if (score < best) {
+				best = score;
+				@pick = d;
+			}
+		}
+		if (pick !is null) {
+			AiLog("[custom] t4: " + unit.circuitDef.GetName() + " builds " + pick.GetName() + " (have " + pick.count + ")");
+			return aiFactoryMgr.Enqueue(TaskS::Recruit(Task::RecruitType::FIREPOWER, Task::Priority::HIGH, pick, unit.GetPos(ai.frame), 64.f));
+		}
+	}
 	return aiFactoryMgr.DefaultMakeTask(unit);
 }
 
@@ -146,15 +184,42 @@ bool AiIsSwitchAllowed(CCircuitDef@ facDef)
  */
 const float TECH_T2_INCOME = 150.f;
 const float TECH_T3_INCOME = 800.f;
+const float TECH_T4_INCOME = 2500.f;  // custom T4 tier: a gantry pick becomes the T4 foundry
 
 CCircuitDef@ Upgrade(CCircuitDef@ d, const string& in from, const string& in to)
 {
 	if (d.GetName() != from)
 		return null;
 	CCircuitDef@ u = ai.GetCircuitDef(to);
-	if (u is null || !u.IsAvailable(ai.frame) || u.count >= u.maxThisUnit)
+	if (u is null || !u.IsAvailable(ai.frame) || u.count >= u.maxThisUnit) {
+		if (u !is null && ai.frame % 9000 < 900)
+			AiLog("[custom] techup: " + to + " unavailable (avail=" + u.IsAvailable(ai.frame) + " count=" + u.count + " max=" + u.maxThisUnit + ")");
 		return null;
+	}
 	return u;
+}
+
+// the T4 foundry of our side, once the income is there and 2+ T3 gantries stand (the gantry count
+// is per team, so only our own side's gantries have one)
+CCircuitDef@ T4Foundry()
+{
+	if (aiEconomyMgr.metal.income < TECH_T4_INCOME)
+		return null;
+	array<string> g = {armshltx, corgant, leggant};
+	array<string> f = {armt4gant, cort4gant, legt4gant};
+	for (uint i = 0; i < g.length(); ++i) {
+		CCircuitDef@ gantry = ai.GetCircuitDef(g[i]);
+		if (gantry is null || gantry.count < 2)
+			continue;
+		CCircuitDef@ t4 = ai.GetCircuitDef(f[i]);
+		if (ai.frame % 9000 < 900 && t4 !is null)
+			AiLog("[custom] t4: " + f[i] + " gantries=" + gantry.count + " avail=" + t4.IsAvailable(ai.frame) + " count=" + t4.count + "/" + t4.maxThisUnit);
+		if (t4 !is null && t4.IsAvailable(ai.frame) && t4.count < t4.maxThisUnit)
+			return t4;
+	}
+	if (ai.frame % 9000 < 900)
+		AiLog("[custom] t4: no side with 2+ gantries");
+	return null;
 }
 
 CCircuitDef@ TechUp(CCircuitDef@ d)
@@ -168,6 +233,13 @@ CCircuitDef@ TechUp(CCircuitDef@ d)
 			@u = Upgrade(d, from[i], to[i]);
 		if (u !is null)
 			@d = u;
+	}
+	// T4: past TECH_T4_INCOME any T2/T3 land pick becomes the T4 foundry (the gantries alone sit at
+	// their limit and stop the production growth)
+	if ((userData[d.id].attr & (Attr::T2 | Attr::T3)) != 0) {
+		CCircuitDef@ t4 = T4Foundry();
+		if (t4 !is null)
+			return t4;
 	}
 	if (income >= TECH_T3_INCOME && (userData[d.id].attr & Attr::T2) != 0) {
 		array<string> from = {armalab, armavp, coralab, coravp, legalab, legavp};
@@ -184,8 +256,10 @@ CCircuitDef@ TechUp(CCircuitDef@ d)
 CCircuitDef@ AiGetFactoryToBuild(const AIFloat3& in pos, bool isStart, bool isReset)
 {
 	CCircuitDef@ d = aiFactoryMgr.DefaultGetFactoryToBuild(pos, isStart, isReset);
-	if (d is null || isStart)
+	if (isStart)
 		return d;
+	if (d is null)  // every usual factory at its limit: the T4 foundry still grows the production
+		return T4Foundry();
 	return TechUp(d);
 }
 

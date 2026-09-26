@@ -46,6 +46,12 @@
 			"yard": [14, 28],  // custom v9: was [6,8] - T3 units could not leave
 			"ignore":["none"]
 		},
+		"fac_t4": {                        // custom T4 foundry, 18x18 (gantry x1.5), titans up to footprint 11
+			"type": ["rectangle", "factory"],
+			"offset": [0, 9],
+			"yard": [22, 44],
+			"ignore": ["none"]
+		},
 		"solar": {
 			"type": ["rectangle", "engy_mid"],
 			"ignore": ["engy_mid", "def_low", "mex", "def_low"],
@@ -168,6 +174,7 @@
 		"fac_water": ["armsy", "armasy", "corsy", "corasy", "legsy", "legadvshipyard"],
 		"fac_air":["armap","armaap", "corap", "coraap", "legap", "legaap"],
 		"fac_strider": ["armshltx", "armshltxuw", "corgant", "corgantuw", "leggant", "leggantuw"],
+		"fac_t4": ["armt4gant", "cort4gant", "legt4gant"],
 		"solar": ["armsolar", "corsolar", "legsolar"],
 		"advsolar":["armadvsol", "coradvsol", "legadvsol"],
 		"wind": ["armwin", "corwin", "armtide", "cortide", "legwin", "legtide"],

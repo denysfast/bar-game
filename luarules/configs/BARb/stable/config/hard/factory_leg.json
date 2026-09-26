@@ -77,6 +77,27 @@
 	
 		"caretaker": 6
 	},
+	// custom T4 tier (denysfast/bar-game): T4 foundry, chosen by Factory::TechUp past 2500 m/s
+	"legt4gant": {
+		"importance": [0.0, 4.0],
+		"require_energy": true,
+		"income_tier": [3000, 5000, 8000],
+		"unit":      ["legt4helios", "legt4starfall", "legt4longinus", "legt4tempest"],
+		"land": {
+			"tier0": [ 0.35, 0.15, 0.20, 0.30],
+			"tier1": [ 0.30, 0.20, 0.25, 0.25],
+			"tier2": [ 0.30, 0.25, 0.25, 0.20],
+			"tier3": [ 0.30, 0.25, 0.25, 0.20]
+		},
+		"water": {
+			"tier0": [ 0.70, 0.00, 0.00, 0.30],
+			"tier1": [ 0.70, 0.00, 0.00, 0.30],
+			"tier2": [ 0.70, 0.00, 0.00, 0.30],
+			"tier3": [ 0.70, 0.00, 0.00, 0.30]
+		},
+		"caretaker": 40
+	},
+
 	"leggant": {
 		"importance": [0.0, 1.0],
 		"require_energy": true,
