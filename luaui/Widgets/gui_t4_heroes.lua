@@ -353,8 +353,8 @@ local function drawPanel(x2, yTop, uid)
 		if pts > 0 then
 			text(string.format("%d point%s", pts, pts > 1 and "s" or ""), x2 - pad * 2, hy + headH * 0.32, headH * 0.26, GOLD, "ro")
 		end
-		local ax2 = x2 - pad * 2 - headH * 2.4
-		button(ax2 - headH * 2.2, hy + headH * 0.26, ax2, hy + headH * 0.52, autocast and "auto: on" or "auto: off", true,
+		local ax2 = x2 - pad * 2 - headH * 2.2
+		button(ax2 - headH * 2.4, hy + headH * 0.24, ax2, hy + headH * 0.56, autocast and "autocast" or "manual", true,
 			autocast and GREEN or GREY, function() toggleAutocast(uid) end,
 			"Autocast: the hero casts its abilities by itself when they would help")
 	end
@@ -499,14 +499,20 @@ end
 
 ---------------------------------------------------------------------------- events from the gadget
 
-local function float(uid, str, c, size, dur)
+-- one floating text per hero and kind: several levels gained at once show only the last one
+local function float(uid, str, c, size, dur, kind)
 	local x, y, z = spGetUnitPosition(uid)
 	if not x then
 		return
 	end
+	for i = #floating, 1, -1 do
+		if floating[i].uid == uid and floating[i].kind == kind then
+			table.remove(floating, i)
+		end
+	end
 	local ud = UnitDefs[spGetUnitDefID(uid) or -1]
-	floating[#floating + 1] = { x = x, y = y + (ud and ud.height or 80) + 60, z = z, text = str, r = c[1], g = c[2], b = c[3],
-		t0 = Spring.GetTimer(), dur = dur or 2.5, size = floor(vsy * (size or 0.03) * uiScale) }
+	floating[#floating + 1] = { uid = uid, kind = kind, x = x, y = y + (ud and ud.height or 80) + 60, z = z, text = str,
+		r = c[1], g = c[2], b = c[3], t0 = Spring.GetTimer(), dur = dur or 2.5, size = floor(vsy * (size or 0.03) * uiScale) }
 end
 
 local function visible(uid)
@@ -527,31 +533,31 @@ function widget:T4HeroEvent(kind, uid, a, b)
 	local name = heroDefIDs[spGetUnitDefID(uid) or -1]
 	local mine = spGetUnitTeam(uid) == myTeam()
 	if kind == "levelup" then
-		float(uid, "LEVEL " .. a, GOLD, a % 5 == 0 and 0.045 or 0.034, 3)
+		float(uid, "LEVEL " .. a, GOLD, a % 5 == 0 and 0.045 or 0.034, 3, "level")
 		if mine then
 			local x, y, z = spGetUnitPosition(uid)
 			Spring.PlaySoundFile("sounds/ui/commanderspawn-mono.wav", 0.5, x, y, z, "ui")
 		end
 	elseif kind == "died" then
-		float(uid, "FALLEN", RED, 0.04, 4)
+		float(uid, "FALLEN", RED, 0.04, 4, "state")
 		if mine and name then
 			Spring.Echo(string.format("\255\255\090\070%s has fallen at level %d - rebuild it at the hero altar to revive it at level %d.", heroName(name), a, b))
 		end
 	elseif kind == "revived" then
-		float(uid, "REVIVED  Lv " .. a, { 0.6, 0.85, 1 }, 0.042, 4)
+		float(uid, "REVIVED  Lv " .. a, { 0.6, 0.85, 1 }, 0.042, 4, "state")
 		if mine then
 			local x, y, z = spGetUnitPosition(uid)
 			Spring.PlaySoundFile("sounds/ui/teleport-short-mono.wav", 0.7, x, y, z, "ui")
 		end
 	elseif kind == "born" then
-		float(uid, "HERO", GOLD, 0.04, 3)
+		float(uid, "HERO", GOLD, 0.04, 3, "state")
 	elseif kind == "undying" then
-		float(uid, "UNDYING!", { 1, 0.5, 0.15 }, 0.045, 3)
+		float(uid, "UNDYING!", { 1, 0.5, 0.15 }, 0.045, 3, "state")
 	elseif kind == "cast" and name then
 		local key = H.branchOrder[b]
 		local br = key and H.branch(name, key)
 		if br then
-			float(uid, br.name, key == "ult" and { 1, 0.6, 0.25 } or { 0.7, 0.85, 1 }, key == "ult" and 0.036 or 0.028, 2.2)
+			float(uid, br.name, key == "ult" and { 1, 0.6, 0.25 } or { 0.7, 0.85, 1 }, key == "ult" and 0.036 or 0.028, 2.2, "cast" .. b)
 		end
 	end
 end

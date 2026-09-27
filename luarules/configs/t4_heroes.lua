@@ -27,11 +27,18 @@ H.LEVEL_HP = 0.03           -- automatic growth per level above 1
 H.LEVEL_DAMAGE = 0.03
 -- experience, in units of the hero's own metal cost: reaching level L takes
 -- XP_TOTAL * ((L - 1) / (MAX_LEVEL - 1)) ^ XP_EXP (modoption hero_xp_mult divides the requirement)
-H.XP_TOTAL = 3.0
-H.XP_EXP = 1.6
+-- (bench: at 3.0 / 1.6 an Armageddon shelling a base from 3500 reached level 30 in two minutes)
+H.XP_TOTAL = 5.0
+H.XP_EXP = 1.7
 H.XP_KILL = 0.25            -- the killer also gets this share of the victim's cost
+H.XP_HERO_KILL = 0.25       -- a slain hero is worth this share of its cost more per 10 levels
 H.XP_SHARE = 0.08           -- and every hero within XP_SHARE_RADIUS of a dying enemy this share
 H.XP_SHARE_RADIUS = 1400
+H.XP_STRUCTURE = 0.3        -- structures give this share of the experience units give
+-- hero.xpRate scales everything a hero earns (long-range artillery farms bases from afar)
+-- heroes regenerate REST_REGEN of max HP per second after REST_DELAY seconds without taking damage
+H.REST_REGEN = 0.005
+H.REST_DELAY = 10
 -- revive: the dead hero is rebuilt at its foundry, level - DEATH_LEVELS, for
 -- cost * (1 + REVIVE_COST_PER_LEVEL * new level) metal and energy, build time * (1 + REVIVE_TIME_PER_LEVEL * level)
 H.REVIVE_COST_PER_LEVEL = 0.06
@@ -46,8 +53,11 @@ H.FOUNTAIN_REGEN = 0.02
 H.AI_RETREAT_HP = 0.35
 H.AI_CAUTION_HP = 0.65
 H.AI_DANGER = 1.6
+H.AI_BURST = 0.3             -- or when it lost this share of its health within the last 5 seconds
 H.AI_RETURN_HP = 0.9
+H.AI_RETURN_HP_NO_FOUNTAIN = 0.7 -- no altar left to heal at: rejoin sooner
 H.AI_ROLE_OFFSET = { front = 150, center = -100, back = -500 }
+H.AI_ESCORT = 10000         -- the smallest army group (metal) a hero marches with; below it guards the altar
 
 -- level needed for a rank of a branch
 local function reqLinear(rank) return rank end
@@ -108,7 +118,7 @@ H.heroes = {
 	},
 
 	armt4olympus = {
-		title = "Olympus, the Thunderer", role = "Strategic artillery", aiRole = "back",
+		title = "Olympus, the Thunderer", role = "Strategic artillery", aiRole = "back", xpRate = 0.25,
 		fx = 2.5,
 		a1 = {
 			name = "Spotter Uplink", kind = "mods", passive = true,
@@ -243,7 +253,7 @@ H.heroes = {
 	},
 
 	cort4armageddon = {
-		title = "Armageddon, the Doomsayer", role = "Rocket artillery", aiRole = "back",
+		title = "Armageddon, the Doomsayer", role = "Rocket artillery", aiRole = "back", xpRate = 0.15,
 		fx = 2.5,
 		a1 = {
 			name = "Saturation", kind = "mods", passive = true,
@@ -322,7 +332,7 @@ H.heroes = {
 	},
 
 	legt4starfall = {
-		title = "Starfall, the Astronomer", role = "Orbital artillery", aiRole = "back",
+		title = "Starfall, the Astronomer", role = "Orbital artillery", aiRole = "back", xpRate = 0.25,
 		fx = 2.5,
 		a1 = {
 			name = "Deep Sky Radar", kind = "mods", passive = true,

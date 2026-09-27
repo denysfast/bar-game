@@ -72,14 +72,14 @@ units.cort4bastion = T4.hero(bastion, 2.2, {
 	}),
 })
 
--- Armageddon, the Doomsayer (Catapult x2): forty-rocket salvos at 3500 elmos; Saturation adds
+-- Armageddon, the Doomsayer (Catapult x2): forty-rocket salvos from 2700 elmos (growing); Saturation adds
 -- rockets, the ultimate puts nuclear warheads into the salvo - at rank 3 every rocket.
 local armageddon = T4.derive(T4.base("units/CorGantry/corcat.lua", "corcat"), {
 	name = "cort4armageddon",
 	value = 10.4,
 	health = 5.6,
-	damage = 5.2,
-	range = 2.6,
+	damage = 3.2, -- 5.2 (the old titan x0.4) out-damaged every other hero 3x from 2700 and farmed levels
+	range = 2.0, -- 2700 at level 1: Long-Range Uplink and Servos take it past the old 3500
 	aoe = 2.5,
 	scale = 2.0,
 	speed = 0.8,
@@ -100,7 +100,7 @@ units.cort4armageddon = T4.hero(armageddon, 2.5, {
 		flighttime = 12, targetable = 0,
 	}),
 	hero_mininuke = T4.weaponFrom(armageddon.weapondefs.exp_heavyrocket, {
-		damage = 3200, aoe = 230, ceg = FX.custom("newnuketac", 0.45), name = "Armageddon mini-nuke",
+		damage = 1600, aoe = 230, ceg = FX.custom("newnuketac", 0.45), name = "Armageddon mini-nuke",
 		tracks = true, turnrate = 20000, flighttime = 12, targetable = 0,
 	}),
 })

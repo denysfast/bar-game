@@ -65,13 +65,23 @@ if gadgetHandler:IsSyncedCode() then
 
 	local heroDefs = {}   -- unitDefID -> def
 	local swapWatch = {}  -- weaponDefID -> true (ProjectileCreated)
+	local heroWeapon = {} -- weaponDefID -> true: the hero_* weapondefs the gadget spawns
+	for wdid, wd in pairs(WeaponDefs) do
+		if wd.customParams and wd.customParams.t4_hero_weapon then
+			heroWeapon[wdid] = true
+		end
+	end
 	local explWatch = {}  -- weaponDefID -> true (Explosion)
 	local foundryDefs = {} -- unitDefID -> true (the T4 foundries: fountain + AI retreat point)
 	local factoryDefs = {}
 	local unitCost = {}
+	local structureDefs = {}
 
 	for udid, ud in pairs(UnitDefs) do
 		unitCost[udid] = ud.metalCost
+		if ud.isImmobile or (ud.speed or 0) == 0 then
+			structureDefs[udid] = true
+		end
 		if ud.name == "armt4gant" or ud.name == "cort4gant" or ud.name == "legt4gant" then
 			foundryDefs[udid] = true
 		elseif ud.isFactory then
@@ -497,7 +507,7 @@ if gadgetHandler:IsSyncedCode() then
 		if h.level >= H.MAX_LEVEL or metal <= 0 then
 			return
 		end
-		h.xp = h.xp + metal
+		h.xp = h.xp + metal * (h.def.cfg.xpRate or 1)
 		local leveled = false
 		while h.level < H.MAX_LEVEL and h.xp >= H.xpFor(h.level + 1, xpMult) * h.def.cost do
 			levelUp(unitID, h)
@@ -594,7 +604,7 @@ if gadgetHandler:IsSyncedCode() then
 	end
 
 	local function giveXPForDeath(unitID, unitDefID, attackerID)
-		local cost = unitCost[unitDefID] or 0
+		local cost = (unitCost[unitDefID] or 0) * (structureDefs[unitDefID] and H.XP_STRUCTURE or 1)
 		if cost <= 0 then
 			return
 		end
@@ -605,7 +615,7 @@ if gadgetHandler:IsSyncedCode() then
 			local bonus = H.XP_KILL * cost
 			local victim = heroes[unitID]
 			if victim then
-				bonus = bonus + 0.5 * cost * victim.level / 10
+				bonus = bonus + H.XP_HERO_KILL * cost * victim.level / 10
 			end
 			addXP(attackerID, killer, bonus)
 		end
@@ -679,6 +689,10 @@ if gadgetHandler:IsSyncedCode() then
 		if invuln[unitID] then
 			return 0, 0
 		end
+		-- hero warheads and novas never hurt their own side (a mini-nuke carpet over a melee hero)
+		if heroWeapon[weaponDefID] and attackerTeam and spAreTeamsAllied(attackerTeam, unitTeam) then
+			return 0, 0
+		end
 		local m = guardMult[unitID] or 1
 		local a = attackerID and heroes[attackerID]
 		if a then
@@ -746,6 +760,10 @@ if gadgetHandler:IsSyncedCode() then
 	end
 
 	function gadget:UnitDamaged(unitID, unitDefID, unitTeam, damage, paralyzer, weaponDefID, projectileID, attackerID, attackerDefID, attackerTeam)
+		local victim = heroes[unitID]
+		if victim and damage > 0 then
+			victim.lastHit = frameNow()
+		end
 		if not attackerID or damage <= 0 then
 			return
 		end
@@ -757,7 +775,7 @@ if gadgetHandler:IsSyncedCode() then
 		if not maxHp or maxHp <= 0 or (bp and bp < 1) then
 			return
 		end
-		local value = min(damage, maxHp) / maxHp * (unitCost[unitDefID] or 0)
+		local value = min(damage, maxHp) / maxHp * (unitCost[unitDefID] or 0) * (structureDefs[unitDefID] and H.XP_STRUCTURE or 1)
 		if paralyzer then
 			value = value * 0.25
 		end
@@ -1231,6 +1249,9 @@ if gadgetHandler:IsSyncedCode() then
 				if fountainNear(h.team, x, z) then
 					regen = regen + H.FOUNTAIN_REGEN
 				end
+				if f - (h.lastHit or 0) > H.REST_DELAY * GAME_SPEED then
+					regen = regen + H.REST_REGEN
+				end
 				if regen > 0 and hp and hp < maxHp then
 					spSetUnitHealth(unitID, min(maxHp, hp + maxHp * regen))
 				end
@@ -1564,7 +1585,11 @@ if gadgetHandler:IsSyncedCode() then
 			toAI(h.team, "detach " .. unitID)
 		end
 		if h.retreating then
-			if frac >= H.AI_RETURN_HP then
+			local back = H.AI_RETURN_HP
+			if not fountainNear(h.team, h.retreatX, h.retreatZ) then
+				back = H.AI_RETURN_HP_NO_FOUNTAIN
+			end
+			if frac >= back then
 				h.retreating = false
 				spSetUnitRulesParam(unitID, "hero_retreat", 0, ALLIED)
 			elseif f - (h.lastOrder or 0) > 5 * GAME_SPEED and (x - h.retreatX) ^ 2 + (z - h.retreatZ) ^ 2 > 400 * 400
@@ -1573,14 +1598,22 @@ if gadgetHandler:IsSyncedCode() then
 			end
 			return
 		end
-		if frac < H.AI_RETREAT_HP or (frac < H.AI_CAUTION_HP and danger(unitID, h, x, z) > H.AI_DANGER) then
+		-- health 5 seconds ago: a burst (artillery, nukes) means getting out even far from any enemy
+		h.hpHist = h.hpHist or {}
+		local sec = floor(f / GAME_SPEED)
+		h.hpHist[sec % 6] = frac
+		local before = h.hpHist[(sec + 1) % 6] or frac
+		if frac < H.AI_RETREAT_HP or (frac < H.AI_CAUTION_HP and danger(unitID, h, x, z) > H.AI_DANGER)
+			or (before - frac > H.AI_BURST and frac < 0.8) then
 			startRetreat(unitID, h, x, z, f)
 			return
 		end
 		-- march with the army
 		local g = armyGroup(h.team, f)
 		local tx, tz
-		if g.x and g.cost >= h.def.cost * 0.25 then
+		-- an escort worth a quarter of the hero, at most 10k metal (the expensive heroes otherwise waited
+		-- at the altar for an army cell of 35-45k that the AI rarely gathers)
+		if g.x and g.cost >= min(h.def.cost * 0.25, H.AI_ESCORT) then
 			local off = H.AI_ROLE_OFFSET[h.def.cfg.aiRole or "center"] or 0
 			tx, tz = g.x, g.z
 			if g.ex then
