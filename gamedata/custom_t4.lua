@@ -118,10 +118,7 @@ function T4.derive(base, p)
 	cp.t4_scale = scale
 	cp.unitgroup = cp.unitgroup or "weapon"
 	cp.subfolder = "T4"
-	-- veterancy (unit_t4_abilities.lua): up to +50% damage and +25% range with experience
-	cp.t4_xp_damage = p.xpDamage or 0.5
-	cp.t4_xp_range = p.xpRange or 0.25
-	cp.rangexpscale = nil -- the stock weapon-1 range bonus would stack on ours
+	cp.rangexpscale = nil -- the stock weapon-1 range bonus would stack on the hero levels
 	if cp.customrange then
 		cp.customrange = cp.customrange * (p.range or 1)
 	end
@@ -181,6 +178,205 @@ function T4.derive(base, p)
 	return ud
 end
 
+------------------------------------------------------------------------------- heroes
+-- Every T4 is a hero (luarules/configs/t4_heroes.lua, luarules/gadgets/unit_t4_heroes.lua): one per
+-- team, levels, talents, revive. T4.hero finishes a derived unitdef:
+--   * maxthisunit = 1, customparams.t4_hero
+--   * every CEG reference of its weapons and unit script scaled up by `fx` (gamedata/custom_t4_fx.lua)
+--   * p.weapons: extra weapondefs "hero_*" the gadget spawns (swapped projectiles, meteors, novas);
+--     they are not in the weapons list, the engine still registers them as <unit>_hero_*
+
+local FX = VFS.Include("gamedata/custom_t4_fx.lua")
+T4.FX = FX
+
+local function scaleCegRefs(wd, fx)
+	if wd.explosiongenerator then
+		wd.explosiongenerator = FX.ref(wd.explosiongenerator, fx)
+	end
+	if wd.cegtag then
+		wd.cegtag = FX.ref(wd.cegtag, fx)
+	end
+	if wd.customparams and wd.customparams.water_splash_ceg then
+		wd.customparams.water_splash_ceg = FX.ref(wd.customparams.water_splash_ceg, fx)
+	end
+end
+
+function T4.hero(ud, fx, extraWeapons)
+	ud.maxthisunit = 1
+	local cp = ud.customparams
+	cp.t4_hero = 1
+	cp.t4_fx = fx
+	for _, wd in pairs(ud.weapondefs or {}) do
+		scaleCegRefs(wd, fx)
+	end
+	if ud.sfxtypes and ud.sfxtypes.explosiongenerators then
+		for i, ref in ipairs(ud.sfxtypes.explosiongenerators) do
+			ud.sfxtypes.explosiongenerators[i] = FX.ref(ref, fx)
+		end
+	end
+	for key, wd in pairs(extraWeapons or {}) do
+		wd.customparams = wd.customparams or {}
+		wd.customparams.t4_hero_weapon = 1
+		ud.weapondefs[key] = wd
+	end
+	return ud
+end
+
+local function setDamage(wd, dmg)
+	wd.damage = { default = dmg }
+	return wd
+end
+
+-- a copy of a weapondef with new damage (number or multiplier via mult), blast and effects
+-- o = { damage, mult, aoe, ceg, cegtag, ... any weapondef field }
+function T4.weaponFrom(wd, o)
+	local w = deepcopy(wd)
+	if o.mult and w.damage then
+		for k, v in pairs(w.damage) do
+			w.damage[k] = v * o.mult
+		end
+	end
+	if o.damage then
+		setDamage(w, o.damage)
+	end
+	if o.aoe then
+		w.areaofeffect = o.aoe
+		w.craterareaofeffect = o.aoe
+		w.edgeeffectiveness = o.edge or 0.6
+	end
+	if o.ceg then
+		w.explosiongenerator = o.ceg
+	end
+	if o.cegtag then
+		w.cegtag = o.cegtag
+	end
+	for k, v in pairs(o) do
+		if k ~= "mult" and k ~= "damage" and k ~= "aoe" and k ~= "ceg" and k ~= "cegtag" and k ~= "edge" then
+			w[k] = deepcopy(v)
+		end
+	end
+	-- hero warheads fly through their own army (they are spawned inside the hero)
+	w.collidefriendly = false
+	w.avoidfriendly = false
+	w.stockpile = nil
+	w.commandfire = nil
+	w.metalpershot = nil
+	w.energypershot = nil
+	if w.customparams then
+		w.customparams.nuclear = nil
+		w.customparams.stockpilelimit = nil
+	end
+	return w
+end
+
+-- the Cortex tactical nuke (cortron) as a hero warhead: never intercepted, never stockpiled
+local tacnuke
+function T4.nukeWeapon(o)
+	tacnuke = tacnuke or T4.base("units/CorBuildings/LandDefenceOffence/cortron.lua", "cortron").weapondefs.cortron_weapon
+	local w = T4.weaponFrom(tacnuke, o)
+	w.name = o.name or "Hero tactical warhead"
+	w.targetable = 0
+	w.interceptedbyshieldtype = 0
+	w.reloadtime = 2
+	return w
+end
+
+-- a homing missile warhead. Replaces starburst rockets too: a starburst spawned through
+-- Spring.SpawnProjectile never turns to its target (it climbs until its ttl runs out), a homing missile
+-- launched with the starburst's upward velocity curves over onto the target just the same.
+function T4.missileWeapon(o)
+	return {
+		name = o.name or "Hero warhead",
+		weapontype = "MissileLauncher",
+		model = o.model or "cortronmissile.s3o",
+		areaofeffect = o.aoe or 300,
+		craterareaofeffect = o.aoe or 300,
+		craterboost = 0.5,
+		cratermult = 0.5,
+		edgeeffectiveness = o.edge or 0.55,
+		explosiongenerator = o.ceg,
+		cegtag = o.cegtag or "cruisemissiletrail-tacnuke",
+		flighttime = 12,
+		impulsefactor = 0.8,
+		noselfdamage = true,
+		range = o.range or 2000,
+		reloadtime = 5,
+		smokecolor = 0.7,
+		smokeperiod = 7,
+		smokesize = 14,
+		smoketime = 40,
+		smoketrail = true,
+		smoketrailcastshadow = false,
+		soundhit = o.soundhit or "nukearm",
+		soundhitwet = "nukewater",
+		soundstart = o.soundstart or "mismed1",
+		startvelocity = 200,
+		texture1 = "null",
+		texture2 = "smoketrailbar",
+		tracks = true,
+		turnrate = o.turnrate or 26000,
+		turret = true,
+		weaponacceleration = 260,
+		weapontimer = 2,
+		weaponvelocity = o.velocity or 900,
+		avoidfeature = false,
+		avoidfriendly = false,
+		collidefriendly = false,
+		collidefeature = false,
+		targetable = 0,
+		interceptedbyshieldtype = 0,
+		damage = { default = o.damage or 1000 },
+		customparams = {},
+	}
+end
+
+-- a ballistic shell for meteors, nuclear shells and bomblets
+function T4.shellWeapon(o)
+	local w = {
+		name = o.name or "Hero shell",
+		weapontype = "Cannon",
+		areaofeffect = o.aoe or 200,
+		craterareaofeffect = o.aoe or 200,
+		craterboost = 0.3,
+		cratermult = 0.5,
+		edgeeffectiveness = o.edge or 0.6,
+		explosiongenerator = o.ceg or "custom:genericshellexplosion-huge",
+		cegtag = o.cegtag,
+		impulsefactor = 0.4,
+		noselfdamage = true,
+		range = o.range or 3000,
+		reloadtime = 5,
+		rgbcolor = o.rgb or "1 0.55 0.15",
+		size = o.size or 6,
+		separation = 0.45,
+		nogap = false,
+		stages = 12,
+		sizedecay = -0.05,
+		alphadecay = 0.25,
+		soundhit = o.soundhit or "xplolrg4",
+		soundhitwet = "splslrg",
+		soundstart = o.soundstart,
+		turret = true,
+		weaponvelocity = o.velocity or 700,
+		mygravity = o.gravity,
+		avoidfeature = false,
+		avoidfriendly = false,
+		collidefriendly = false,
+		damage = { default = o.damage or 1000 },
+		customparams = {},
+	}
+	return w
+end
+
+-- an explosion-only weapon for Spring.SpawnExplosion (novas, flares)
+function T4.novaWeapon(o)
+	local w = T4.shellWeapon(o)
+	w.name = o.name or "Hero nova"
+	w.soundhit = o.soundhit or "nukearm"
+	w.camerashake = o.aoe
+	return w
+end
+
 -- the shield of the Armada/Cortex shield generators, resized for a mobile T4
 function T4.shieldWeapon(radius, power, regen)
 	return {
@@ -235,6 +431,7 @@ function T4.foundry(base, p)
 	ud.collisionvolumescales = scaleVec(ud.collisionvolumescales, scale)
 	ud.collisionvolumeoffsets = scaleVec(ud.collisionvolumeoffsets, scale)
 	ud.buildoptions = p.buildoptions
+	ud.maxthisunit = 1 -- one hero altar per team: it builds and revives the four heroes of its side
 	ud.explodeas = "korgExplosion"
 	ud.selfdestructas = "korgExplosionSelfd"
 	local cp = ud.customparams or {}

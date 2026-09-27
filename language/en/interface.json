@@ -3966,6 +3966,10 @@
 			"name": "AI Bonus: Keep base exits clear",
 			"desc": "AI teams dismantle their own (or an allied AI's) buildings when their units are trapped inside the base and cannot path out (90% metal refund). Human buildings are never touched."
 		},
+		"hero_xp_mult": {
+			"name": "T4 heroes: experience rate",
+			"desc": "How fast the T4 heroes gain levels. 1 = normal, 2 = twice as fast, 0.5 = half."
+		},
 		"ai_reveal": {
 			"name": "AI Bonus: Reveal enemy",
 			"desc": "What the AI teams always see, so their attack waves have targets: nothing, enemy buildings and commanders, or everything."

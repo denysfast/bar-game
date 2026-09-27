@@ -6,6 +6,9 @@ local savedefs = VFS.Include("gamedata/post_save_to_customparams.lua")
 -- local explosionDef_Post = alldefs.ExplosionDef_Post
 local saveDefToCustomParams = savedefs.SaveDefToCustomParams
 
+-- custom T4 heroes (denysfast/bar-game): scaled copies of the effects the heroes use
+VFS.Include("gamedata/custom_t4_fx.lua").generate(ExplosionDefs)
+
 -- handle unitdefs and the weapons they contain
 for name, explosionDef in pairs(ExplosionDefs) do
 	-- explosionDef_Post(name, explosionDef)
