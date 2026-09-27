@@ -1,42 +1,54 @@
--- Custom T4 tier, Armada (denysfast/bar-game). Built from the T3 gantry units, see gamedata/custom_t4.lua.
+-- Custom T4 heroes, Armada (denysfast/bar-game). Built from the T3 gantry units, see gamedata/custom_t4.lua;
+-- levels, talents and abilities: luarules/configs/t4_heroes.lua + luarules/gadgets/unit_t4_heroes.lua.
+-- A level-1 hero is the old T4 at 0.4x cost, health and damage (the same value for its metal, 2.5x
+-- smaller); levels and talents grow it past the old titan.
 local T4 = VFS.Include("gamedata/custom_t4.lua")
+local FX = T4.FX
 
 local units = {}
 
--- Colossus Forge: the Armada T4 foundry (Experimental Gantry model x1.5)
+-- Colossus Forge: the Armada hero altar (Experimental Gantry model x1.5)
 units.armt4gant = T4.foundry(T4.base("units/ArmBuildings/LandFactories/armshltx.lua", "armshltx"), {
 	name = "armt4gant",
-	value = 12,
+	value = 4,
 	scale = 1.5,
-	workertime = 18,
+	workertime = 12,
 	buildoptions = { "armt4atlas", "armt4olympus", "armt4aegis", "armt4zeus" },
 })
 
--- Atlas: assault titan (Bantha x2). Everything a Bantha does at 20x, plus a repair aura that keeps
--- the army around it alive - the centre of a late-game push.
-units.armt4atlas = T4.derive(T4.base("units/ArmGantry/armbanth.lua", "armbanth"), {
+-- Atlas, the Bulwark (Bantha x2): the assault anchor. Repair Field, Guardian Protocol, and rockets
+-- that end the game as tactical nukes.
+local atlas = T4.derive(T4.base("units/ArmGantry/armbanth.lua", "armbanth"), {
 	name = "armt4atlas",
-	value = 22,
-	health = 18,
-	damage = 18,
+	value = 8.8,
+	health = 7.2,
+	damage = 7.2,
 	range = 1.8,
 	aoe = 1.8,
 	scale = 2.0,
 	speed = 0.8,
 	footprint = 8,
 	movementclass = "T4BOT8",
-	overrides = {
-		customparams = { t4_heal_radius = 900, t4_heal_rate = 120 },
-	},
+})
+units.armt4atlas = T4.hero(atlas, 2.5, {
+	hero_heavyrocket = T4.missileWeapon({
+		damage = 13000, aoe = 180, ceg = FX.custom("genericshellexplosion-huge", 1.6), name = "Heavy starburst warhead",
+		model = atlas.weapondefs.bantha_rocket.model, cegtag = FX.ref("missiletrailmedium-starburst", 2.5),
+		range = atlas.weapondefs.bantha_rocket.range, soundhit = "xplolrg4",
+	}),
+	hero_nuke = T4.missileWeapon({
+		damage = 14000, aoe = 420, ceg = FX.custom("newnuketac", 0.7), range = atlas.weapondefs.bantha_rocket.range,
+		name = "Doomsday tactical nuke",
+	}),
 })
 
--- Olympus: strategic artillery walker (Vanguard x2.2). Plasma shells from 4200 elmos with a 480
--- blast, its own long radar; slow and thin-skinned for its price - it needs an escort.
+-- Olympus, the Thunderer (Vanguard x2.2): strategic artillery from 4200. Spotter Uplink, Rapid
+-- Barrage, and shells that turn nuclear.
 local olympus = T4.derive(T4.base("units/ArmGantry/armvang.lua", "armvang"), {
 	name = "armt4olympus",
-	value = 36,
-	health = 15,
-	damage = 28,
+	value = 14.4,
+	health = 6,
+	damage = 11.2,
 	range = 2.9,
 	aoe = 2.5,
 	scale = 2.2,
@@ -46,15 +58,23 @@ local olympus = T4.derive(T4.base("units/ArmGantry/armvang.lua", "armvang"), {
 	movementclass = "T4TBOT9",
 	overrides = { radardistance = 3600 },
 })
-units.armt4olympus = olympus
+units.armt4olympus = T4.hero(olympus, 2.5, {
+	hero_heavyshell = T4.weaponFrom(olympus.weapondefs.shocker_low, {
+		mult = 1.6, aoe = 380, ceg = FX.custom("genericshellexplosion-huge", 1.6), name = "Incendiary heavy shell",
+	}),
+	hero_nukeshell = T4.weaponFrom(olympus.weapondefs.shocker_low, {
+		damage = 26000, aoe = 520, ceg = FX.custom("newnuketac", 0.7), name = "Nuclear artillery shell",
+		soundhit = "nukearm",
+	}),
+})
 
--- Aegis: shield bearer (Razorback x2). A mobile 700-radius plasma deflector over the army plus
--- the Razorback's rapid lasers; fast enough to keep up with the push.
+-- Aegis, the Warden (Razorback x2): the shield bearer. Its deflector starts at 30% and grows with
+-- Deflector Matrix; Pulse Overload dumps the charge as EMP; Aegis Dome makes the army invulnerable.
 local aegis = T4.derive(T4.base("units/ArmGantry/armraz.lua", "armraz"), {
 	name = "armt4aegis",
-	value = 28,
-	health = 8,
-	damage = 12,
+	value = 11.2,
+	health = 3.2,
+	damage = 4.8,
 	range = 1.6,
 	aoe = 1.6,
 	scale = 2.0,
@@ -62,17 +82,17 @@ local aegis = T4.derive(T4.base("units/ArmGantry/armraz.lua", "armraz"), {
 	footprint = 8,
 	movementclass = "T4BOT8",
 })
-aegis.weapondefs.t4_shield = T4.shieldWeapon(700, 15000, 250)
+aegis.weapondefs.t4_shield = T4.shieldWeapon(700, 9000, 180)
 aegis.weapons[#aegis.weapons + 1] = { def = "T4_SHIELD" }
-units.armt4aegis = aegis
+units.armt4aegis = T4.hero(aegis, 2.5)
 
--- Zeus Prime: EMP storm tank (Thor x1.8). Chain lightning, a long EMP lance and stockpiled EMP
--- starbursts that paralyse whole armies (even T3) from 2100 elmos.
-units.armt4zeus = T4.derive(T4.base("units/ArmGantry/armthor.lua", "armthor"), {
+-- Zeus Prime, the Stormlord (Thor x1.8): chain lightning, a paralysing static field and a called
+-- lightning storm; its EMP missiles become EMP nukes.
+local zeus = T4.derive(T4.base("units/ArmGantry/armthor.lua", "armthor"), {
 	name = "armt4zeus",
-	value = 24,
-	health = 15,
-	damage = 11,
+	value = 9.6,
+	health = 6,
+	damage = 4.4,
 	range = 2.0,
 	aoe = 2.0,
 	scale = 1.8,
@@ -83,5 +103,23 @@ units.armt4zeus = T4.derive(T4.base("units/ArmGantry/armthor.lua", "armthor"), {
 		empmissile = { range = 1.0 },
 	},
 })
+units.armt4zeus = T4.hero(zeus, 2.2, {
+	hero_chain = T4.weaponFrom(zeus.weapondefs.thunder, {
+		mult = 0.6, burst = 1, range = 900, name = "Chain lightning", energypershot = 0,
+		ceg = FX.custom("genericshellexplosion-huge-lightning", 1.6),
+	}),
+	hero_stormbolt = T4.weaponFrom(zeus.weapondefs.thunder, {
+		damage = 1, burst = 1, range = 4000, name = "Storm bolt", thickness = 9, corethickness = 0.6,
+		ceg = FX.custom("lightning_stormbig", 2), soundstart = "lghthvy1",
+	}),
+	hero_empnuke = T4.missileWeapon({
+		damage = 560000, aoe = 700, ceg = FX.custom("genericshellexplosion-huge-lightning", 4), name = "EMP nuke",
+		model = zeus.weapondefs.empmissile.model, cegtag = FX.ref("cruisemissiletrail-emp", 2.2),
+		range = zeus.weapondefs.empmissile.range, soundhit = "mismed1emp1",
+	}),
+})
+local empnuke = units.armt4zeus.weapondefs.hero_empnuke
+empnuke.paralyzer = true
+empnuke.paralyzetime = zeus.weapondefs.empmissile.paralyzetime or 20
 
 return units

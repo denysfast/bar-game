@@ -688,6 +688,19 @@ local options = {
 
 	-- NOTE: update language/en/interface.json when you change name or desc
 	{
+		key = "hero_xp_mult",
+		name = "T4 heroes: experience rate",
+		desc = "How fast the T4 heroes gain levels. 1 = normal, 2 = twice as fast, 0.5 = half.",
+		type = "number",
+		section = "ai_bonus",
+		def = 1,
+		min = 0.25,
+		max = 5,
+		step = 0.25,
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
 		key = "ai_reveal",
 		name = "AI Bonus: Reveal enemy",
 		desc = "What the AI teams always see, so their attack waves have targets: nothing, enemy buildings and commanders, or everything.",

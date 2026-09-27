@@ -1,24 +1,30 @@
--- Custom T4 tier, Cortex (denysfast/bar-game). Built from the T3 gantry units, see gamedata/custom_t4.lua.
+-- Custom T4 heroes, Cortex (denysfast/bar-game). Built from the T3 gantry units, see gamedata/custom_t4.lua;
+-- levels, talents and abilities: luarules/configs/t4_heroes.lua + luarules/gadgets/unit_t4_heroes.lua.
 local T4 = VFS.Include("gamedata/custom_t4.lua")
+local FX = T4.FX
 
 local units = {}
 
--- Titan Crucible: the Cortex T4 foundry (Experimental Gantry model x1.5)
+-- Titan Crucible: the Cortex hero altar (Experimental Gantry model x1.5)
 units.cort4gant = T4.foundry(T4.base("units/CorBuildings/LandFactories/corgant.lua", "corgant"), {
 	name = "cort4gant",
-	value = 12,
+	value = 4,
 	scale = 1.5,
-	workertime = 18,
+	workertime = 12,
 	buildoptions = { "cort4colossus", "cort4bastion", "cort4armageddon", "cort4hellwalker" },
 })
 
--- Colossus: the Cortex flagship (Korgoth x1.8). Eradicator heat ray at 1530, gauss battery,
--- heavy rockets, and a stomp that flattens anything that gets under its feet.
-units.cort4colossus = T4.derive(T4.base("units/CorGantry/corkorg.lua", "corkorg"), {
+local function nova(dmg, aoe, scale)
+	return T4.novaWeapon({ damage = dmg, aoe = aoe, ceg = FX.custom("newnuketac", scale), name = "Nuclear nova" })
+end
+
+-- Colossus, the Warlord (Korgoth x1.8): War Stomp, a Command Aura for the army, and Undying -
+-- it refuses to die, and at rank 3 it is reborn in a nuclear blast.
+local colossus = T4.derive(T4.base("units/CorGantry/corkorg.lua", "corkorg"), {
 	name = "cort4colossus",
-	value = 15.5,
-	health = 6,
-	damage = 12,
+	value = 6.2,
+	health = 2.4,
+	damage = 4.8,
 	range = 1.4,
 	aoe = 1.8,
 	scale = 1.8,
@@ -26,18 +32,21 @@ units.cort4colossus = T4.derive(T4.base("units/CorGantry/corkorg.lua", "corkorg"
 	footprint = 11,
 	movementclass = "T4BOT11",
 	weapons = {
-		krogkick = { aoe = 2.5, damage = 30 },
+		krogkick = { aoe = 2.5, damage = 12 },
 		krogfootstep = { aoe = 2.2 },
 	},
 })
+units.cort4colossus = T4.hero(colossus, 2.2, {
+	hero_nova = nova(24000, 650, 1.5),
+})
 
--- Bastion: walking fortress (Juggernaut x1.6). 3.7 million HP, its own plasma deflector,
--- and it repairs itself; slow, but nothing short of another T4 stops it.
+-- Bastion, the Citadel (Juggernaut x1.6): Reactive Armor, Siege Protocol, and a gauss cannon that
+-- ends as a nuclear gun.
 local bastion = T4.derive(T4.base("units/CorGantry/corjugg.lua", "corjugg"), {
 	name = "cort4bastion",
-	value = 17,
-	health = 8,
-	damage = 11,
+	value = 6.8,
+	health = 3.2,
+	damage = 4.4,
 	range = 1.3,
 	aoe = 1.6,
 	scale = 1.6,
@@ -45,25 +54,31 @@ local bastion = T4.derive(T4.base("units/CorGantry/corjugg.lua", "corjugg"), {
 	footprint = 11,
 	movementclass = "T4BOT11",
 	overrides = {
-		autoheal = 800,
-		idleautoheal = 4000,
+		autoheal = 320,
+		idleautoheal = 1600,
 		idletime = 600,
 	},
 	weapons = {
-		juggernaut_fire = { damage = 5 }, -- DGun hits every unit on its path
+		juggernaut_fire = { damage = 2 }, -- DGun hits every unit on its path
 	},
 })
-bastion.weapondefs.t4_shield = T4.shieldWeapon(800, 30000, 500)
+bastion.weapondefs.t4_shield = T4.shieldWeapon(800, 12000, 200)
 bastion.weapons[#bastion.weapons + 1] = { def = "T4_SHIELD" }
-units.cort4bastion = bastion
+units.cort4bastion = T4.hero(bastion, 2.2, {
+	hero_nukeshell = T4.shellWeapon({
+		damage = 12000, aoe = 420, ceg = FX.custom("newnuketac", 0.7), name = "Nuclear gauss shell",
+		velocity = bastion.weapondefs.juggernaut_fire.weaponvelocity or 600, gravity = 0.01,
+		range = bastion.weapondefs.juggernaut_fire.range, rgb = "1 0.35 0.1", size = 9, soundhit = "nukearm",
+	}),
+})
 
--- Armageddon: rocket storm (Catapult x2). Forty-rocket salvos at 3500 elmos with a wide blast:
--- it deletes armies and bases, but it is fragile up close.
-units.cort4armageddon = T4.derive(T4.base("units/CorGantry/corcat.lua", "corcat"), {
+-- Armageddon, the Doomsayer (Catapult x2): forty-rocket salvos at 3500 elmos; Saturation adds
+-- rockets, the ultimate puts nuclear warheads into the salvo - at rank 3 every rocket.
+local armageddon = T4.derive(T4.base("units/CorGantry/corcat.lua", "corcat"), {
 	name = "cort4armageddon",
-	value = 26,
-	health = 14,
-	damage = 13,
+	value = 10.4,
+	health = 5.6,
+	damage = 5.2,
 	range = 2.6,
 	aoe = 2.5,
 	scale = 2.0,
@@ -76,14 +91,27 @@ units.cort4armageddon = T4.derive(T4.base("units/CorGantry/corcat.lua", "corcat"
 	},
 	overrides = { radardistance = 3000 },
 })
+units.cort4armageddon = T4.hero(armageddon, 2.5, {
+	-- homing: a copied Catapult rocket keeps turnrate 0 and only flies its arc when the engine fires it,
+	-- a spawned one would fly straight on
+	hero_nukerocket = T4.weaponFrom(armageddon.weapondefs.exp_heavyrocket, {
+		damage = 16000, aoe = 430, ceg = FX.custom("newnuketac", 0.7), cegtag = "cruisemissiletrail-tacnuke",
+		name = "Armageddon nuclear rocket", soundhit = "nukearm", tracks = true, turnrate = 22000, dance = 0, wobble = 0,
+		flighttime = 12, targetable = 0,
+	}),
+	hero_mininuke = T4.weaponFrom(armageddon.weapondefs.exp_heavyrocket, {
+		damage = 3200, aoe = 230, ceg = FX.custom("newnuketac", 0.45), name = "Armageddon mini-nuke",
+		tracks = true, turnrate = 20000, flighttime = 12, targetable = 0,
+	}),
+})
 
--- Hellwalker: flame titan (Demon x2). Fast for its size, a 800-elmo firestorm and shoulder rockets;
--- it runs into a base and burns it down.
-units.cort4hellwalker = T4.derive(T4.base("units/CorGantry/cordemon.lua", "cordemon"), {
+-- Hellwalker, the Inferno (Demon x2): Immolation around it, Hellcharge through the enemy lines,
+-- Rain of Fire from the sky - ending in a nuclear fireball.
+local hellwalker = T4.derive(T4.base("units/CorGantry/cordemon.lua", "cordemon"), {
 	name = "cort4hellwalker",
-	value = 23,
-	health = 13,
-	damage = 11,
+	value = 9.2,
+	health = 5.2,
+	damage = 4.4,
 	range = 1.6,
 	aoe = 1.3,
 	scale = 2.0,
@@ -91,9 +119,16 @@ units.cort4hellwalker = T4.derive(T4.base("units/CorGantry/cordemon.lua", "corde
 	footprint = 8,
 	movementclass = "T4BOT8",
 	weapons = {
-		dmaw = { damage = 8 },
-		newdmaw = { damage = 8 },
+		dmaw = { damage = 3.2 },
+		newdmaw = { damage = 3.2 },
 	},
+})
+units.cort4hellwalker = T4.hero(hellwalker, 2.5, {
+	hero_meteor = T4.shellWeapon({
+		damage = 3500, aoe = 240, ceg = FX.custom("genericshellexplosion-huge", 1.6), cegtag = "meteortrail",
+		name = "Hellfire meteor", rgb = "1 0.4 0.05", size = 14, soundhit = "xplolrg4",
+	}),
+	hero_nova = nova(20000, 600, 1.5),
 })
 
 return units

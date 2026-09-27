@@ -77,9 +77,9 @@
 	
 		"caretaker": 6
 	},
-	// custom T4 tier (denysfast/bar-game): T4 foundry, chosen by Factory::TechUp past 2500 m/s
+	// custom T4 heroes (denysfast/bar-game): the hero altar, only ever picked by Factory::T4Foundry
 	"legt4gant": {
-		"importance": [0.0, 4.0],
+		"importance": [0.0, 0.0],
 		"require_energy": true,
 		"income_tier": [3000, 5000, 8000],
 		"unit":      ["legt4helios", "legt4starfall", "legt4longinus", "legt4tempest"],

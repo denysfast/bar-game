@@ -88,7 +88,7 @@
 
 		"behaviour": {
 		// custom T4 tier (denysfast/bar-game)
-		"legt4gant": { "role": ["static"], "attribute": ["support"], "limit": 3, "build_speed": 1.0, "since": 600 },
+		"legt4gant": { "role": ["static"], "attribute": ["support"], "limit": 1, "build_speed": 1.0, "since": 480 },
 		"legt4helios": { "role": ["super"], "attribute": ["melee"], "power": 1.5, "retreat": 0.0 },
 		"legt4starfall": { "role": ["artillery"], "attribute": ["siege"], "threat": {"surf": 0.5, "vs": {"static": 4.0, "artillery": 4.0}}, "power": 0.6, "retreat": 0.0 },
 		"legt4longinus": { "role": ["skirmish"], "threat": {"air": 0.0, "water": 0.0, "surf": 1.0}, "power": 1.2, "retreat": 0.0 },

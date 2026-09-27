@@ -58,9 +58,9 @@ string legt4gant("legt4gant");
 float switchLimit = MakeSwitchLimit();
 
 /*
- * custom T4 tier: a T4 foundry keeps its four titans in a mixed army. The stock pick leans on the
- * response system and a batch of the last pick, and one titan of the four took the whole
- * production. Next titan = the one with the smallest count / weight.
+ * custom T4 heroes: a T4 foundry (hero altar) builds each of its four heroes once. A hero is unique
+ * (maxThisUnit 1), so a dead one has count 0 again and the altar rebuilds it - that is the revive
+ * (the hero gadget charges the revive price and restores the level minus 5). Order: by weight.
  */
 array<string> t4Titans = {
 	"armt4atlas", "armt4olympus", "armt4aegis", "armt4zeus",
@@ -81,7 +81,7 @@ IUnitTask@ AiMakeTask(CCircuitUnit@ unit)
 			if (t4Titans[i].substr(0, 3) != side)
 				continue;
 			CCircuitDef@ d = ai.GetCircuitDef(t4Titans[i]);
-			if (d is null || !d.IsAvailable(ai.frame))
+			if (d is null || !d.IsAvailable(ai.frame) || d.count >= d.maxThisUnit)
 				continue;
 			const float score = (d.count + 1) / t4Weights[i];
 			if (score < best) {
@@ -90,9 +90,10 @@ IUnitTask@ AiMakeTask(CCircuitUnit@ unit)
 			}
 		}
 		if (pick !is null) {
-			AiLog("[custom] t4: " + unit.circuitDef.GetName() + " builds " + pick.GetName() + " (have " + pick.count + ")");
+			AiLog("[custom] hero: " + unit.circuitDef.GetName() + " builds " + pick.GetName());
 			return aiFactoryMgr.Enqueue(TaskS::Recruit(Task::RecruitType::FIREPOWER, Task::Priority::HIGH, pick, unit.GetPos(ai.frame), 64.f));
 		}
+		return null;  // every hero is alive: the altar idles instead of the stock pick
 	}
 	return aiFactoryMgr.DefaultMakeTask(unit);
 }
@@ -184,7 +185,7 @@ bool AiIsSwitchAllowed(CCircuitDef@ facDef)
  */
 const float TECH_T2_INCOME = 150.f;
 const float TECH_T3_INCOME = 800.f;
-const float TECH_T4_INCOME = 2500.f;  // custom T4 tier: a gantry pick becomes the T4 foundry
+const float TECH_T4_INCOME = 700.f;  // custom T4 heroes: a gantry pick becomes the hero altar
 
 CCircuitDef@ Upgrade(CCircuitDef@ d, const string& in from, const string& in to)
 {
@@ -199,7 +200,7 @@ CCircuitDef@ Upgrade(CCircuitDef@ d, const string& in from, const string& in to)
 	return u;
 }
 
-// the T4 foundry of our side, once the income is there and 2+ T3 gantries stand (the gantry count
+// the hero altar of our side, once the income is there and a T3 gantry stands (the gantry count
 // is per team, so only our own side's gantries have one)
 CCircuitDef@ T4Foundry()
 {
@@ -209,7 +210,7 @@ CCircuitDef@ T4Foundry()
 	array<string> f = {armt4gant, cort4gant, legt4gant};
 	for (uint i = 0; i < g.length(); ++i) {
 		CCircuitDef@ gantry = ai.GetCircuitDef(g[i]);
-		if (gantry is null || gantry.count < 2)
+		if (gantry is null || gantry.count < 1)
 			continue;
 		CCircuitDef@ t4 = ai.GetCircuitDef(f[i]);
 		if (ai.frame % 9000 < 900 && t4 !is null)
@@ -218,7 +219,7 @@ CCircuitDef@ T4Foundry()
 			return t4;
 	}
 	if (ai.frame % 9000 < 900)
-		AiLog("[custom] t4: no side with 2+ gantries");
+		AiLog("[custom] t4: no side with a gantry");
 	return null;
 }
 
@@ -258,6 +259,9 @@ CCircuitDef@ AiGetFactoryToBuild(const AIFloat3& in pos, bool isStart, bool isRe
 	CCircuitDef@ d = aiFactoryMgr.DefaultGetFactoryToBuild(pos, isStart, isReset);
 	if (isStart)
 		return d;
+	// the hero altar comes only through T4Foundry (income gate), never as a stock pick
+	if (d !is null && (userData[d.id].attr & Attr::T4) != 0)
+		@d = null;
 	if (d is null)  // every usual factory at its limit: the T4 foundry still grows the production
 		return T4Foundry();
 	return TechUp(d);

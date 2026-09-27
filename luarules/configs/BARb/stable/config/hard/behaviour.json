@@ -132,8 +132,8 @@
 			"build_speed": 15.0 //bp 300
 		},
 		// custom T4 tier (denysfast/bar-game): foundries (built by T2 constructors) and titans
-		"armt4gant": { "role": ["static"], "attribute": ["support"], "midposoffset": [0, 0, -24], "limit": 3, "build_speed": 1.0, "since": 600 },
-		"cort4gant": { "role": ["static"], "attribute": ["support"], "limit": 3, "build_speed": 1.0, "since": 600 },
+		"armt4gant": { "role": ["static"], "attribute": ["support"], "midposoffset": [0, 0, -24], "limit": 1, "build_speed": 1.0, "since": 480 },
+		"cort4gant": { "role": ["static"], "attribute": ["support"], "limit": 1, "build_speed": 1.0, "since": 480 },
 		"armt4atlas": { "role": ["super"], "attribute": ["melee"], "threat": {"air": 0.3, "water": 0.0, "surf": 1.0}, "power": 1.5, "retreat": 0.0 },
 		"armt4olympus": { "role": ["artillery"], "attribute": ["siege"], "threat": {"air": 0.0, "water": 0.0, "surf": 0.5, "vs": {"static": 4.0, "artillery": 4.0}}, "power": 0.6, "retreat": 0.0 },
 		"armt4aegis": { "role": ["heavy", "riot"], "attribute": ["melee"], "threat": {"air": 0.3, "water": 0.0, "surf": 1.0}, "power": 1.0, "retreat": 0.0 },
