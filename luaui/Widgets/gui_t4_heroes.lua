@@ -1,11 +1,16 @@
 --------------------------------------------------------------------------------
 --
 --  file:    gui_t4_heroes.lua
---  brief:   UI of the custom T4 heroes (denysfast/bar-game): the team's hero roster (level, health,
---           experience, unspent points, fallen heroes with their revive level and price), the talent
---           panel of the selected hero (learn a rank, cast an ability, cooldowns), levels above the
---           heroes in the world, aura rings and floating texts. The rules live in
---           luarules/gadgets/unit_t4_heroes.lua, the design data in luarules/configs/t4_heroes.lua.
+--  brief:   Warcraft 3 style UI of the custom T4 heroes (denysfast/bar-game):
+--           * hero buttons at the top left (portrait, level, health, experience, unspent points,
+--             fallen heroes with their revive level and price)
+--           * the hero console at the bottom when a hero is selected: portrait, name, level and
+--             experience, stats, the six-slot inventory, the command card with the abilities
+--             (cooldown sweeps, hotkeys Q W R) and the upgrade window (weapon trees, plating,
+--             servos, abilities, each rank for a talent point and metal)
+--           * items lying on the ground, levels above heroes, aura rings, floating texts
+--  The rules live in luarules/gadgets/unit_t4_heroes.lua, the design data in luarules/configs/t4_heroes.lua,
+--  the art in bitmaps/t4heroes/ (generated with content-master, see CUSTOM.md).
 --  Licensed under the terms of the GNU GPL, v2 or later.
 --
 --------------------------------------------------------------------------------
@@ -15,9 +20,9 @@ local widget = widget ---@type Widget
 function widget:GetInfo()
 	return {
 		name = "T4 Heroes",
-		desc = "Hero roster, talent panel, hero levels and auras of the custom T4 heroes",
+		desc = "Warcraft-style hero buttons, hero console, inventory, upgrade window and ground items of the custom T4 heroes",
 		author = "denysfast",
-		date = "2026-09-27",
+		date = "2026-09-28",
 		license = "GNU GPL, v2 or later",
 		layer = 5,
 		enabled = true,
@@ -37,7 +42,9 @@ local spValidUnitID = Spring.ValidUnitID
 local spGetUnitDefID = Spring.GetUnitDefID
 local spGetUnitTeam = Spring.GetUnitTeam
 local spIsUnitAllied = Spring.IsUnitAllied
-local floor, max, min = math.floor, math.max, math.min
+local floor, max, min, sin, cos, pi = math.floor, math.max, math.min, math.sin, math.cos, math.pi
+
+local ART = "bitmaps/t4heroes/"
 
 local heroDefIDs = {} -- unitDefID -> hero name
 local heroDefList = {}
@@ -49,29 +56,34 @@ for udid, ud in pairs(UnitDefs) do
 end
 
 local vsx, vsy = Spring.GetViewGeometry()
-local font, fontSize
+local font
 local uiScale = 1
 
 local tracked = {}  -- unitID -> hero name, every hero this client can see
-local floating = {} -- { x, y, z, text, r, g, b, t0, dur, size }
+local floating = {}
 local roster = {}   -- rows of the team's heroes
-local selectedHero  -- unitID with the talent panel
-local boxes = {}    -- clickable regions of the last frame: { x1, y1, x2, y2, fn, tip }
+local selectedHero  -- unitID shown in the console
+local boxes = {}    -- clickable regions of the last frame: { x1, y1, x2, y2, fn, tip, fnRight }
 local hoverTip
+local showUpgrades = false
+local groundItems = {} -- { id, item, x, z }
+local groundStr
 
 -- colors
 local GOLD = { 1, 0.82, 0.25, 1 }
 local WHITE = { 1, 1, 1, 1 }
-local GREY = { 0.62, 0.62, 0.62, 1 }
+local GREY = { 0.6, 0.6, 0.6, 1 }
+local DARK = { 0.35, 0.35, 0.35, 1 }
 local RED = { 1, 0.35, 0.3, 1 }
 local GREEN = { 0.45, 1, 0.45, 1 }
 local BLUE = { 0.5, 0.75, 1, 1 }
+local ORANGE = { 1, 0.6, 0.25, 1 }
 
 local function getFont()
 	if WG.fonts and WG.fonts.getFont then
-		font, fontSize = WG.fonts.getFont(2, 1.2)
+		font = WG.fonts.getFont(2, 1.2)
 	else
-		font, fontSize = gl.LoadFont("fonts/Exo2-SemiBold.otf", 24, 4, 1.5), 24
+		font = gl.LoadFont("fonts/Exo2-SemiBold.otf", 24, 4, 1.5)
 	end
 	return font
 end
@@ -82,14 +94,25 @@ function widget:ViewResize()
 	font = nil
 end
 
-local function heroName(name)
+local function heroTitle(name)
 	local cfg = H.heroes[name]
 	return cfg and cfg.title or name
 end
 
 local function shortName(name)
 	local ud = UnitDefNames[name]
-	return ud and ud.translatedHumanName or ud and ud.humanName or name
+	return ud and (ud.translatedHumanName or ud.humanName) or name
+end
+
+local function fmtNum(v)
+	if v >= 1e6 then
+		return string.format("%.1fM", v / 1e6)
+	elseif v >= 1e4 then
+		return string.format("%dk", floor(v / 1000 + 0.5))
+	elseif v >= 1000 then
+		return string.format("%.1fk", v / 1000)
+	end
+	return tostring(floor(v + 0.5))
 end
 
 ---------------------------------------------------------------------------- tracking
@@ -101,8 +124,7 @@ local function refreshTracked()
 		end
 	end
 	for _, teamID in ipairs(Spring.GetTeamList()) do
-		local units = Spring.GetTeamUnitsByDefs(teamID, heroDefList)
-		for _, uid in ipairs(units or {}) do
+		for _, uid in ipairs(Spring.GetTeamUnitsByDefs(teamID, heroDefList) or {}) do
 			tracked[uid] = heroDefIDs[spGetUnitDefID(uid)]
 		end
 	end
@@ -116,8 +138,7 @@ local function refreshRoster()
 	roster = {}
 	local team = myTeam()
 	local alive = {}
-	local units = Spring.GetTeamUnitsByDefs(team, heroDefList) or {}
-	for _, uid in ipairs(units) do
+	for _, uid in ipairs(Spring.GetTeamUnitsByDefs(team, heroDefList) or {}) do
 		local _, _, _, _, bp = spGetUnitHealth(uid)
 		local name = heroDefIDs[spGetUnitDefID(uid)]
 		if name then
@@ -140,17 +161,35 @@ local function refreshRoster()
 end
 
 local function pickSelected()
-	selectedHero = nil
-	local best
+	local keep
 	for _, uid in ipairs(Spring.GetSelectedUnits()) do
-		if tracked[uid] or heroDefIDs[spGetUnitDefID(uid) or -1] then
+		if heroDefIDs[spGetUnitDefID(uid) or -1] then
 			local _, _, _, _, bp = spGetUnitHealth(uid)
 			if bp and bp >= 1 then
-				local pts = spGetUnitRulesParam(uid, "hero_points") or 0
-				if not best or pts > best then
-					best, selectedHero = pts, uid
+				if uid == selectedHero then
+					return
 				end
+				keep = keep or uid
 			end
+		end
+	end
+	selectedHero = keep
+	if not keep then
+		showUpgrades = false
+	end
+end
+
+local function refreshGround()
+	local str = Spring.GetGameRulesParam("hero_ground")
+	if str == groundStr then
+		return
+	end
+	groundStr = str
+	groundItems = {}
+	for id, idx, x, z in (str or ""):gmatch("(%d+):(%d+):(%-?%d+):(%-?%d+)") do
+		local item = H.itemOrder[tonumber(idx)]
+		if item then
+			groundItems[#groundItems + 1] = { id = tonumber(id), item = item, x = tonumber(x), z = tonumber(z) }
 		end
 	end
 end
@@ -184,34 +223,90 @@ local function toggleAutocast(uid)
 	Spring.GiveOrderToUnit(uid, 36100, { on and 0 or 1 }, 0)
 end
 
-local function focusUnit(uid)
+local function focusUnit(uid, camera)
 	Spring.SelectUnitArray({ uid })
-	local x, y, z = spGetUnitPosition(uid)
-	if x then
-		Spring.SetCameraTarget(x, y, z, 0.3)
+	if camera then
+		local x, y, z = spGetUnitPosition(uid)
+		if x then
+			Spring.SetCameraTarget(x, y, z, 0.3)
+		end
 	end
 end
+
+local lastRosterClick = { uid = nil, t = nil }
 
 ---------------------------------------------------------------------------- drawing helpers
 
-local function rect(x1, y1, x2, y2, c)
-	gl.Color(c[1], c[2], c[3], c[4] or 1)
+local function rect(x1, y1, x2, y2, c, a)
+	gl.Color(c[1], c[2], c[3], a or c[4] or 1)
 	gl.Rect(x1, y1, x2, y2)
 end
 
-local function panelBg(x1, y1, x2, y2)
-	if WG.FlowUI and WG.FlowUI.Draw and WG.FlowUI.Draw.Element then
-		WG.FlowUI.Draw.Element(x1, y1, x2, y2, 1, 1, 1, 1)
-	else
-		rect(x1, y1, x2, y2, { 0, 0, 0, 0.6 })
+local function frame(x1, y1, x2, y2, c, w)
+	w = w or 2
+	rect(x1, y1, x2, y1 + w, c)
+	rect(x1, y2 - w, x2, y2, c)
+	rect(x1, y1, x1 + w, y2, c)
+	rect(x2 - w, y1, x2, y2, c)
+end
+
+-- a Warcraft-like panel: dark stone fill, bronze double border
+local function panel(x1, y1, x2, y2)
+	gl.Color(0.05, 0.05, 0.07, 0.86)
+	gl.Rect(x1, y1, x2, y2)
+	gl.BeginEnd(GL.QUADS, function()
+		gl.Color(0.16, 0.14, 0.12, 0.6)
+		gl.Vertex(x1, y2)
+		gl.Vertex(x2, y2)
+		gl.Color(0.02, 0.02, 0.03, 0.0)
+		gl.Vertex(x2, (y1 + y2) / 2)
+		gl.Vertex(x1, (y1 + y2) / 2)
+	end)
+	frame(x1, y1, x2, y2, { 0.45, 0.34, 0.16, 1 }, 3)
+	frame(x1 + 4, y1 + 4, x2 - 4, y2 - 4, { 0.22, 0.17, 0.09, 1 }, 1)
+end
+
+local function tex(path, x1, y1, x2, y2, r, g, b, a)
+	gl.Color(r or 1, g or 1, b or 1, a or 1)
+	gl.Texture(path)
+	gl.TexRect(x1, y1, x2, y2)
+	gl.Texture(false)
+end
+
+local function bar(x1, y1, x2, y2, frac, c, bg)
+	rect(x1, y1, x2, y2, bg or { 0, 0, 0, 0.7 })
+	if frac > 0 then
+		rect(x1 + 1, y1 + 1, x1 + 1 + (x2 - x1 - 2) * min(1, frac), y2 - 1, c)
+		gl.BeginEnd(GL.QUADS, function()
+			gl.Color(1, 1, 1, 0.25)
+			gl.Vertex(x1 + 1, y2 - 1)
+			gl.Vertex(x1 + 1 + (x2 - x1 - 2) * min(1, frac), y2 - 1)
+			gl.Color(1, 1, 1, 0)
+			gl.Vertex(x1 + 1 + (x2 - x1 - 2) * min(1, frac), (y1 + y2) / 2)
+			gl.Vertex(x1 + 1, (y1 + y2) / 2)
+		end)
 	end
 end
 
-local function bar(x1, y1, x2, y2, frac, c)
-	rect(x1, y1, x2, y2, { 0, 0, 0, 0.55 })
-	if frac > 0 then
-		rect(x1 + 1, y1 + 1, x1 + 1 + (x2 - x1 - 2) * min(1, frac), y2 - 1, c)
+-- the dark clock sweep of a cooldown over an icon, frac = share still to wait
+local function sweep(x1, y1, x2, y2, frac)
+	if frac <= 0 then
+		return
 	end
+	local cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+	local r = (x2 - x1) * 0.75
+	gl.Scissor(x1, y1, x2 - x1, y2 - y1)
+	gl.Color(0, 0, 0, 0.66)
+	gl.BeginEnd(GL.TRIANGLE_FAN, function()
+		gl.Vertex(cx, cy)
+		local steps = 40
+		local a0 = pi / 2
+		for i = 0, steps do
+			local a = a0 + (i / steps) * frac * 2 * pi
+			gl.Vertex(cx + cos(a) * r, cy + sin(a) * r)
+		end
+	end)
+	gl.Scissor(false)
 end
 
 local function text(str, x, y, size, c, opts)
@@ -219,105 +314,138 @@ local function text(str, x, y, size, c, opts)
 	font:Print(str, x, y, size, opts or "o")
 end
 
-local function addBox(x1, y1, x2, y2, fn, tip)
-	boxes[#boxes + 1] = { x1, y1, x2, y2, fn, tip }
+local function addBox(x1, y1, x2, y2, fn, tip, fnRight)
+	boxes[#boxes + 1] = { x1, y1, x2, y2, fn, tip, fnRight }
 end
 
-local function button(x1, y1, x2, y2, label, enabled, c, fn, tip)
+local function hovered(x1, y1, x2, y2)
 	local mx, my = Spring.GetMouseState()
-	local hover = mx >= x1 and mx <= x2 and my >= y1 and my <= y2
-	local bg = enabled and (hover and { c[1] * 0.55, c[2] * 0.55, c[3] * 0.55, 0.95 } or { c[1] * 0.35, c[2] * 0.35, c[3] * 0.35, 0.9 })
-		or { 0.12, 0.12, 0.12, 0.8 }
-	rect(x1, y1, x2, y2, bg)
-	text(label, (x1 + x2) / 2, (y1 + y2) / 2 - (y2 - y1) * 0.28, (y2 - y1) * 0.62, enabled and c or GREY, "co")
-	if enabled and fn then
-		addBox(x1, y1, x2, y2, fn, tip)
-	elseif tip then
-		addBox(x1, y1, x2, y2, nil, tip)
-	end
+	return mx >= x1 and mx <= x2 and my >= y1 and my <= y2
 end
 
----------------------------------------------------------------------------- roster
-
-local function drawRoster(x2, yTop)
-	if #roster == 0 then
-		return yTop
+-- an icon button: art, a frame that lights up under the mouse, disabled -> greyed
+local function iconButton(path, x1, y1, x2, y2, enabled, border, fn, tip, fnRight)
+	local hov = hovered(x1, y1, x2, y2)
+	rect(x1 - 2, y1 - 2, x2 + 2, y2 + 2, { 0, 0, 0, 0.9 })
+	if path then
+		local k = enabled and (hov and 1.15 or 1) or 0.38
+		tex(path, x1, y1, x2, y2, k, k, k, 1)
 	end
-	local rowH = floor(vsy * 0.03 * uiScale)
-	local w = floor(vsy * 0.26 * uiScale)
-	local x1 = x2 - w
-	local pad = floor(rowH * 0.18)
-	local y2 = yTop
-	local y1 = y2 - rowH * (#roster + 1) - pad * 2
-	panelBg(x1, y1, x2, y2)
-	text("HEROES", x1 + pad * 2, y2 - pad - rowH * 0.7, rowH * 0.55, GOLD)
-	local frame = spGetGameFrame()
-	for i, r in ipairs(roster) do
-		local ry2 = y2 - pad - rowH * i
-		local ry1 = ry2 - rowH + 2
-		local nameX = x1 + pad * 2
+	frame(x1 - 2, y1 - 2, x2 + 2, y2 + 2, hov and enabled and { 1, 0.9, 0.5, 1 } or (border or { 0.45, 0.34, 0.16, 1 }), 2)
+	addBox(x1, y1, x2, y2, enabled and fn or nil, tip, fnRight)
+	return hov
+end
+
+---------------------------------------------------------------------------- tooltips (rich text)
+
+local function rankLine(name, key, rank)
+	local b = H.branch(name, key)
+	if not b then
+		return ""
+	end
+	if b.text then
+		local cur = rank > 0 and b.text[rank] or nil
+		local nxt = b.text[rank + 1]
+		local s = ""
+		if cur then
+			s = s .. "\n\255\120\255\120Now: " .. cur
+		end
+		if nxt then
+			s = s .. "\n\255\255\210\080Next: " .. nxt
+		end
+		return s
+	end
+	return ""
+end
+
+local function learnTip(uid, name, key)
+	local b = H.branch(name, key)
+	local rank = spGetUnitRulesParam(uid, "hero_rank_" .. key) or 0
+	local maxRank = H.maxRank(name, key)
+	local s = "\255\255\210\064" .. b.name .. "\255\255\255\255  (" .. rank .. "/" .. maxRank .. ")\n" .. (b.desc or "")
+	s = s .. rankLine(name, key, rank)
+	if rank < maxRank then
+		local req = H.reqLevel(name, key, rank + 1)
+		local cost = H.metalCost(name, key, rank + 1)
+		s = s .. string.format("\n\255\200\200\200Rank %d: level %d, 1 point, %s metal", rank + 1, req, fmtNum(cost))
+	end
+	return s
+end
+
+local function itemTip(item)
+	local it = H.items[item]
+	local c = H.rarities[it.rarity].color
+	return string.format("\255%s%s%s%s\255\255\255\255  (%s)\n%s", string.char(floor(c[1] * 255)), string.char(floor(c[2] * 255)),
+		string.char(floor(c[3] * 255)), it.name, it.rarity, it.desc)
+end
+
+---------------------------------------------------------------------------- hero buttons (top left)
+
+local function drawHeroButtons()
+	if #roster == 0 then
+		return
+	end
+	local size = floor(vsy * 0.062 * uiScale)
+	local gap = floor(size * 0.42)
+	-- right of the minimap, like the hero icons of Warcraft 3 at the top left
+	local x1 = floor(vsy * 0.012)
+	local y = vsy - floor(vsy * 0.012)
+	local _, _, mmW = Spring.GetMiniMapGeometry()
+	if mmW and mmW > 0 then
+		x1 = mmW + floor(vsy * 0.012)
+	end
+	local f = spGetGameFrame()
+	for _, r in ipairs(roster) do
+		local y2 = y
+		local y1 = y2 - size
+		local xa, xb = x1, x1 + size
+		local portrait = ART .. "portrait_" .. r.name .. ".png"
 		if r.uid and not r.building then
 			local lvl = spGetUnitRulesParam(r.uid, "hero_level") or 1
 			local xp = spGetUnitRulesParam(r.uid, "hero_xp") or 0
 			local pts = spGetUnitRulesParam(r.uid, "hero_points") or 0
 			local hp, maxHp = spGetUnitHealth(r.uid)
-			local retreat = (spGetUnitRulesParam(r.uid, "hero_retreat") or 0) > 0
-			if r.uid == selectedHero then
-				rect(x1 + pad, ry1, x2 - pad, ry2, { 1, 0.8, 0.2, 0.12 })
-			end
-			text(string.format("%d", lvl), nameX + rowH * 0.45, ry1 + rowH * 0.25, rowH * 0.6, GOLD, "co")
-			text(shortName(r.name), nameX + rowH * 1.1, ry1 + rowH * 0.38, rowH * 0.5, retreat and BLUE or WHITE)
-			local bx1 = x1 + w * 0.52
-			local bx2 = x2 - pad * 2 - (pts > 0 and rowH or 0)
-			bar(bx1, ry1 + rowH * 0.5, bx2, ry1 + rowH * 0.85, hp and maxHp and hp / maxHp or 0, { 0.3, 0.9, 0.3, 0.95 })
-			bar(bx1, ry1 + rowH * 0.15, bx2, ry1 + rowH * 0.4, xp, { 0.95, 0.75, 0.2, 0.95 })
+			local sel = r.uid == selectedHero
 			if pts > 0 then
-				local blink = (frame % 30 < 20) and 1 or 0.6
-				text("+" .. pts, x2 - pad * 2 - rowH * 0.5, ry1 + rowH * 0.25, rowH * 0.6, { 1, 0.85, 0.2, blink }, "co")
+				local glow = 0.5 + 0.5 * sin(f * 0.2)
+				rect(xa - 5, y1 - 5, xb + 5, y2 + 5, { 1, 0.8, 0.2, 0.35 + 0.35 * glow })
 			end
-			addBox(x1, ry1, x2, ry2, function() focusUnit(r.uid) end,
-				string.format("%s - level %d%s. Click to select.", heroName(r.name), lvl, pts > 0 and (", " .. pts .. " talent points to spend") or ""))
+			iconButton(portrait, xa, y1, xb, y2, true, sel and GOLD or nil, function()
+				local now = Spring.GetTimer()
+				local dbl = lastRosterClick.uid == r.uid and lastRosterClick.t and Spring.DiffTimers(now, lastRosterClick.t) < 0.4
+				focusUnit(r.uid, dbl)
+				lastRosterClick.uid, lastRosterClick.t = r.uid, now
+			end, string.format("%s - level %d%s\nClick: select, double click: go to", heroTitle(r.name), lvl,
+				pts > 0 and ("\n\255\255\210\064" .. pts .. " skill points to spend") or ""))
+			-- level badge
+			local bs = size * 0.36
+			rect(xb - bs, y1, xb, y1 + bs, { 0, 0, 0, 0.85 })
+			frame(xb - bs, y1, xb, y1 + bs, GOLD, 1)
+			text(tostring(lvl), xb - bs / 2, y1 + bs * 0.2, bs * 0.66, GOLD, "co")
+			bar(xa, y1 - size * 0.14, xb, y1 - size * 0.04, hp and maxHp and hp / maxHp or 0, { 0.2, 0.9, 0.25, 1 })
+			bar(xa, y1 - size * 0.25, xb, y1 - size * 0.16, xp, { 0.55, 0.35, 1, 1 })
 		elseif r.uid and r.building then
-			text("..", nameX + rowH * 0.45, ry1 + rowH * 0.25, rowH * 0.6, GREY, "co")
-			text(shortName(r.name), nameX + rowH * 1.1, ry1 + rowH * 0.38, rowH * 0.5, GREY)
-			bar(x1 + w * 0.52, ry1 + rowH * 0.3, x2 - pad * 2, ry1 + rowH * 0.7, r.progress or 0, { 0.5, 0.75, 1, 0.9 })
-			addBox(x1, ry1, x2, ry2, nil, r.deadLevel > 0 and string.format("Reviving %s at level %d", heroName(r.name), r.deadLevel)
-				or string.format("Building %s", heroName(r.name)))
+			iconButton(portrait, xa, y1, xb, y2, false, nil, nil,
+				r.deadLevel > 0 and string.format("Reviving %s at level %d", heroTitle(r.name), r.deadLevel) or string.format("Building %s", heroTitle(r.name)))
+			bar(xa, y1 - size * 0.14, xb, y1 - size * 0.04, r.progress or 0, { 0.5, 0.75, 1, 0.9 })
 		else
-			text(string.format("%d", r.deadLevel), nameX + rowH * 0.45, ry1 + rowH * 0.25, rowH * 0.6, RED, "co")
-			text(shortName(r.name), nameX + rowH * 1.1, ry1 + rowH * 0.38, rowH * 0.5, RED)
-			text(string.format("fallen  %dk", floor(r.revive / 1000 + 0.5)), x2 - pad * 2, ry1 + rowH * 0.38, rowH * 0.45, GREY, "ro")
-			addBox(x1, ry1, x2, ry2, nil, string.format("%s has fallen. Rebuild it at the hero altar to revive it at level %d for %d metal.",
-				heroName(r.name), r.deadLevel, r.revive))
+			iconButton(portrait, xa, y1, xb, y2, false, { 0.5, 0.1, 0.1, 1 }, nil,
+				string.format("%s has fallen at level %d.\nRebuild it at the hero altar to revive it (%s metal).", heroTitle(r.name), r.deadLevel, fmtNum(r.revive)))
+			text("x", (xa + xb) / 2, y1 + size * 0.2, size * 0.7, { 0.8, 0.1, 0.1, 0.8 }, "co")
+			text(tostring(r.deadLevel), xb - size * 0.18, y1 + size * 0.05, size * 0.28, RED, "co")
 		end
+		y = y1 - gap
 	end
-	return y1
 end
 
----------------------------------------------------------------------------- talent panel
+---------------------------------------------------------------------------- console (bottom)
 
-local function rankPips(rank, maxRank)
-	local s = ""
-	for i = 1, maxRank do
-		s = s .. (i <= rank and "\255\255\210\064|" or "\255\090\090\090|")
-	end
-	return s
+local function stat(label, value, x, y, size, c)
+	text(label, x, y, size, GREY)
+	text(value, x + size * 6.4, y, size, c or WHITE)
 end
 
-local function branchText(name, key, rank)
-	local b = H.branch(name, key)
-	if H.common[key] then
-		return b.desc
-	end
-	local cur = rank > 0 and b.text[rank] or nil
-	local nxt = b.text[rank + 1]
-	if cur and nxt then
-		return cur .. "  >  " .. nxt
-	end
-	return cur or ("next: " .. (nxt or ""))
-end
-
-local function drawPanel(x2, yTop, uid)
+local function drawConsole(uid)
 	local name = heroDefIDs[spGetUnitDefID(uid) or -1]
 	if not name then
 		return
@@ -326,89 +454,267 @@ local function drawPanel(x2, yTop, uid)
 	local own = spGetUnitTeam(uid) == myTeam()
 	local lvl = spGetUnitRulesParam(uid, "hero_level") or 1
 	local xp = spGetUnitRulesParam(uid, "hero_xp") or 0
+	local xpAbs = spGetUnitRulesParam(uid, "hero_xp_abs") or 0
+	local xpNeed = spGetUnitRulesParam(uid, "hero_xp_need") or 0
 	local pts = spGetUnitRulesParam(uid, "hero_points") or 0
 	local hpMult = spGetUnitRulesParam(uid, "hero_hpmult") or 1
-	local autocast = (spGetUnitRulesParam(uid, "hero_autocast") or 1) == 1
-	local frame = spGetGameFrame()
+	local f = spGetGameFrame()
 
-	local rowH = floor(vsy * 0.042 * uiScale)
-	local w = floor(vsy * 0.42 * uiScale)
-	local pad = floor(rowH * 0.15)
-	local headH = floor(rowH * 1.35)
-	local x1 = x2 - w
-	local y2 = yTop
-	local y1 = y2 - headH - rowH * #H.branchOrder - pad * 3
-	panelBg(x1, y1, x2, y2)
-
-	-- header: title, level, experience, points, autocast
-	local hy = y2 - pad - headH
-	text(cfg.title, x1 + pad * 2, hy + headH * 0.58, headH * 0.36, GOLD)
-	text(string.format("Level %d   %s", lvl, cfg.role), x1 + pad * 2, hy + headH * 0.28, headH * 0.26, WHITE)
-	local hp, maxHp = spGetUnitHealth(uid)
-	if hp then
-		text(string.format("HP %dk / %dk", floor(hp * hpMult / 1000), floor(maxHp * hpMult / 1000)), x2 - pad * 2, hy + headH * 0.62, headH * 0.24, GREEN, "ro")
-	end
-	bar(x1 + pad * 2, hy + headH * 0.06, x2 - pad * 2, hy + headH * 0.2, lvl >= H.MAX_LEVEL and 1 or xp, { 0.95, 0.75, 0.2, 0.95 })
-	if own then
-		if pts > 0 then
-			text(string.format("%d point%s", pts, pts > 1 and "s" or ""), x2 - pad * 2, hy + headH * 0.32, headH * 0.26, GOLD, "ro")
+	-- between BAR's order menu (bottom left) and the player list (bottom right)
+	local left, right = floor(vsx * 0.3), vsx - floor(vsx * 0.12)
+	if WG.ordermenu and WG.ordermenu.getPosition then
+		local ox, _, ow = WG.ordermenu.getPosition()
+		if ox and ow then
+			left = floor((ox + ow) * vsx) + 6
 		end
-		local ax2 = x2 - pad * 2 - headH * 2.2
-		button(ax2 - headH * 2.4, hy + headH * 0.24, ax2, hy + headH * 0.56, autocast and "autocast" or "manual", true,
-			autocast and GREEN or GREY, function() toggleAutocast(uid) end,
-			"Autocast: the hero casts its abilities by itself when they would help")
+	end
+	for _, w in ipairs({ WG.unitgroups, WG.idlebuilders }) do
+		if w and w.getPosition then
+			local _, _, r, top = w.getPosition()
+			if r and r > 1 and top and top > 1 and top < vsy * 0.3 and r < vsx * 0.6 then
+				left = max(left, floor(r) + 6)
+			end
+		end
+	end
+	if WG.advplayerlist_api and WG.advplayerlist_api.GetPosition then
+		local pos = WG.advplayerlist_api.GetPosition()
+		if pos and pos[2] and pos[2] > left + 200 and pos[1] and pos[1] < vsy * 0.4 then
+			right = floor(pos[2]) - 6
+		end
+	end
+	local H0 = floor(min(vsy * 0.215 * uiScale, (right - left) / 5.3))
+	local W = floor(H0 * 5.3)
+	local x1 = floor(left + (right - left - W) / 2)
+	local x2 = x1 + W
+	local y1 = floor(vsy * 0.005)
+	local y2 = y1 + H0
+	local pad = floor(H0 * 0.06)
+	panel(x1, y1, x2, y2)
+	addBox(x1, y1, x2, y2, nil, nil)
+
+	-- portrait
+	local ps = H0 - pad * 2 - floor(H0 * 0.2)
+	local px1, py2 = x1 + pad, y2 - pad
+	local px2, py1 = px1 + ps, py2 - ps
+	rect(px1 - 3, py1 - 3, px2 + 3, py2 + 3, { 0, 0, 0, 1 })
+	tex(ART .. "portrait_" .. name .. ".png", px1, py1, px2, py2)
+	frame(px1 - 3, py1 - 3, px2 + 3, py2 + 3, GOLD, 2)
+	-- health and experience under the portrait
+	local hp, maxHp = spGetUnitHealth(uid)
+	local by2 = py1 - pad * 0.6
+	local bh = floor(H0 * 0.075)
+	bar(px1, by2 - bh, px2, by2, hp and maxHp and hp / maxHp or 0, { 0.15, 0.85, 0.2, 1 })
+	if hp then
+		text(string.format("%s / %s", fmtNum(hp * hpMult), fmtNum(maxHp * hpMult)), (px1 + px2) / 2, by2 - bh * 0.85, bh * 0.8, WHITE, "co")
+	end
+	bar(px1, by2 - bh * 2 - 3, px2, by2 - bh - 3, lvl >= H.MAX_LEVEL and 1 or xp, { 0.55, 0.35, 1, 1 })
+	addBox(px1, by2 - bh * 2 - 3, px2, by2 - bh - 3, nil, lvl >= H.MAX_LEVEL and "Maximum level"
+		or string.format("Experience: %s / %s metal of damage to reach level %d", fmtNum(xpAbs), fmtNum(xpNeed), lvl + 1))
+
+	-- name, level, stats
+	local sx = px2 + pad * 2
+	local ts = H0 * 0.105
+	text(cfg.title, sx, y2 - pad - ts, ts, GOLD)
+	text(string.format("Level %d  %s", lvl, cfg.role), sx, y2 - pad - ts * 2.1, ts * 0.75, WHITE)
+	local ss = H0 * 0.068
+	local sy = y2 - pad - ts * 3.2
+	local dps = spGetUnitRulesParam(uid, "hero_dps") or 0
+	local armor = spGetUnitRulesParam(uid, "hero_armor") or 0
+	local speed = spGetUnitRulesParam(uid, "hero_speed") or 0
+	local range = spGetUnitRulesParam(uid, "hero_range") or 0
+	local regen = spGetUnitRulesParam(uid, "hero_regen") or 0
+	local dmgMult = spGetUnitRulesParam(uid, "hero_dmgmult") or 1
+	local kills = spGetUnitRulesParam(uid, "hero_kills") or 0
+	local col2 = sx + ss * 12.5
+	stat("Damage", string.format("%s dps", fmtNum(dps)), sx, sy, ss, ORANGE)
+	stat("Power", string.format("x%.2f", dmgMult), col2, sy, ss, ORANGE)
+	stat("Armor", string.format("%d%%", floor(armor * 100 + 0.5)), sx, sy - ss * 1.35, ss, BLUE)
+	stat("Toughness", string.format("x%.2f", hpMult), col2, sy - ss * 1.35, ss, GREEN)
+	stat("Speed", string.format("%d", floor(speed + 0.5)), sx, sy - ss * 2.7, ss)
+	stat("Range", string.format("%d", range), col2, sy - ss * 2.7, ss)
+	stat("Regen", string.format("%.2f%%/s", regen * 100), sx, sy - ss * 4.05, ss, GREEN)
+	stat("Kills", tostring(kills), col2, sy - ss * 4.05, ss, RED)
+	-- weapon tiers
+	local wy = sy - ss * 5.5
+	for wi, w in ipairs(cfg.weapons or {}) do
+		local tier = spGetUnitRulesParam(uid, "hero_wtier_" .. wi) or 1
+		local stars = string.rep("\255\255\210\064*", tier) .. string.rep("\255\090\090\090*", 4 - tier)
+		text(w.name .. " " .. stars, sx + ((wi - 1) % 2) * ss * 12.5, wy - floor((wi - 1) / 2) * ss * 1.3, ss * 0.9, WHITE)
 	end
 
-	-- one row per branch
-	for i, key in ipairs(H.branchOrder) do
+	-- inventory 2 x 3
+	local is = floor((H0 - pad * 2 - H0 * 0.1) / 3.3)
+	local ig = floor(is * 0.14)
+	local ix1 = x1 + floor(W * 0.56)
+	local iy2 = y2 - pad - H0 * 0.1
+	text("Inventory", ix1 + is + ig / 2, iy2 + H0 * 0.015, H0 * 0.07, GOLD, "co")
+	for slot = 1, H.INVENTORY do
+		local col = (slot - 1) % 2
+		local row = floor((slot - 1) / 2)
+		local bx1 = ix1 + col * (is + ig)
+		local by2s = iy2 - row * (is + ig)
+		local bx2, by1 = bx1 + is, by2s - is
+		local idx = spGetUnitRulesParam(uid, "hero_item_" .. slot) or 0
+		local item = H.itemOrder[idx]
+		if item then
+			local it = H.items[item]
+			local rc = H.rarities[it.rarity].color
+			iconButton(ART .. "item_" .. item .. ".png", bx1, by1, bx2, by2s, own, { rc[1], rc[2], rc[3], 1 },
+				it.active and function() Spring.SendLuaRulesMsg("t4hero:use:" .. uid .. ":" .. slot) end or nil,
+				itemTip(item) .. (own and ("\n\255\180\180\180" .. (it.active and "Click: use.  " or "") .. "Right click: drop") or ""),
+				own and function() Spring.SendLuaRulesMsg("t4hero:drop:" .. uid .. ":" .. slot) end or nil)
+			if it.active then
+				local ready = spGetUnitRulesParam(uid, "hero_itemcd_" .. slot) or 0
+				if ready > f then
+					sweep(bx1, by1, bx2, by2s, (ready - f) / (it.active.cooldown * 30))
+					text(tostring(floor((ready - f) / 30) + 1), (bx1 + bx2) / 2, by1 + is * 0.3, is * 0.4, WHITE, "co")
+				end
+			end
+		else
+			rect(bx1, by1, bx2, by2s, { 0, 0, 0, 0.75 })
+			frame(bx1 - 2, by1 - 2, bx2 + 2, by2s + 2, { 0.25, 0.2, 0.12, 1 }, 2)
+			addBox(bx1, by1, bx2, by2s, nil, "Empty slot. Items drop from slain heroes and big enemies - walk over one to pick it up.")
+		end
+	end
+
+	-- command card: abilities, upgrades, autocast
+	local cs = floor(H0 * 0.36)
+	local cg = floor(cs * 0.13)
+	local cx1 = x2 - pad - cs * 3 - cg * 2
+	local cy2 = y2 - pad - H0 * 0.02
+	for i, key in ipairs(H.abilityKeys) do
+		local b = cfg[key]
+		local bx1 = cx1 + (i - 1) * (cs + cg)
+		local bx2, by1 = bx1 + cs, cy2 - cs
+		local rank = spGetUnitRulesParam(uid, "hero_rank_" .. key) or 0
+		local maxRank = H.maxRank(name, key)
+		local ready = spGetUnitRulesParam(uid, "hero_ready_" .. key) or 0
+		local cd = spGetUnitRulesParam(uid, "hero_cd_" .. key) or 0
+		local on = spGetUnitRulesParam(uid, "hero_on_" .. key) or 0
+		local dur = spGetUnitRulesParam(uid, "hero_dur_" .. key) or 0
+		local castable = own and rank > 0 and b.cmd and ready <= f
+		local tip = learnTip(uid, name, key) .. (b.cmd and ("\n\255\180\180\180Hotkey: " .. H.hotkeys[key] .. (b.target and "  (aim on the map)" or "")) or "\n\255\180\180\180Passive")
+		if on > f then
+			local glow = 0.5 + 0.5 * sin(f * 0.35)
+			rect(bx1 - 6, by1 - 6, bx2 + 6, cy2 + 6, { 0.4, 1, 0.5, 0.4 + 0.4 * glow })
+		end
+		iconButton(ART .. "ab_" .. name .. "_" .. key .. ".png", bx1, by1, bx2, cy2, rank > 0, key == "ult" and ORANGE or nil,
+			castable and function() castAbility(uid, key) end or nil, tip)
+		if on > f and dur > 0 then
+			bar(bx1, cy2 - cs * 0.1, bx2, cy2, (on - f) / dur, { 0.4, 1, 0.5, 1 })
+		elseif ready > f and cd > 0 then
+			sweep(bx1, by1, bx2, cy2, (ready - f) / cd)
+			text(tostring(floor((ready - f) / 30) + 1), (bx1 + bx2) / 2, by1 + cs * 0.32, cs * 0.38, WHITE, "co")
+		end
+		-- rank pips and hotkey
+		for p = 1, maxRank do
+			local pw = cs / (maxRank * 1.6)
+			local pxx = bx1 + cs * 0.1 + (p - 1) * pw * 1.5
+			rect(pxx, by1 + 3, pxx + pw, by1 + 3 + cs * 0.07, p <= rank and GOLD or { 0.2, 0.2, 0.2, 0.9 })
+		end
+		if b.cmd then
+			rect(bx1, cy2 - cs * 0.26, bx1 + cs * 0.26, cy2, { 0, 0, 0, 0.8 })
+			text(H.hotkeys[key], bx1 + cs * 0.13, cy2 - cs * 0.21, cs * 0.2, GOLD, "co")
+		end
+	end
+	-- second row: learn skills, autocast
+	local ry2 = cy2 - cs - cg
+	local ry1 = ry2 - cs * 0.62
+	if own then
+		local bx2 = cx1 + cs * 2 + cg
+		local hov = hovered(cx1, ry1, bx2, ry2)
+		local glowOn = pts > 0 and (0.5 + 0.5 * sin(f * 0.25)) or 0
+		rect(cx1, ry1, bx2, ry2, { 0.1 + 0.25 * glowOn, 0.08 + 0.18 * glowOn, 0.02, 0.95 })
+		frame(cx1, ry1, bx2, ry2, hov and { 1, 0.9, 0.5, 1 } or GOLD, 2)
+		text(pts > 0 and string.format("Upgrades  (+%d)", pts) or "Upgrades", (cx1 + bx2) / 2, (ry1 + ry2) / 2 - cs * 0.1, cs * 0.24, pts > 0 and GOLD or WHITE, "co")
+		addBox(cx1, ry1, bx2, ry2, function() showUpgrades = not showUpgrades end, "Open the upgrade window: weapons, plating, servos and abilities (hotkey: U)")
+		local auto = (spGetUnitRulesParam(uid, "hero_autocast") or 1) == 1
+		local ax1 = bx2 + cg
+		local ax2 = ax1 + cs
+		rect(ax1, ry1, ax2, ry2, auto and { 0.05, 0.3, 0.08, 0.95 } or { 0.15, 0.15, 0.15, 0.95 })
+		frame(ax1, ry1, ax2, ry2, hovered(ax1, ry1, ax2, ry2) and { 1, 0.9, 0.5, 1 } or (auto and GREEN or GREY), 2)
+		text(auto and "Auto" or "Manual", (ax1 + ax2) / 2, (ry1 + ry2) / 2 - cs * 0.1, cs * 0.22, auto and GREEN or GREY, "co")
+		addBox(ax1, ry1, ax2, ry2, function() toggleAutocast(uid) end, "Autocast: the hero uses its abilities and items by itself when they help")
+	end
+	return y2
+end
+
+---------------------------------------------------------------------------- upgrade window
+
+local function drawUpgrades(uid, yBottom)
+	local name = heroDefIDs[spGetUnitDefID(uid) or -1]
+	if not name then
+		return
+	end
+	local cfg = H.heroes[name]
+	local own = spGetUnitTeam(uid) == myTeam()
+	local lvl = spGetUnitRulesParam(uid, "hero_level") or 1
+	local pts = spGetUnitRulesParam(uid, "hero_points") or 0
+	local metal = Spring.GetTeamResources(myTeam(), "metal") or 0
+
+	local is = floor(vsy * 0.048 * uiScale)
+	local gap = floor(is * 0.35)
+	local rowH = is + gap * 1.9
+	local nW = #(cfg.weapons or {})
+	local rows = nW + 2
+	local W = floor(is * 18)
+	local Ht = floor(rowH * rows + is * 1.6)
+	local x1 = floor((vsx - W) / 2)
+	local x2 = x1 + W
+	local y1 = yBottom + floor(vsy * 0.01)
+	local y2 = y1 + Ht
+	panel(x1, y1, x2, y2)
+	addBox(x1, y1, x2, y2, nil, nil)
+	text("Upgrades", x1 + is * 0.4, y2 - is * 0.8, is * 0.5, GOLD)
+	text(string.format("Level %d    %d skill point%s    %s metal", lvl, pts, pts == 1 and "" or "s", fmtNum(metal)),
+		x2 - is * 1.6, y2 - is * 0.75, is * 0.38, pts > 0 and GOLD or WHITE, "ro")
+	iconButton(nil, x2 - is * 0.95, y2 - is * 0.95, x2 - is * 0.35, y2 - is * 0.35, true, RED, function() showUpgrades = false end, "Close (U)")
+	text("x", x2 - is * 0.65, y2 - is * 0.84, is * 0.45, RED, "co")
+
+	local function learnButton(key, bx, by)
 		local b = H.branch(name, key)
-		local ry2 = hy - pad - rowH * (i - 1)
-		local ry1 = ry2 - rowH + 2
-		addBox(x1, ry1, x2, ry2, nil, b.name .. ": " .. (b.desc or "")) -- first: the buttons drawn later win the click
 		local rank = spGetUnitRulesParam(uid, "hero_rank_" .. key) or 0
 		local maxRank = H.maxRank(name, key)
 		local req = H.reqLevel(name, key, rank + 1)
-		local canLearn = own and pts > 0 and rank < maxRank and lvl >= req
-		local isUlt = key == "ult"
-		local titleC = isUlt and { 1, 0.55, 0.25, 1 } or (H.common[key] and WHITE or BLUE)
-		if isUlt then
-			rect(x1 + pad, ry1, x2 - pad, ry2, { 1, 0.4, 0.1, 0.08 })
+		local cost = H.metalCost(name, key, rank + 1)
+		local can = own and pts > 0 and rank < maxRank and lvl >= req and metal >= cost
+		local icon = b.icon and (ART .. b.icon .. ".png") or (ART .. "ab_" .. name .. "_" .. key .. ".png")
+		iconButton(icon, bx, by, bx + is, by + is, rank > 0 or can, can and GOLD or nil, function() learn(uid, key) end, learnTip(uid, name, key))
+		if can then
+			local glow = 0.5 + 0.5 * sin(spGetGameFrame() * 0.25)
+			frame(bx - 4, by - 4, bx + is + 4, by + is + 4, { 1, 0.85, 0.2, 0.4 + 0.5 * glow }, 2)
 		end
-		text(b.name, x1 + pad * 2, ry1 + rowH * 0.56, rowH * 0.34, titleC)
-		text(rankPips(rank, maxRank), x1 + pad * 2 + w * 0.36, ry1 + rowH * 0.56, rowH * 0.34, WHITE)
-		local sub = branchText(name, key, rank)
-		if rank < maxRank and lvl < req then
-			sub = sub .. string.format("   (level %d)", req)
-		end
-		text(sub, x1 + pad * 2, ry1 + rowH * 0.16, rowH * 0.25, GREY)
-
-		local bx2 = x2 - pad * 2
-		local bs = rowH * 0.62
-		if own then
-			button(bx2 - bs, ry1 + (rowH - bs) / 2, bx2, ry1 + (rowH + bs) / 2, "+", canLearn, GOLD,
-				function() learn(uid, key) end, b.name .. ": " .. (b.desc or ""))
-		end
-		-- active abilities: cooldown / cast
-		if b.cmd and rank > 0 then
-			local ready = spGetUnitRulesParam(uid, "hero_ready_" .. key) or 0
-			local on = spGetUnitRulesParam(uid, "hero_on_" .. key) or 0
-			local cx2 = bx2 - bs - pad * 2
-			local cx1 = cx2 - rowH * 1.9
-			if on > frame then
-				button(cx1, ry1 + (rowH - bs) / 2, cx2, ry1 + (rowH + bs) / 2, string.format("%ds", floor((on - frame) / 30) + 1), false, GREEN, nil, "Active")
-			elseif ready > frame then
-				button(cx1, ry1 + (rowH - bs) / 2, cx2, ry1 + (rowH + bs) / 2, string.format("%ds", floor((ready - frame) / 30) + 1), false, GREY, nil, "Cooldown")
-			elseif own then
-				button(cx1, ry1 + (rowH - bs) / 2, cx2, ry1 + (rowH + bs) / 2, b.target and "aim" or "cast", true, isUlt and { 1, 0.55, 0.25, 1 } or BLUE,
-					function() castAbility(uid, key) end, b.name .. ": " .. b.desc)
-			end
-		elseif b.kind == "undying" and rank > 0 then
-			local ready = spGetUnitRulesParam(uid, "hero_ready_ult") or 0
-			local cx2 = bx2 - bs - pad * 2
-			button(cx2 - rowH * 1.9, ry1 + (rowH - bs) / 2, cx2, ry1 + (rowH + bs) / 2,
-				ready > frame and string.format("%ds", floor((ready - frame) / 30) + 1) or "ready", false, ready > frame and GREY or GREEN, nil, "Undying")
+		local label = rank .. "/" .. maxRank
+		text(label, bx + is * 0.5, by - is * 0.36, is * 0.28, rank >= maxRank and GOLD or WHITE, "co")
+		if rank < maxRank then
+			local c = (lvl < req and RED) or (metal < cost and RED) or GREY
+			text(lvl < req and ("lv " .. req) or fmtNum(cost), bx + is * 0.5, by - is * 0.64, is * 0.24, c, "co")
 		end
 	end
+
+	local y = y2 - is * 1.3 - rowH + gap
+	for wi, w in ipairs(cfg.weapons or {}) do
+		local tier = spGetUnitRulesParam(uid, "hero_wtier_" .. wi) or 1
+		text(w.name, x1 + is * 0.4, y + is * 0.55, is * 0.36, WHITE)
+		text(H.weaponKinds[w.kind].label .. "  " .. string.rep("\255\255\210\064*", tier) .. string.rep("\255\090\090\090*", 4 - tier),
+			x1 + is * 0.4, y + is * 0.12, is * 0.28, GREY)
+		for ti, track in ipairs(H.weaponKinds[w.kind].tracks) do
+			learnButton("w" .. wi .. "_" .. track, x1 + is * 5.2 + (ti - 1) * is * 1.6, y)
+		end
+		y = y - rowH
+	end
+	text("Chassis", x1 + is * 0.4, y + is * 0.35, is * 0.36, WHITE)
+	learnButton("plating", x1 + is * 5.2, y)
+	learnButton("servos", x1 + is * 6.8, y)
+	-- abilities on the right half, spanning the rows
+	local ax = x1 + is * 11
+	text("Abilities", ax, y2 - is * 1.3, is * 0.36, WHITE)
+	for i, key in ipairs(H.abilityKeys) do
+		learnButton(key, ax + (i - 1) * is * 2.2, y2 - is * 1.55 - is - gap)
+		local b = cfg[key]
+		text(b.name, ax + (i - 1) * is * 2.2 + is * 0.5, y2 - is * 1.55 - is * 2.25 - gap, is * 0.22, key == "ult" and ORANGE or BLUE, "co")
+	end
+	text("Abilities cost tens of thousands of metal per rank.\nWeapons and chassis: 1.5k metal x rank.", ax, y + is * 0.1, is * 0.25, GREY)
 end
 
 ---------------------------------------------------------------------------- world overlay
@@ -418,7 +724,7 @@ local AURA_COLORS = {
 }
 
 function widget:DrawWorldPreUnit()
-	local frame = spGetGameFrame()
+	local f = spGetGameFrame()
 	gl.DepthTest(false)
 	gl.LineWidth(2)
 	for uid, name in pairs(tracked) do
@@ -438,8 +744,8 @@ function widget:DrawWorldPreUnit()
 				end
 				for _, key in ipairs({ "a2", "ult" }) do
 					local b = cfg[key]
-					if b and (b.kind == "active_guard" or b.kind == "active_dome") and (spGetUnitRulesParam(uid, "hero_on_" .. key) or 0) > frame then
-						local pulse = 0.55 + 0.25 * math.sin(frame * 0.3)
+					if b and (b.kind == "active_guard" or b.kind == "active_dome") and (spGetUnitRulesParam(uid, "hero_on_" .. key) or 0) > f then
+						local pulse = 0.55 + 0.25 * sin(f * 0.3)
 						gl.Color(b.kind == "active_dome" and 0.5 or 1, b.kind == "active_dome" and 0.8 or 0.85, b.kind == "active_dome" and 1 or 0.3, pulse)
 						gl.LineWidth(4)
 						gl.DrawGroundCircle(x, y, z, b.radius, 72)
@@ -449,12 +755,44 @@ function widget:DrawWorldPreUnit()
 			end
 		end
 	end
+	-- items on the ground: a rarity ring
+	for _, g in ipairs(groundItems) do
+		local c = H.rarities[H.items[g.item].rarity].color
+		local gy = Spring.GetGroundHeight(g.x, g.z)
+		gl.Color(c[1], c[2], c[3], 0.5 + 0.3 * sin(f * 0.15 + g.id))
+		gl.LineWidth(3)
+		gl.DrawGroundCircle(g.x, gy, g.z, 60 + 8 * sin(f * 0.1 + g.id), 32)
+	end
 	gl.LineWidth(1)
 	gl.Color(1, 1, 1, 1)
 end
 
+-- the ground items as floating icons (screen space, so they stay readable at any zoom)
+local itemScreen = {} -- id -> { sx, sy, r, item }
+local function drawGroundItems()
+	itemScreen = {}
+	local f = spGetGameFrame()
+	local _, camY = Spring.GetCameraPosition()
+	for _, g in ipairs(groundItems) do
+		local gy = Spring.GetGroundHeight(g.x, g.z)
+		local sx, sy, sz = spWorldToScreenCoords(g.x, gy + 70 + 12 * sin(f * 0.08 + g.id), g.z)
+		if sz < 1 and sx > 0 and sx < vsx and sy > 0 and sy < vsy then
+			local s = floor(vsy * 0.03 * uiScale)
+			local it = H.items[g.item]
+			local c = H.rarities[it.rarity].color
+			rect(sx - s * 0.62, sy - s * 0.62, sx + s * 0.62, sy + s * 0.62, { c[1], c[2], c[3], 0.35 + 0.2 * sin(f * 0.2 + g.id) })
+			tex(ART .. "item_" .. g.item .. ".png", sx - s / 2, sy - s / 2, sx + s / 2, sy + s / 2)
+			frame(sx - s / 2 - 1, sy - s / 2 - 1, sx + s / 2 + 1, sy + s / 2 + 1, { c[1], c[2], c[3], 1 }, 2)
+			itemScreen[#itemScreen + 1] = { sx = sx, sy = sy, r = s * 0.7, g = g }
+			if hovered(sx - s / 2, sy - s / 2, sx + s / 2, sy + s / 2) then
+				hoverTip = itemTip(g.item) .. "\n\255\180\180\180Right click with a hero selected: pick it up"
+			end
+		end
+	end
+end
+
 local function drawWorldLabels()
-	local frame = spGetGameFrame()
+	local f = spGetGameFrame()
 	local size = floor(vsy * 0.016 * uiScale)
 	for uid, name in pairs(tracked) do
 		if spIsUnitInView(uid) then
@@ -470,27 +808,26 @@ local function drawWorldLabels()
 					text("Lv " .. lvl, sx, sy + size * 0.4, size, c, "co")
 					if allied then
 						local xp = spGetUnitRulesParam(uid, "hero_xp") or 0
-						bar(sx - size * 2, sy, sx + size * 2, sy + size * 0.3, xp, { 0.95, 0.75, 0.2, 0.9 })
+						bar(sx - size * 2, sy, sx + size * 2, sy + size * 0.3, xp, { 0.55, 0.35, 1, 0.9 })
 						local pts = spGetUnitRulesParam(uid, "hero_points") or 0
 						if pts > 0 and spGetUnitTeam(uid) == myTeam() then
-							text("+" .. pts, sx + size * 2.6, sy - size * 0.1, size, { 1, 0.85, 0.2, (frame % 30 < 20) and 1 or 0.5 }, "co")
+							text("+" .. pts, sx + size * 2.6, sy - size * 0.1, size, { 1, 0.85, 0.2, (f % 30 < 20) and 1 or 0.5 }, "co")
 						end
 					end
 				end
 			end
 		end
 	end
-	-- floating texts
 	local now = Spring.GetTimer()
 	local keep = {}
-	for _, f in ipairs(floating) do
-		local age = Spring.DiffTimers(now, f.t0)
-		if age < f.dur then
-			keep[#keep + 1] = f
-			local sx, sy, sz = spWorldToScreenCoords(f.x, f.y + age * 60, f.z)
+	for _, fl in ipairs(floating) do
+		local age = Spring.DiffTimers(now, fl.t0)
+		if age < fl.dur then
+			keep[#keep + 1] = fl
+			local sx, sy, sz = spWorldToScreenCoords(fl.x, fl.y + age * 60, fl.z)
 			if sz < 1 then
-				local a = min(1, (f.dur - age) / 0.6)
-				text(f.text, sx, sy, f.size, { f.r, f.g, f.b, a }, "co")
+				local a = min(1, (fl.dur - age) / 0.6)
+				text(fl.text, sx, sy, fl.size, { fl.r, fl.g, fl.b, a }, "co")
 			end
 		end
 	end
@@ -499,7 +836,6 @@ end
 
 ---------------------------------------------------------------------------- events from the gadget
 
--- one floating text per hero and kind: several levels gained at once show only the last one
 local function float(uid, str, c, size, dur, kind)
 	local x, y, z = spGetUnitPosition(uid)
 	if not x then
@@ -541,7 +877,7 @@ function widget:T4HeroEvent(kind, uid, a, b)
 	elseif kind == "died" then
 		float(uid, "FALLEN", RED, 0.04, 4, "state")
 		if mine and name then
-			Spring.Echo(string.format("\255\255\090\070%s has fallen at level %d - rebuild it at the hero altar to revive it at level %d.", heroName(name), a, b))
+			Spring.Echo(string.format("\255\255\090\070%s has fallen at level %d - its items lie where it fell. Rebuild it at the hero altar to revive it at level %d.", heroTitle(name), a, b))
 		end
 	elseif kind == "revived" then
 		float(uid, "REVIVED  Lv " .. a, { 0.6, 0.85, 1 }, 0.042, 4, "state")
@@ -553,8 +889,17 @@ function widget:T4HeroEvent(kind, uid, a, b)
 		float(uid, "HERO", GOLD, 0.04, 3, "state")
 	elseif kind == "undying" then
 		float(uid, "UNDYING!", { 1, 0.5, 0.15 }, 0.045, 3, "state")
+	elseif kind == "nometal" and mine then
+		float(uid, "Not enough metal: " .. fmtNum(a), RED, 0.026, 2.5, "warn")
+		Spring.PlaySoundFile("sounds/ui/cantdothat.wav", 0.6, "ui")
+	elseif kind == "pickup" then
+		local item = H.itemOrder[a]
+		if item then
+			local c = H.rarities[H.items[item].rarity].color
+			float(uid, "+ " .. H.items[item].name, c, 0.028, 2.5, "item")
+		end
 	elseif kind == "cast" and name then
-		local key = H.branchOrder[b]
+		local key = H.abilityKeys[b - 3] -- the gadget sends 4 / 5 / 6
 		local br = key and H.branch(name, key)
 		if br then
 			float(uid, br.name, key == "ult" and { 1, 0.6, 0.25 } or { 0.7, 0.85, 1 }, key == "ult" and 0.036 or 0.028, 2.2, "cast" .. b)
@@ -572,6 +917,7 @@ function widget:GameFrame(f)
 		refreshTracked()
 		refreshRoster()
 		pickSelected()
+		refreshGround()
 	end
 end
 
@@ -597,24 +943,48 @@ function widget:DrawScreen()
 		return
 	end
 	boxes = {}
+	hoverTip = nil
 	font:Begin()
 	drawWorldLabels()
-	local top = vsy - floor(vsy * 0.075)
-	local x2 = vsx - floor(vsy * 0.008)
-	local yAfter = drawRoster(x2, top)
+	drawGroundItems()
+	drawHeroButtons()
 	if selectedHero and spValidUnitID(selectedHero) then
-		drawPanel(x2, yAfter - floor(vsy * 0.006), selectedHero)
+		local top = drawConsole(selectedHero)
+		if showUpgrades and top then
+			drawUpgrades(selectedHero, top)
+		end
 	end
 	font:End()
 	gl.Color(1, 1, 1, 1)
 	local mx, my = Spring.GetMouseState()
-	hoverTip = nil
 	for i = #boxes, 1, -1 do
 		local bx = boxes[i]
-		if mx >= bx[1] and mx <= bx[3] and my >= bx[2] and my <= bx[4] then
+		if bx[6] and mx >= bx[1] and mx <= bx[3] and my >= bx[2] and my <= bx[4] then
 			hoverTip = bx[6]
 			break
 		end
+	end
+	-- a tooltip box of our own, near the cursor (the BAR tooltip does not show multi-line colored text well)
+	if hoverTip then
+		local size = floor(vsy * 0.015 * uiScale)
+		local lines = {}
+		for line in (hoverTip .. "\n"):gmatch("([^\n]*)\n") do
+			lines[#lines + 1] = line
+		end
+		local w = 0
+		for _, line in ipairs(lines) do
+			w = max(w, font:GetTextWidth(line) * size)
+		end
+		local hgt = #lines * size * 1.3 + size * 0.6
+		local tx = min(mx + 18, vsx - w - size * 1.4)
+		local ty = min(my + 18 + hgt, vsy - 4)
+		rect(tx, ty - hgt, tx + w + size * 1.2, ty, { 0.02, 0.02, 0.03, 0.93 })
+		frame(tx, ty - hgt, tx + w + size * 1.2, ty, { 0.45, 0.34, 0.16, 1 }, 2)
+		font:Begin()
+		for i, line in ipairs(lines) do
+			text(line, tx + size * 0.6, ty - size * 0.3 - i * size * 1.3 + size * 0.25, size, WHITE, "o")
+		end
+		font:End()
 	end
 end
 
@@ -627,20 +997,60 @@ function widget:IsAbove(x, y)
 	return false
 end
 
-function widget:GetTooltip(x, y)
-	return hoverTip
+function widget:GetTooltip()
+	return nil
 end
 
 function widget:MousePress(x, y, button)
-	if button ~= 1 then
-		return false
-	end
 	for i = #boxes, 1, -1 do
 		local bx = boxes[i]
 		if x >= bx[1] and x <= bx[3] and y >= bx[2] and y <= bx[4] then
-			if bx[5] then
+			if button == 1 and bx[5] then
 				bx[5]()
+			elseif button == 3 and bx[7] then
+				bx[7]()
 			end
+			return true
+		end
+	end
+	-- right click on a ground item: the selected heroes walk to it (and pick it up on arrival)
+	if button == 3 and selectedHero then
+		for _, s in ipairs(itemScreen) do
+			if (x - s.sx) ^ 2 + (y - s.sy) ^ 2 <= s.r * s.r then
+				local gy = Spring.GetGroundHeight(s.g.x, s.g.z)
+				local shift = select(4, Spring.GetModKeyState())
+				Spring.GiveOrderToUnitArray(Spring.GetSelectedUnits(), CMD.MOVE, { s.g.x, gy, s.g.z }, shift and { "shift" } or 0)
+				return true
+			end
+		end
+	end
+	return false
+end
+
+local HOTKEY = { q = "a1", w = "a2", r = "ult" }
+
+function widget:KeyPress(key, mods, isRepeat)
+	if not selectedHero or mods.ctrl or mods.alt or isRepeat then
+		return false
+	end
+	-- only when the selection is heroes alone, so the usual Q/W/R binds keep working for armies
+	for _, uid in ipairs(Spring.GetSelectedUnits()) do
+		if not heroDefIDs[spGetUnitDefID(uid) or -1] then
+			return false
+		end
+	end
+	local sym = Spring.GetKeySymbol and Spring.GetKeySymbol(key)
+	sym = type(sym) == "string" and sym:lower() or string.char(key):lower()
+	if sym == "u" then
+		showUpgrades = not showUpgrades
+		return true
+	end
+	local ab = HOTKEY[sym]
+	if ab and spGetUnitTeam(selectedHero) == myTeam() then
+		local name = heroDefIDs[spGetUnitDefID(selectedHero)]
+		local b = H.heroes[name][ab]
+		if b and b.cmd then
+			castAbility(selectedHero, ab)
 			return true
 		end
 	end
@@ -654,11 +1064,14 @@ function widget:Initialize()
 	end
 	widgetHandler:RegisterGlobal("T4HeroEvent", function(...) widget:T4HeroEvent(...) end)
 	widget:ViewResize()
+	WG.T4HeroesUI = { setUpgrades = function(v) showUpgrades = v end }
 	refreshTracked()
 	refreshRoster()
 	pickSelected()
+	refreshGround()
 end
 
 function widget:Shutdown()
+	WG.T4HeroesUI = nil
 	widgetHandler:DeregisterGlobal("T4HeroEvent")
 end
