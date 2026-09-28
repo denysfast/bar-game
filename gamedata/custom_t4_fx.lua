@@ -14,6 +14,9 @@
 local FX = {}
 
 FX.scales = { 2.2, 2.5 }
+-- v14: visual tiers of upgraded hero weapons (T4.hero): the base scale x FX.tierMult[tier]
+FX.tierMult = { 1, 1.3, 1.65, 2.0 }
+FX.tierScales = { 2.9, 3.3, 3.6, 4.1, 4.4, 5.0 }
 
 -- stock CEGs used by the hero weapons and unit scripts
 FX.sources = {
@@ -58,6 +61,9 @@ for _, n in ipairs(FX.sources) do
 	for _, s in ipairs(FX.scales) do
 		known[FX.name(n, s)] = true
 	end
+	for _, s in ipairs(FX.tierScales) do
+		known[FX.name(n, s)] = true
+	end
 end
 for _, p in ipairs(FX.extra) do
 	known[FX.name(p[1], p[2])] = true
@@ -73,11 +79,14 @@ function FX.ref(ref, scale)
 	if not prefix then
 		prefix, name = "", ref
 	end
+	name = name:gsub("%-%-x[%d%.]+$", "") -- a reference already scaled: scale the source again
 	local best, bestD
-	for _, s in ipairs(FX.scales) do
-		local d = math.abs(s - scale)
-		if not bestD or d < bestD then
-			best, bestD = s, d
+	for _, list in ipairs({ FX.scales, scale > 2.6 and FX.tierScales or {} }) do
+		for _, s in ipairs(list) do
+			local d = math.abs(s - scale)
+			if not bestD or d < bestD then
+				best, bestD = s, d
+			end
 		end
 	end
 	local scaled = FX.name(name, best)
@@ -205,6 +214,11 @@ function FX.generate(defs)
 			else
 				missing[#missing + 1] = src
 			end
+		end
+	end
+	for _, src in ipairs(FX.sources) do
+		for _, s in ipairs(FX.tierScales) do
+			scaleDef(defs, src, s, 0)
 		end
 	end
 	for _, p in ipairs(FX.extra) do

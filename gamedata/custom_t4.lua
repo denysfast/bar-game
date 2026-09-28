@@ -214,6 +214,45 @@ function T4.hero(ud, fx, extraWeapons)
 			ud.sfxtypes.explosiongenerators[i] = FX.ref(ref, fx)
 		end
 	end
+	-- v14 visual tiers: every real weapon gets <key>_t2.._t4 copies with thicker beams, bigger shells and
+	-- scaled flashes/trails/blasts; the hero gadget swaps a shot to the tier its weapon tree has reached
+	local tiers = {}
+	for key, wd in pairs(ud.weapondefs or {}) do
+		local wt = wd.weapontype
+		local dmg = wd.damage and (wd.damage.default or wd.damage.vtol) or 0
+		if wt ~= "Shield" and wt ~= "Flame" and (wd.range or 0) > 0 and dmg > 0 then
+			for tier = 2, #FX.tierMult do
+				local m = FX.tierMult[tier]
+				local c = deepcopy(wd)
+				c.name = (wd.name or key) .. " (tier " .. tier .. ")"
+				mulField(c, "size", m)
+				mulField(c, "thickness", m)
+				mulField(c, "laserflaresize", m)
+				mulField(c, "sizedecay", 1 / m)
+				if c.explosiongenerator then
+					c.explosiongenerator = FX.ref(c.explosiongenerator, fx * m)
+				end
+				if c.cegtag then
+					c.cegtag = FX.ref(c.cegtag, fx * m)
+				end
+				if wt == "BeamLaser" or wt == "LightningCannon" then
+					-- the engine deals a beam's damage when it fires: the copy only draws it
+					c.damage = { default = 0 }
+					c.beamtime = c.beamtime or 0.1
+				end
+				c.collidefriendly = false
+				c.avoidfriendly = false
+				c.customparams = c.customparams or {}
+				c.customparams.t4_hero_weapon = 1
+				c.customparams.t4_tier = tier
+				c.customparams.t4_tier_of = key
+				tiers[key .. "_t" .. tier] = c
+			end
+		end
+	end
+	for key, wd in pairs(tiers) do
+		ud.weapondefs[key] = wd
+	end
 	for key, wd in pairs(extraWeapons or {}) do
 		wd.customparams = wd.customparams or {}
 		wd.customparams.t4_hero_weapon = 1

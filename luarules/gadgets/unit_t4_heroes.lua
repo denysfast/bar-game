@@ -71,6 +71,7 @@ if gadgetHandler:IsSyncedCode() then
 			heroWeapon[wdid] = true
 		end
 	end
+	local tierBase = {}   -- weaponDefID of a tier copy -> weaponDefID of the weapon it copies (set per hero def)
 	local explWatch = {}  -- weaponDefID -> true (Explosion)
 	local foundryDefs = {} -- unitDefID -> true (the T4 foundries: fountain + AI retreat point)
 	local factoryDefs = {}
@@ -106,8 +107,9 @@ if gadgetHandler:IsSyncedCode() then
 					def.shieldRegen = wd.shieldPowerRegen
 				elseif wd.range > 0 then
 					def.weapons[n] = {
-						key = key, wdid = w.weaponDef, range = wd.range, reload = wd.reload,
+						key = key, wdid = w.weaponDef, range = wd.range, reload = wd.reload, type = wd.type,
 						accuracy = wd.accuracy, spray = wd.sprayAngle, burst = wd.salvoSize, projectiles = wd.projectiles,
+						aoe = wd.damageAreaOfEffect or 0, damage = wd.damages and wd.damages[0] or 0,
 					}
 					def.keyNum[key] = def.keyNum[key] or {}
 					def.keyNum[key][#def.keyNum[key] + 1] = n
@@ -118,6 +120,25 @@ if gadgetHandler:IsSyncedCode() then
 					def.extra[wd.name:sub(#prefix + 1)] = wdid
 				end
 			end
+			-- weapon trees (v14): tree index per weapon number, tier copies per weapon number
+			def.trees = {}
+			def.treeOf = {}
+			def.tierWdid = {}
+			for wi, wcfg in ipairs(cfg.weapons or {}) do
+				local tree = { index = wi, kind = wcfg.kind, name = wcfg.name, nums = {} }
+				for _, key in ipairs(wcfg.keys) do
+					for _, n in ipairs(def.keyNum[key] or {}) do
+						tree.nums[#tree.nums + 1] = n
+						def.treeOf[n] = wi
+						def.tierWdid[n] = {}
+						for tier = 2, 4 do
+							def.tierWdid[n][tier] = def.extra[key .. "_t" .. tier]
+						end
+					end
+				end
+				def.trees[wi] = tree
+			end
+			def.keys = H.allKeys(ud.name)
 			for _, key in ipairs({ "a1", "a2", "ult" }) do
 				local b = cfg[key]
 				if b and b.cmd then
@@ -156,10 +177,24 @@ if gadgetHandler:IsSyncedCode() then
 				end
 			end
 		end
+		-- visual tiers: every weapon of a tree is watched, its copies map back to it
+		for n, copies in pairs(def.tierWdid) do
+			local base = def.weapons[n].wdid
+			for _, wdid in pairs(copies) do
+				tierBase[wdid] = base
+				if explWatch[base] then
+					explWatch[wdid] = true
+				end
+			end
+			if next(copies) then
+				swapWatch[base] = true
+			end
+		end
 	end
 
 	---------------------------------------------------------------- state
 
+	local dropItem, randomItem -- items on the ground, defined below
 	local heroes = {}      -- unitID -> hero state
 	local dead = {}        -- teamID -> name -> { level, picks }
 	local pendingRevive = {} -- unitID (nanoframe) -> record
@@ -267,12 +302,73 @@ if gadgetHandler:IsSyncedCode() then
 		end
 	end
 
+	---------------------------------------------------------------- items on the ground
+	-- Published as one game rules string "hero_ground": "<id>:<item index>:<x>:<z>;..." (everyone sees
+	-- them, like Warcraft items on the ground).
+
+	local ground = {}      -- id -> { item, x, z, expire }
+	local groundNext = 1
+	local groundDirty = false
+
+	local function publishGround()
+		local parts = {}
+		for id, g in pairs(ground) do
+			parts[#parts + 1] = string.format("%d:%d:%d:%d", id, H.itemIndex[g.item], g.x, g.z)
+		end
+		Spring.SetGameRulesParam("hero_ground", table.concat(parts, ";"))
+		groundDirty = false
+	end
+
+	dropItem = function(item, x, z)
+		if not item or not H.items[item] then
+			return
+		end
+		x = max(32, min(Game.mapSizeX - 32, x))
+		z = max(32, min(Game.mapSizeZ - 32, z))
+		local id = groundNext
+		groundNext = groundNext + 1
+		ground[id] = { item = item, x = floor(x), z = floor(z), expire = spGetGameFrame() + H.ITEM_LIFETIME * GAME_SPEED }
+		groundDirty = true
+		ceg("hero-itemdrop-" .. H.items[item].rarity, x, spGetGroundHeight(x, z), z)
+	end
+
+	-- a random item; a higher level shifts the odds to the rarer ones
+	randomItem = function(level)
+		local byRarity = {}
+		for _, id in ipairs(H.itemOrder) do
+			local r = H.items[id].rarity
+			byRarity[r] = byRarity[r] or {}
+			byRarity[r][#byRarity[r] + 1] = id
+		end
+		local total, weights = 0, {}
+		for r, info in pairs(H.rarities) do
+			local w = info.weight
+			if r ~= "common" then
+				w = w * (1 + (level or 0) / 20)
+			end
+			weights[r] = w
+			total = total + w
+		end
+		local pick = random() * total
+		for r, w in pairs(weights) do
+			pick = pick - w
+			if pick <= 0 and byRarity[r] then
+				return byRarity[r][random(#byRarity[r])]
+			end
+		end
+		return H.itemOrder[random(#H.itemOrder)]
+	end
+
 	---------------------------------------------------------------- stats
+
+	local ITEM_KEYS = { "damage", "hp", "armor", "speed", "range", "reload", "sight", "lifesteal", "thorns", "cdr", "xp", "splash", "burn" }
 
 	local function sumMods(h)
 		local cfg = h.def.cfg
 		local m = { damage = 0, hp = 0, armor = 0, regen = 0, speed = 0, range = 0, reload = 0, sight = 0,
-			radar = 0, accuracy = 0, weaponDamage = {}, weaponReload = {}, burst = {}, projectiles = {}, swaps = {} }
+			radar = 0, accuracy = 0, lifesteal = 0, thorns = 0, cdr = 0, xp = 0, splash = 0, burn = 0,
+			crit = nil, aura = nil, zap = nil,
+			weaponDamage = {}, weaponReload = {}, burst = {}, projectiles = {}, swaps = {}, tree = {} }
 		local function add(t, rankMult)
 			for k, v in pairs(t) do
 				if type(v) == "number" and m[k] then
@@ -303,8 +399,49 @@ if gadgetHandler:IsSyncedCode() then
 				add(b.ranks[r], 1)
 			end
 		end
+		-- weapon trees
+		for wi, tree in ipairs(h.def.trees) do
+			local t = { ranks = {}, rankSum = 0, damage = 0, range = 0, reload = 0, splash = 0, pierce = 0, pierceLen = 0, burn = 0, discharge = 0 }
+			for _, track in ipairs(H.weaponKinds[tree.kind].tracks) do
+				local r = rankOf(h, "w" .. wi .. "_" .. track)
+				local tr = H.tracks[track]
+				t.ranks[tr.stat] = r
+				t.rankSum = t.rankSum + r
+				if t[tr.stat] and not tr.abs then
+					t[tr.stat] = t[tr.stat] + tr.per * r
+				end
+				if tr.len and r > 0 then
+					t.pierceLen = tr.len
+				end
+			end
+			t.tier = H.weaponTier(t.rankSum)
+			m.tree[wi] = t
+		end
+		-- items
+		for slot = 1, H.INVENTORY do
+			local it = h.items[slot] and H.items[h.items[slot]]
+			if it then
+				for _, k in ipairs(ITEM_KEYS) do
+					if it.stats[k] then
+						m[k] = m[k] + it.stats[k]
+					end
+				end
+				if it.stats.crit and (not m.crit or it.stats.crit[1] > m.crit[1]) then
+					m.crit = it.stats.crit
+				end
+				if it.aura and (not m.aura or it.aura.damage > m.aura.damage) then
+					m.aura = it.aura
+				end
+				if it.zap then
+					m.zap = it.zap
+				end
+			end
+		end
 		return m
 	end
+
+	local spSetUnitWeaponDamages = Spring.SetUnitWeaponDamages
+	local EMPTY_TREE = { ranks = {}, rankSum = 0, damage = 0, range = 0, reload = 0, splash = 0, pierce = 0, pierceLen = 0, burn = 0, discharge = 0, tier = 1 }
 
 	local function applyStats(unitID, h)
 		local def = h.def
@@ -320,40 +457,68 @@ if gadgetHandler:IsSyncedCode() then
 		-- health growth is applied as damage taken / hpMult ("effective health"): the engine recomputes
 		-- maxHealth from the unitdef whenever a unit gains engine experience (modrules healthScale), so a
 		-- SetUnitMaxHealth would be lost after the next hit
-		h.hpMult = (1 + H.LEVEL_HP * (L - 1)) * (1 + m.hp)
+		h.hpMult = max(0.2, (1 + H.LEVEL_HP * (L - 1)) * (1 + m.hp))
 		spSetUnitRulesParam(unitID, "hero_hpmult", h.hpMult, INLOS)
+		spSetUnitRulesParam(unitID, "hero_dmgmult", h.dmgMult, INLOS)
+		spSetUnitRulesParam(unitID, "hero_armor", h.armor, INLOS)
+		spSetUnitRulesParam(unitID, "hero_regen", m.regen, INLOS)
 
-		-- weapons
-		local rangeMult = 1 + m.range + (buff.range or 0)
+		-- weapons: global mods x the weapon's own tree
 		local reloadMult = max(0.2, (1 - m.reload) * (1 - (buff.reload or 0)))
 		local accMult = max(0.1, 1 - m.accuracy)
 		local maxRange = 0
+		local dps = 0
 		h.wdmg = {}
+		h.wfx = {}
 		for n, w in pairs(def.weapons) do
-			local wr = max(0.15, reloadMult * (1 - (m.weaponReload[w.key] or 0)))
+			local wi = def.treeOf[n]
+			local t = wi and m.tree[wi] or EMPTY_TREE
+			local wr = max(0.15, reloadMult * (1 - (m.weaponReload[w.key] or 0)) * (1 - t.reload))
 			spSetUnitWeaponState(unitID, n, "reloadTime", w.reload * wr)
-			local r = w.range * rangeMult
+			local r = w.range * (1 + m.range + t.range + (buff.range or 0))
 			spSetUnitWeaponState(unitID, n, "range", r)
-			if r > maxRange then
+			if r > maxRange and w.damage > 0 then
 				maxRange = r
 			end
 			if accMult < 1 then
 				spSetUnitWeaponState(unitID, n, "accuracy", w.accuracy * accMult)
 				spSetUnitWeaponState(unitID, n, "sprayAngle", w.spray * accMult)
 			end
-			if m.burst[w.key] then
-				spSetUnitWeaponState(unitID, n, "burst", w.burst + m.burst[w.key])
+			local burst = w.burst + (m.burst[w.key] or 0)
+			local salvo = t.ranks.salvo or 0
+			if salvo > 0 then
+				burst = burst + math.ceil(max(w.burst, 3) * H.tracks.salvo.per * salvo)
 			end
-			if m.projectiles[w.key] then
-				spSetUnitWeaponState(unitID, n, "projectiles", m.projectiles[w.key])
+			if burst ~= w.burst then
+				spSetUnitWeaponState(unitID, n, "burst", burst)
 			end
-			if m.weaponDamage[w.key] then
-				h.wdmg[w.wdid] = 1 + m.weaponDamage[w.key]
+			local proj = (m.projectiles[w.key] or w.projectiles) + (t.ranks.pellets or 0) * H.tracks.pellets.per
+			if proj ~= w.projectiles then
+				spSetUnitWeaponState(unitID, n, "projectiles", proj)
 			end
+			local aoe = w.aoe * (1 + t.splash + m.splash)
+			if w.aoe > 0 and spSetUnitWeaponDamages then
+				spSetUnitWeaponDamages(unitID, n, "damageAreaOfEffect", aoe)
+			end
+			local mult = (1 + (m.weaponDamage[w.key] or 0)) * (1 + t.damage)
+			h.wdmg[w.wdid] = mult
+			if w.damage > 0 then
+				dps = dps + w.damage * mult * h.dmgMult * proj * burst / max(0.05, w.reload * wr)
+			end
+			for _, cw in pairs(def.tierWdid[n] or {}) do
+				h.wdmg[cw] = mult
+			end
+			h.wfx[w.wdid] = { n = n, tier = t.tier, aoe = aoe, baseAoe = w.aoe, pierce = t.pierce, pierceLen = t.pierceLen,
+				burn = t.burn + m.burn, discharge = t.discharge }
+		end
+		for wi, t in pairs(m.tree) do
+			spSetUnitRulesParam(unitID, "hero_wtier_" .. wi, t.tier, INLOS)
 		end
 		if maxRange > 0 then
 			Spring.SetUnitMaxRange(unitID, maxRange)
 		end
+		spSetUnitRulesParam(unitID, "hero_dps", floor(dps), INLOS)
+		spSetUnitRulesParam(unitID, "hero_range", floor(maxRange), INLOS)
 
 		-- projectile swaps: weaponDefID -> { to, every, other }
 		h.swaps = {}
@@ -367,6 +532,7 @@ if gadgetHandler:IsSyncedCode() then
 		local speedMult = buff.immobile and 0.02 or max(0.2, 1 + m.speed + (buff.speed or 0))
 		local spd = def.speed * speedMult -- elmos per second, like UnitDefs[].speed
 		Spring.MoveCtrl.SetGroundMoveTypeData(unitID, { maxSpeed = spd, maxWantedSpeed = spd })
+		spSetUnitRulesParam(unitID, "hero_speed", spd, INLOS)
 
 		-- sensors
 		if m.sight > 0 then
@@ -384,11 +550,22 @@ if gadgetHandler:IsSyncedCode() then
 		local hi = H.xpFor(h.level + 1, xpMult) * h.def.cost
 		local frac = h.level >= H.MAX_LEVEL and 1 or max(0, min(1, (h.xp - lo) / max(1, hi - lo)))
 		spSetUnitRulesParam(unitID, "hero_xp", frac, ALLIED)
+		spSetUnitRulesParam(unitID, "hero_xp_abs", floor(h.xp - lo), ALLIED)
+		spSetUnitRulesParam(unitID, "hero_xp_need", floor(hi - lo), ALLIED)
 		spSetUnitRulesParam(unitID, "hero_points", h.level - #h.picks, ALLIED)
-		for _, key in ipairs(H.branchOrder) do
+		spSetUnitRulesParam(unitID, "hero_kills", h.kills or 0, ALLIED)
+		for _, key in ipairs(h.def.keys) do
 			spSetUnitRulesParam(unitID, "hero_rank_" .. key, rankOf(h, key), ALLIED)
 		end
 		spSetUnitRulesParam(unitID, "hero_autocast", h.autocast and 1 or 0, ALLIED)
+	end
+
+	local function publishItems(unitID, h)
+		for slot = 1, H.INVENTORY do
+			local id = h.items[slot]
+			spSetUnitRulesParam(unitID, "hero_item_" .. slot, id and H.itemIndex[id] or 0, INLOS)
+			spSetUnitRulesParam(unitID, "hero_itemcd_" .. slot, h.itemReady[slot] or 0, ALLIED)
+		end
 	end
 
 	local function publishDead(teamID, name)
@@ -410,20 +587,38 @@ if gadgetHandler:IsSyncedCode() then
 
 	---------------------------------------------------------------- talents
 
-	local function canLearn(h, key)
+	-- "ok", or why not: "points", "level", "max", "metal", "unknown"
+	local function learnState(h, key)
 		local name = h.def.name
-		if h.level - #h.picks <= 0 then
-			return false
-		end
 		local b = H.branch(name, key)
 		if not b then
-			return false
+			return "unknown"
 		end
 		local r = rankOf(h, key)
 		if r >= H.maxRank(name, key) then
-			return false
+			return "max"
 		end
-		return h.level >= H.reqLevel(name, key, r + 1)
+		if h.level - #h.picks <= 0 then
+			return "points"
+		end
+		if h.level < H.reqLevel(name, key, r + 1) then
+			return "level"
+		end
+		local cost = H.metalCost(name, key, r + 1)
+		if cost > 0 and (Spring.GetTeamResources(h.team, "metal") or 0) < cost then
+			return "metal", cost
+		end
+		return "ok", cost
+	end
+
+	local function canLearn(h, key)
+		return learnState(h, key) == "ok"
+	end
+
+	-- the AI keeps a reserve for its army: a rank only when it has half as much metal again
+	local function aiCanLearn(h, key)
+		local state, cost = learnState(h, key)
+		return state == "ok" and (cost or 0) * 1.5 <= (Spring.GetTeamResources(h.team, "metal") or 0)
 	end
 
 	local function updateCmdDescs(unitID, h)
@@ -436,7 +631,14 @@ if gadgetHandler:IsSyncedCode() then
 	end
 
 	local function learn(unitID, h, key, silent)
-		if not canLearn(h, key) then
+		local state, cost = learnState(h, key)
+		if state ~= "ok" then
+			if state == "metal" and not silent then
+				toUI("nometal", unitID, cost)
+			end
+			return false
+		end
+		if cost and cost > 0 and not Spring.UseTeamResource(h.team, "metal", cost) then
 			return false
 		end
 		h.picks[#h.picks + 1] = key
@@ -446,39 +648,49 @@ if gadgetHandler:IsSyncedCode() then
 		publish(unitID, h)
 		if not silent then
 			toUI("learn", unitID, h.ranks[key])
-			if key == "ult" then
-				local x, y, z = heroPos(unitID)
-				if x then
-					ceg("hero-levelup-big", x, y, z)
-				end
+			local x, y, z = heroPos(unitID)
+			if x and frameNow() - (h.lastLearnFx or -100) > 10 then
+				h.lastLearnFx = frameNow()
+				ceg(key == "ult" and "hero-levelup-big" or "hero-learn", x, y, z)
 			end
 		end
 		return true
 	end
 
-	-- the AI spends its points: the ultimate as soon as it can, otherwise the hero's plan in order
+	-- the AI spends its points (and metal): the ultimate and the abilities as soon as it can, then the
+	-- damage of its weapons, plating and the rest of the trees in turn
 	local function learnAI(unitID, h)
-		local plan = h.def.cfg.ai or {}
 		local guard = 0
-		while h.level - #h.picks > 0 and guard < 40 do
+		while h.level - #h.picks > 0 and guard < 120 do
 			guard = guard + 1
-			local done = canLearn(h, "ult") and learn(unitID, h, "ult", true)
-			if not done then
-				local want = {}
-				for _, key in ipairs(plan) do
-					want[key] = (want[key] or 0) + 1
-					if rankOf(h, key) < want[key] and canLearn(h, key) then
-						done = learn(unitID, h, key, true)
-						break
-					end
+			local done = false
+			for _, key in ipairs({ "ult", "a1", "a2" }) do
+				if aiCanLearn(h, key) then
+					done = learn(unitID, h, key, true)
+					break
 				end
 			end
 			if not done then
-				for _, key in ipairs({ "arsenal", "plating", "a1", "a2", "servos" }) do
-					if canLearn(h, key) then
-						done = learn(unitID, h, key, true)
-						break
+				-- the cheapest useful rank: weapon damage first, then plating, then anything
+				local best, bestScore
+				for _, key in ipairs(h.def.keys) do
+					if aiCanLearn(h, key) then
+						local r = rankOf(h, key)
+						local score = r * 2
+						if key:find("_damage$") then
+							score = score - 3
+						elseif key == "plating" then
+							score = score - 2
+						elseif key == "servos" then
+							score = score + 4
+						end
+						if not bestScore or score < bestScore then
+							best, bestScore = key, score
+						end
 					end
+				end
+				if best then
+					done = learn(unitID, h, best, true)
 				end
 			end
 			if not done then
@@ -493,7 +705,10 @@ if gadgetHandler:IsSyncedCode() then
 		h.level = h.level + 1
 		applyStats(unitID, h)
 		local x, y, z = heroPos(unitID)
-		if x then
+		local f = frameNow()
+		-- several levels at once (a big kill) show one effect
+		if x and f - (h.lastLevelFx or -100) > 20 then
+			h.lastLevelFx = f
 			ceg(h.level % 5 == 0 and "hero-levelup-big" or "hero-levelup", x, y, z)
 			ceg(h.level % 5 == 0 and "custom:commander-levelup--x5" or "custom:commander-levelup--x3", x, y + 20, z)
 		end
@@ -507,7 +722,7 @@ if gadgetHandler:IsSyncedCode() then
 		if h.level >= H.MAX_LEVEL or metal <= 0 then
 			return
 		end
-		h.xp = h.xp + metal * (h.def.cfg.xpRate or 1)
+		h.xp = h.xp + metal * (h.def.cfg.xpRate or 1) * (1 + (h.mods and h.mods.xp or 0))
 		local leveled = false
 		while h.level < H.MAX_LEVEL and h.xp >= H.xpFor(h.level + 1, xpMult) * h.def.cost do
 			levelUp(unitID, h)
@@ -525,6 +740,7 @@ if gadgetHandler:IsSyncedCode() then
 		local h = {
 			unitID = unitID, def = def, team = teamID, level = 1, xp = 0, picks = {}, ranks = {},
 			ready = {}, shots = {}, autocast = true, buff = nil, lastCrit = 0, undyingReady = 0, undyingUntil = 0,
+			items = {}, itemReady = {}, kills = 0,
 		}
 		if rec then
 			h.level = rec.level
@@ -595,6 +811,7 @@ if gadgetHandler:IsSyncedCode() then
 			learnAI(unitID, h)
 		end
 		publish(unitID, h)
+		publishItems(unitID, h)
 		spSetTeamRulesParam(teamID, "hero_built_" .. def.name, 1, ALLIED)
 		local x, y, z = heroPos(unitID)
 		if x then
@@ -612,6 +829,10 @@ if gadgetHandler:IsSyncedCode() then
 		local x, _, z = spGetUnitPosition(unitID)
 		local killer = attackerID and heroes[attackerID]
 		if killer and spGetUnitAllyTeam(attackerID) ~= ally then
+			killer.kills = (killer.kills or 0) + 1
+			if not heroes[unitID] and x and random() < min(H.ITEM_DROP_MAX, (unitCost[unitDefID] or 0) * H.ITEM_DROP_CHANCE) then
+				dropItem(randomItem(0), x, z)
+			end
 			local bonus = H.XP_KILL * cost
 			local victim = heroes[unitID]
 			if victim then
@@ -656,6 +877,21 @@ if gadgetHandler:IsSyncedCode() then
 		dead[h.team][h.def.name] = { level = level, picks = picks }
 		publishDead(h.team, h.def.name)
 		local x, y, z = spGetUnitPosition(unitID)
+		if x then
+			-- everything it carried falls where it died, plus a trophy that is better the higher it was
+			local drops = {}
+			for slot = 1, H.INVENTORY do
+				if h.items[slot] then
+					drops[#drops + 1] = h.items[slot]
+				end
+			end
+			drops[#drops + 1] = randomItem(h.level)
+			for i, id in ipairs(drops) do
+				local a = i / #drops * 6.283
+				local d = #drops > 1 and 140 or 0
+				dropItem(id, x + math.cos(a) * d, z + math.sin(a) * d)
+			end
+		end
 		if x then
 			ceg("hero-death", x, y, z)
 		end
@@ -715,6 +951,18 @@ if gadgetHandler:IsSyncedCode() then
 					m = m * (1 + b.mult[r])
 				end
 			end
+			local crit = a.mods and a.mods.crit
+			if crit and not paralyzer and random() < crit[1] then
+				m = m * crit[2]
+				local f = frameNow()
+				if f - a.lastCrit > 8 then
+					a.lastCrit = f
+					local x, y, z = spGetUnitPosition(unitID)
+					if x then
+						ceg("hero-crit", x, y + 20, z)
+					end
+				end
+			end
 		elseif attackerID and auraDamage[attackerID] then
 			m = m * (1 + auraDamage[attackerID])
 		end
@@ -736,6 +984,7 @@ if gadgetHandler:IsSyncedCode() then
 					v.undyingReady = f + b.cooldown[r] * GAME_SPEED
 					v.undyingUntil = f + 3 * GAME_SPEED
 					spSetUnitRulesParam(unitID, "hero_ready_ult", v.undyingReady, ALLIED)
+					spSetUnitRulesParam(unitID, "hero_cd_ult", b.cooldown[r] * GAME_SPEED, ALLIED)
 					spSetUnitRulesParam(unitID, "hero_on_ult", v.undyingUntil, INLOS)
 					delayed[#delayed + 1] = { frame = f + 1, fn = function()
 						if heroes[unitID] then
@@ -759,10 +1008,24 @@ if gadgetHandler:IsSyncedCode() then
 		return damage, 1
 	end
 
+	-- weapon tree effects of hero hits, resolved every 6 frames (beams hit 30 times a second)
+	local pierceHits = {}  -- "<owner>:<victim>" -> { owner, victim, dmg, dx, dz, len }
+	local burning = {}     -- victim -> { owner, pool }
+	local discharge = {}   -- victim -> { owner, dmg }
+	local inThorns = false
+
 	function gadget:UnitDamaged(unitID, unitDefID, unitTeam, damage, paralyzer, weaponDefID, projectileID, attackerID, attackerDefID, attackerTeam)
 		local victim = heroes[unitID]
 		if victim and damage > 0 then
 			victim.lastHit = frameNow()
+			-- thorns: part of the damage goes back to the attacker
+			local th = victim.mods and victim.mods.thorns or 0
+			if th > 0 and not paralyzer and not inThorns and attackerID and spValidUnitID(attackerID)
+				and attackerTeam and not spAreTeamsAllied(attackerTeam, unitTeam) then
+				inThorns = true
+				spAddUnitDamage(attackerID, damage * (victim.hpMult or 1) * th, 0, unitID)
+				inThorns = false
+			end
 		end
 		if not attackerID or damage <= 0 then
 			return
@@ -780,6 +1043,97 @@ if gadgetHandler:IsSyncedCode() then
 			value = value * 0.25
 		end
 		addXP(attackerID, h, value)
+		if paralyzer or inThorns then
+			return
+		end
+		local mods = h.mods or {}
+		if (mods.lifesteal or 0) > 0 then
+			local hp, mhp = spGetUnitHealth(attackerID)
+			if hp then
+				spSetUnitHealth(attackerID, min(mhp, hp + damage * mods.lifesteal / (h.hpMult or 1)))
+			end
+		end
+		local fx = h.wfx and h.wfx[tierBase[weaponDefID] or weaponDefID]
+		if not fx then
+			return
+		end
+		if fx.pierce > 0 then
+			local key = attackerID .. ":" .. unitID
+			local p = pierceHits[key]
+			if not p then
+				local ax, _, az = spGetUnitPosition(attackerID)
+				local vx, _, vz = spGetUnitPosition(unitID)
+				if ax and vx then
+					local dx, dz = vx - ax, vz - az
+					local d = max(1, sqrt(dx * dx + dz * dz))
+					p = { owner = attackerID, victim = unitID, dmg = 0, dx = dx / d, dz = dz / d, len = fx.pierceLen, tier = fx.tier }
+					pierceHits[key] = p
+				end
+			end
+			if p then
+				p.dmg = p.dmg + damage * fx.pierce
+			end
+		end
+		if fx.burn > 0 then
+			local b = burning[unitID]
+			if not b then
+				b = { owner = attackerID, pool = 0 }
+				burning[unitID] = b
+			end
+			b.pool = b.pool + damage * fx.burn
+		end
+		if fx.discharge > 0 then
+			local d = discharge[unitID]
+			if not d then
+				d = { owner = attackerID, dmg = 0 }
+				discharge[unitID] = d
+			end
+			d.dmg = d.dmg + damage * fx.discharge
+		end
+	end
+
+	local function weaponEffects(f)
+		for key, p in pairs(pierceHits) do
+			pierceHits[key] = nil
+			local vx, vy, vz = spGetUnitPosition(p.victim)
+			local ally = spValidUnitID(p.owner) and spGetUnitAllyTeam(p.owner)
+			if vx and ally then
+				local hit = {}
+				local step = 140
+				for d = step, p.len, step do
+					local px, pz = vx + p.dx * d, vz + p.dz * d
+					for _, uid in ipairs(spGetUnitsInCylinder(px, pz, 110)) do
+						if uid ~= p.victim and not hit[uid] and isEnemyOf(uid, ally) then
+							hit[uid] = true
+							spAddUnitDamage(uid, p.dmg, 0, p.owner)
+						end
+					end
+				end
+				local ex, ez = vx + p.dx * p.len, vz + p.dz * p.len
+				ceg(p.tier >= 3 and "hero-pierce-big" or "hero-pierce", ex, spGetGroundHeight(ex, ez) + 30, ez)
+			end
+		end
+		for uid, b in pairs(burning) do
+			if not spValidUnitID(uid) or spGetUnitIsDead(uid) or b.pool < 1 then
+				burning[uid] = nil
+			else
+				local dmg = b.pool * 0.12
+				b.pool = b.pool - dmg
+				spAddUnitDamage(uid, dmg, 0, spValidUnitID(b.owner) and b.owner or nil)
+				if f % 12 < 6 then
+					local x, y, z = spGetUnitPosition(uid)
+					ceg("hero-afterburn", x, y + 10, z)
+				end
+			end
+		end
+		for uid, d in pairs(discharge) do
+			discharge[uid] = nil
+			if spValidUnitID(uid) and not spGetUnitIsDead(uid) then
+				spAddUnitDamage(uid, d.dmg, 2, spValidUnitID(d.owner) and d.owner or nil)
+				local x, y, z = spGetUnitPosition(uid)
+				ceg("hero-static", x, y, z)
+			end
+		end
 	end
 
 	---------------------------------------------------------------- projectile swaps (nuclear rockets & co)
@@ -793,18 +1147,110 @@ if gadgetHandler:IsSyncedCode() then
 
 	local projParams = { pos = { 0, 0, 0 }, speed = { 0, 0, 0 }, owner = -1, team = -1, gravity = 0, ttl = 900 }
 
+	local beamParams = { pos = { 0, 0, 0 }, ["end"] = { 0, 0, 0 }, ttl = 3, owner = -1, team = -1 }
+	local isBeam = {}
+	for wdid, wd in pairs(WeaponDefs) do
+		if wd.type == "BeamLaser" or wd.type == "LightningCannon" then
+			isBeam[wdid] = wd.beamTTL or 3
+		end
+	end
+	local spSetProjectileDamages = Spring.SetProjectileDamages
+
+	-- the end point of a beam: its velocity is start -> end in Recoil; otherwise the weapon's target
+	local function beamEnd(proID, ownerID, num, px, py, pz)
+		local vx, vy, vz = Spring.GetProjectileVelocity(proID)
+		if vx and (vx * vx + vy * vy + vz * vz) > 100 then
+			return px + vx, py + vy, pz + vz
+		end
+		local tt, _, wt = Spring.GetUnitWeaponTarget(ownerID, num)
+		if tt == 1 and wt then
+			local x, y, z = spGetUnitPosition(wt)
+			if x then
+				return x, y + 20, z
+			end
+		elseif tt == 2 and type(wt) == "table" then
+			return wt[1], wt[2], wt[3]
+		end
+	end
+
+	-- an upgraded weapon draws its shot with the copy of its visual tier
+	local function tierSwap(proID, ownerID, weaponDefID, h)
+		local fx = h.wfx and h.wfx[weaponDefID]
+		if not fx or fx.tier < 2 then
+			return
+		end
+		local to = h.def.tierWdid[fx.n] and h.def.tierWdid[fx.n][fx.tier]
+		if not to then
+			return
+		end
+		local px, py, pz = Spring.GetProjectilePosition(proID)
+		if not px then
+			return
+		end
+		if isBeam[weaponDefID] then
+			local ex, ey, ez = beamEnd(proID, ownerID, fx.n, px, py, pz)
+			if not ex then
+				return
+			end
+			Spring.DeleteProjectile(proID)
+			beamParams.pos[1], beamParams.pos[2], beamParams.pos[3] = px, py, pz
+			beamParams["end"][1], beamParams["end"][2], beamParams["end"][3] = ex, ey, ez
+			beamParams.owner = ownerID
+			beamParams.team = h.team
+			beamParams.ttl = isBeam[weaponDefID]
+			spSpawnProjectile(to, beamParams)
+			return
+		end
+		local vx, vy, vz = Spring.GetProjectileVelocity(proID)
+		local _, target = Spring.GetProjectileTarget(proID)
+		if not target then
+			local tt, _, wt = Spring.GetUnitWeaponTarget(ownerID, fx.n)
+			if tt == 1 or tt == 2 then
+				target = wt
+			end
+		end
+		local grav = Spring.GetProjectileGravity and Spring.GetProjectileGravity(proID) or gravityPerFrame
+		local ttl = Spring.GetProjectileTimeToLive and Spring.GetProjectileTimeToLive(proID) or 900
+		Spring.DeleteProjectile(proID)
+		projParams.pos[1], projParams.pos[2], projParams.pos[3] = px, py, pz
+		projParams.speed[1], projParams.speed[2], projParams.speed[3] = vx, vy, vz
+		projParams.owner = ownerID
+		projParams.team = h.team
+		projParams.gravity = grav
+		projParams.ttl = ttl
+		projParams.tracking = type(target) == "number" and target or nil
+		projParams.upTime = upTime[to]
+		local newID = spSpawnProjectile(to, projParams)
+		projParams.tracking = nil
+		projParams.upTime = nil
+		if newID then
+			if fx.aoe ~= fx.baseAoe and spSetProjectileDamages then
+				spSetProjectileDamages(newID, 0, "damageAreaOfEffect", fx.aoe)
+			end
+			if type(target) == "number" then
+				Spring.SetProjectileTarget(newID, target, string.byte("u"))
+			elseif type(target) == "table" then
+				Spring.SetProjectileTarget(newID, target[1], target[2], target[3])
+			end
+		end
+	end
+
 	function gadget:ProjectileCreated(proID, ownerID, weaponDefID)
 		if not swapWatch[weaponDefID] or not ownerID then
 			return
 		end
 		local h = heroes[ownerID]
-		local sw = h and h.swaps and h.swaps[weaponDefID]
-		if not sw then
+		if not h then
 			return
 		end
-		h.shots[weaponDefID] = (h.shots[weaponDefID] or 0) + 1
-		local to = (h.shots[weaponDefID] % sw.every == 0) and sw.to or sw.other
+		local sw = h.swaps and h.swaps[weaponDefID]
+		local to
+		if sw then
+			h.shots[weaponDefID] = (h.shots[weaponDefID] or 0) + 1
+			to = (h.shots[weaponDefID] % sw.every == 0) and sw.to or sw.other
+		end
 		if not to then
+			tierSwap(proID, ownerID, weaponDefID, h)
 			return
 		end
 		local px, py, pz = Spring.GetProjectilePosition(proID)
@@ -866,6 +1312,7 @@ if gadgetHandler:IsSyncedCode() then
 		if not explWatch[weaponDefID] or not attackerID then
 			return false
 		end
+		weaponDefID = tierBase[weaponDefID] or weaponDefID
 		local h = heroes[attackerID]
 		if not h then
 			return false
@@ -916,12 +1363,15 @@ if gadgetHandler:IsSyncedCode() then
 
 	local function startCooldown(unitID, h, key, b, r)
 		local cd = type(b.cooldown) == "table" and b.cooldown[r] or b.cooldown or 30
+		cd = cd * max(0.4, 1 - (h.mods and h.mods.cdr or 0))
 		h.ready[key] = frameNow() + floor(cd * GAME_SPEED)
 		spSetUnitRulesParam(unitID, "hero_ready_" .. key, h.ready[key], ALLIED)
+		spSetUnitRulesParam(unitID, "hero_cd_" .. key, floor(cd * GAME_SPEED), ALLIED)
 	end
 
 	local function markActive(unitID, key, seconds)
 		spSetUnitRulesParam(unitID, "hero_on_" .. key, frameNow() + floor(seconds * GAME_SPEED), INLOS)
+		spSetUnitRulesParam(unitID, "hero_dur_" .. key, floor(seconds * GAME_SPEED), INLOS)
 	end
 
 	local cast = {}
@@ -929,6 +1379,8 @@ if gadgetHandler:IsSyncedCode() then
 	cast.active_guard = function(unitID, h, key, b, r)
 		events[#events + 1] = { kind = "guard", owner = unitID, expire = frameNow() + b.duration * GAME_SPEED, radius = b.radius, mult = 1 - b.reduce[r] }
 		markActive(unitID, key, b.duration)
+		local x, y, z = heroPos(unitID)
+		ceg("hero-guard-cast", x, y, z)
 		return true
 	end
 
@@ -936,7 +1388,7 @@ if gadgetHandler:IsSyncedCode() then
 		events[#events + 1] = { kind = "dome", owner = unitID, expire = frameNow() + b.duration[r] * GAME_SPEED, radius = b.radius }
 		markActive(unitID, key, b.duration[r])
 		local x, y, z = heroPos(unitID)
-		ceg("hero-pulse", x, y, z)
+		ceg("hero-dome-cast", x, y, z)
 		return true
 	end
 
@@ -946,7 +1398,7 @@ if gadgetHandler:IsSyncedCode() then
 		applyStats(unitID, h)
 		markActive(unitID, key, dur)
 		local x, y, z = heroPos(unitID)
-		ceg(b.buff.immobile and "hero-stomp" or "hero-pulse", x, y, z)
+		ceg(b.fx or "hero-barrage", x, y, z)
 		return true
 	end
 
@@ -1002,6 +1454,7 @@ if gadgetHandler:IsSyncedCode() then
 		events[#events + 1] = { kind = "storm", owner = unitID, x = tx, z = tz, expire = f + b.duration * GAME_SPEED,
 			radius = b.radius, perTick = b.bolts[r] / ticks, acc = 0, dmg = b.dmg[r], emp = b.emp }
 		ceg("hero-target", tx, spGetGroundHeight(tx, tz), tz)
+		ceg("hero-storm-cloud", tx, spGetGroundHeight(tx, tz), tz)
 		markActive(unitID, key, b.duration)
 		return true
 	end
@@ -1019,6 +1472,7 @@ if gadgetHandler:IsSyncedCode() then
 	cast.active_sunbeam = function(unitID, h, key, b, r, tx, tz)
 		events[#events + 1] = { kind = "sunbeam", owner = unitID, x = tx, z = tz, expire = frameNow() + b.duration * GAME_SPEED,
 			radius = b.radius, dmg = b.tick[r], nova = b.nova[r] }
+		ceg("hero-sunbeam-start", tx, spGetGroundHeight(tx, tz), tz)
 		markActive(unitID, key, b.duration)
 		return true
 	end
@@ -1123,6 +1577,10 @@ if gadgetHandler:IsSyncedCode() then
 							spAddUnitDamage(uid, e.emp, 3, h and e.owner or nil)
 						end
 						ceg("custom:lightning_stormbig--x2", x, y + 10, z)
+						ceg("hero-zap", x, y, z)
+					end
+					if f % 30 < 6 then
+						ceg("hero-storm-cloud", e.x, spGetGroundHeight(e.x, e.z), e.z)
 					end
 				elseif e.kind == "meteors" then
 					e.acc = e.acc + e.perTick
@@ -1259,6 +1717,9 @@ if gadgetHandler:IsSyncedCode() then
 					local b = cfg[key]
 					local r = rankOf(h, key)
 					if r > 0 then
+						if f % 60 < 30 and (b.kind == "aura_heal" or b.kind == "aura_damage") then
+							ceg(b.kind == "aura_heal" and "hero-aura-heal" or "hero-aura-command", x, y, z)
+						end
 						if b.kind == "aura_heal" then
 							for _, uid in ipairs(alliesIn(x, z, b.radius[r], ally)) do
 								if (healBest[uid] or 0) < b.rate[r] then
@@ -1288,6 +1749,23 @@ if gadgetHandler:IsSyncedCode() then
 								end
 							end
 						end
+					end
+				end
+				-- item aura (Warlord's Banner) and the Crown of Storms
+				local m = h.mods or {}
+				if m.aura then
+					for _, uid in ipairs(alliesIn(x, z, m.aura.radius, ally)) do
+						if uid ~= unitID then
+							auraDamage[uid] = max(auraDamage[uid] or 0, m.aura.damage)
+						end
+					end
+				end
+				if m.zap and f % (m.zap.period * GAME_SPEED) < GAME_SPEED then
+					local target = Spring.GetUnitNearestEnemy(unitID, m.zap.radius, true)
+					if target then
+						local tx, ty, tz = spGetUnitPosition(target)
+						ceg("hero-zap", tx, ty, tz)
+						spAddUnitDamage(target, m.zap.damage * h.dmgMult, 0, unitID)
 					end
 				end
 				-- shield capacity (Aegis) and shield recharge boosts (Siege Protocol)
@@ -1639,6 +2117,117 @@ if gadgetHandler:IsSyncedCode() then
 		end
 	end
 
+	---------------------------------------------------------------- inventory
+
+	local function freeSlot(h)
+		for slot = 1, H.INVENTORY do
+			if not h.items[slot] then
+				return slot
+			end
+		end
+	end
+
+	local function pickups()
+		if not next(ground) then
+			return
+		end
+		local r2 = H.ITEM_PICKUP_RADIUS * H.ITEM_PICKUP_RADIUS
+		for unitID, h in pairs(heroes) do
+			local slot = freeSlot(h)
+			if slot then
+				local x, y, z = heroPos(unitID)
+				if x then
+					for id, g in pairs(ground) do
+						if (g.x - x) ^ 2 + (g.z - z) ^ 2 <= r2 then
+							h.items[slot] = g.item
+							h.itemReady[slot] = 0
+							ground[id] = nil
+							groundDirty = true
+							applyStats(unitID, h)
+							publishItems(unitID, h)
+							ceg("hero-itempickup-" .. H.items[g.item].rarity, x, y, z)
+							toUI("pickup", unitID, H.itemIndex[g.item])
+							slot = freeSlot(h)
+							if not slot then
+								break
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+
+	local function expireGround(f)
+		for id, g in pairs(ground) do
+			if g.expire <= f then
+				ground[id] = nil
+				groundDirty = true
+			end
+		end
+	end
+
+	local function dropSlot(unitID, h, slot)
+		local id = h.items[slot]
+		if not id then
+			return
+		end
+		h.items[slot] = nil
+		h.itemReady[slot] = nil
+		local x, _, z = heroPos(unitID)
+		local dx, _, dz = Spring.GetUnitDirection(unitID)
+		dropItem(id, x + (dx or 0) * 220, z + (dz or 1) * 220)
+		applyStats(unitID, h)
+		publishItems(unitID, h)
+	end
+
+	local function useSlot(unitID, h, slot)
+		local id = h.items[slot]
+		local it = id and H.items[id]
+		local act = it and it.active
+		local f = frameNow()
+		if not act or (h.itemReady[slot] or 0) > f then
+			return false
+		end
+		local x, y, z = heroPos(unitID)
+		if act.kind == "heal" then
+			local hp, maxHp = spGetUnitHealth(unitID)
+			spSetUnitHealth(unitID, min(maxHp, hp + maxHp * act.amount))
+			ceg("hero-itemheal", x, y, z)
+		elseif act.kind == "invuln" then
+			h.undyingUntil = max(h.undyingUntil, f + act.duration * GAME_SPEED)
+			markActive(unitID, "item" .. slot, act.duration)
+			ceg("hero-phase", x, y, z)
+		elseif act.kind == "dash" then
+			local dx, _, dz = Spring.GetUnitDirection(unitID)
+			local nx = max(64, min(Game.mapSizeX - 64, x + dx * act.distance))
+			local nz = max(64, min(Game.mapSizeZ - 64, z + dz * act.distance))
+			ceg("hero-blink", x, y, z)
+			Spring.SetUnitPosition(unitID, nx, nz)
+			ceg("hero-blink", nx, spGetGroundHeight(nx, nz), nz)
+		end
+		h.itemReady[slot] = f + act.cooldown * GAME_SPEED
+		publishItems(unitID, h)
+		toUI("useitem", unitID, H.itemIndex[id])
+		return true
+	end
+
+	-- AI heroes and autocast players use their items by themselves
+	local function autoItems(unitID, h)
+		local hp, maxHp = spGetUnitHealth(unitID)
+		if not hp then
+			return
+		end
+		local frac = hp / maxHp
+		for slot = 1, H.INVENTORY do
+			local it = h.items[slot] and H.items[h.items[slot]]
+			local act = it and it.active
+			if act and ((act.kind == "heal" and frac < 0.55) or (act.kind == "invuln" and frac < 0.3)) then
+				useSlot(unitID, h, slot)
+			end
+		end
+	end
+
 	---------------------------------------------------------------- frames
 
 	function gadget:GameFrame(f)
@@ -1653,11 +2242,19 @@ if gadgetHandler:IsSyncedCode() then
 			end
 			delayed = keep
 		end
+		if f % 15 == 11 then
+			expireGround(f)
+			pickups()
+			if groundDirty then
+				publishGround()
+			end
+		end
 		if next(heroes) == nil and #events == 0 then
 			return
 		end
 		if f % 6 == 3 then
 			processEvents(f)
+			weaponEffects(f)
 		end
 		if f % 15 == 7 then
 			refreshProtection(f)
@@ -1670,6 +2267,11 @@ if gadgetHandler:IsSyncedCode() then
 				end
 				if h.autocast or isAITeam[h.team] then
 					autocast(unitID, h)
+					autoItems(unitID, h)
+				end
+				-- the AI learns what it could not afford before
+				if isAITeam[h.team] and f % 300 == 13 and h.level - #h.picks > 0 then
+					learnAI(unitID, h)
 				end
 				publish(unitID, h)
 			end
@@ -1758,7 +2360,7 @@ if gadgetHandler:IsSyncedCode() then
 		if spec then
 			return
 		end
-		local what, uid, key = msg:match("^t4hero:(%a+):(%d+):?(%w*)$")
+		local what, uid, key = msg:match("^t4hero:(%a+):(%d+):?([%w_]*)$")
 		uid = tonumber(uid)
 		local h = uid and heroes[uid]
 		if not h or spGetUnitTeam(uid) ~= teamID then
@@ -1766,6 +2368,18 @@ if gadgetHandler:IsSyncedCode() then
 		end
 		if what == "learn" then
 			learn(uid, h, key)
+		elseif what == "use" then
+			useSlot(uid, h, tonumber(key) or 0)
+		elseif what == "drop" then
+			dropSlot(uid, h, tonumber(key) or 0)
+		elseif what == "swap" then
+			local a, b = key:match("^(%d)_(%d)$")
+			a, b = tonumber(a), tonumber(b)
+			if a and b and a >= 1 and b >= 1 and a <= H.INVENTORY and b <= H.INVENTORY then
+				h.items[a], h.items[b] = h.items[b], h.items[a]
+				h.itemReady[a], h.itemReady[b] = h.itemReady[b], h.itemReady[a]
+				publishItems(uid, h)
+			end
 		end
 		return true
 	end
@@ -1802,7 +2416,14 @@ if gadgetHandler:IsSyncedCode() then
 				end
 			end
 		end
+		publishGround()
 		GG.T4Heroes = { heroes = heroes, learn = function(uid, key) local h = heroes[uid]; return h and learn(uid, h, key) end,
+			give = function(uid, item) local h = heroes[uid]; local slot = h and freeSlot(h)
+				if slot and H.items[item] then h.items[slot] = item; h.itemReady[slot] = 0; applyStats(uid, h); publishItems(uid, h) end end,
+			drop = function(item, x, z) dropItem(item, x, z) end, randomItem = function(level) return randomItem(level) end,
+			setLevel = function(uid, level) local h = heroes[uid]
+				if h then h.xp = H.xpFor(level, xpMult) * h.def.cost + 1
+					while h.level < min(level, H.MAX_LEVEL) do levelUp(uid, h) end publish(uid, h) end end,
 			addXP = function(uid, metal) local h = heroes[uid]; if h then addXP(uid, h, metal) end end,
 			cast = function(uid, key, tx, tz, target) local h = heroes[uid]; return h and tryCast(uid, h, key, tx, tz, target) end,
 			dead = dead, setAI = function(teamID, ai) isAITeam[teamID] = ai end }
