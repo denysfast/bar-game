@@ -757,6 +757,8 @@ if gadgetHandler:IsSyncedCode() then
 		spSetUnitRulesParam(unitID, "hero_dmgmult", h.dmgMult, INLOS)
 		spSetUnitRulesParam(unitID, "hero_armor", h.armor, INLOS)
 		spSetUnitRulesParam(unitID, "hero_regen", h.regen, INLOS)
+		-- v15: the same in effective HP per second, items included (the console shows units)
+		spSetUnitRulesParam(unitID, "hero_regen_hps", floor(h.regen * baseHp * h.hpMult + (h.itemFx and h.itemFx.regen or 0)), INLOS)
 
 		-- weapons: global mods x the weapon's own tree
 		applyWeapons(unitID, h, m, buff)

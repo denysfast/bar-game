@@ -993,7 +993,8 @@ local function drawConsole(uid)
 	stat("Toughness", string.format("x%.2f", hpMult), col2, sy - ss * 1.35, ss, GREEN)
 	stat("Speed", string.format("%d", floor(speed + 0.5)), sx, sy - ss * 2.7, ss)
 	stat("Range", string.format("%d", range), col2, sy - ss * 2.7, ss)
-	stat("Regen", string.format("%.2f%%/s", regen * 100), sx, sy - ss * 4.05, ss, GREEN)
+	local regenHps = spGetUnitRulesParam(uid, "hero_regen_hps")
+	stat("Regen", regenHps and string.format("%d HP/s", regenHps) or string.format("%.2f%%/s", regen * 100), sx, sy - ss * 4.05, ss, GREEN)
 	stat("Kills", tostring(kills), col2, sy - ss * 4.05, ss, RED)
 	-- weapon tiers
 	local wy = sy - ss * 5.5
