@@ -246,10 +246,12 @@ function T4.hero(ud, fx, extraWeapons)
 	local steps = H and #H.weaponSteps or 8
 	local growth = H and H.STEP_GROWTH or 0.125
 	local tiers = {}
+	-- no copies of starburst weapons: a starburst made by SpawnProjectile never turns to its target, climbs
+	-- forever, and its smoke trail left the map -> a dangling pointer that crashed every savegame (v15.1)
 	for key, wd in pairs(ud.weapondefs or {}) do
 		local wt = wd.weapontype
 		local dmg = wd.damage and (wd.damage.default or wd.damage.vtol) or 0
-		if (not wanted or wanted[key]) and wt ~= "Shield" and wt ~= "Flame" and (wd.range or 0) > 0 and dmg > 0 then
+		if (not wanted or wanted[key]) and wt ~= "Shield" and wt ~= "Flame" and wt ~= "StarburstLauncher" and (wd.range or 0) > 0 and dmg > 0 then
 			for step = 1, steps do
 				local m = 1 + growth * step
 				local c = deepcopy(wd)

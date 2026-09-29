@@ -1654,6 +1654,12 @@ if gadgetHandler:IsSyncedCode() then
 	local projParams = { pos = { 0, 0, 0 }, speed = { 0, 0, 0 }, owner = -1, team = -1, gravity = 0, ttl = 900 }
 
 	local beamParams = { pos = { 0, 0, 0 }, ["end"] = { 0, 0, 0 }, ttl = 3, owner = -1, team = -1 }
+	local isStarburst = {}
+	for wdid, wd in pairs(WeaponDefs) do
+		if wd.type == "StarburstLauncher" then
+			isStarburst[wdid] = true
+		end
+	end
 	local isBeam = {}
 	for wdid, wd in pairs(WeaponDefs) do
 		if wd.type == "BeamLaser" or wd.type == "LightningCannon" then
@@ -1698,7 +1704,7 @@ if gadgetHandler:IsSyncedCode() then
 				Spring.SetProjectileTimeToLive(proID, math.ceil(ttl * fx.ttlMult))
 			end
 		end
-		if fx.step < 1 then
+		if fx.step < 1 or isStarburst[weaponDefID] then -- (a respawned starburst never turns to its target)
 			return
 		end
 		local to = h.def.tierWdid[fx.n] and h.def.tierWdid[fx.n][fx.step]

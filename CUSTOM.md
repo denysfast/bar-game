@@ -248,7 +248,7 @@ center — внутри, back — позади), таланты по плану 
   входящего урона (`hero_hpmult`), UI показывает эффективное HP.
 - `Spring.MoveCtrl.SetGroundMoveTypeData` берёт скорость в эльмах/с (как `UnitDefs[].speed`).
 - `Spring.SpawnCEG` берёт имя без `custom:`, weapondef — с ним.
-- Старбёрст, созданный `SpawnProjectile`, не разворачивается к цели (улетает вверх): геройские
+- Старбёрст, созданный `SpawnProjectile`, не разворачивается к цели (улетает вверх): геройские (v16: поэтому оружие-старбёрст героев не подменяется копиями шагов вовсе — такая ракета улетала вверх бесконечно, её дымовой след за картой удалялся, а `CStarburstProjectile::smokeTrail` сериализуется: висячий указатель ронял **каждый сейв**, `creg::ObjectPointerType<CSmokeTrailProjectile>::Serialize`)
   боеголовки — самонаводящиеся `MissileLauncher` (`T4.missileWeapon`); скопированная ракета Катапульты
   (turnrate 0) без движковой траектории летит прямо — ей нужны `tracks`/`turnrate`.
 - Ключи параметров `SpawnProjectile` в движке хэшируются при компиляции (`strings` их не покажет);
