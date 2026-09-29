@@ -2192,25 +2192,28 @@ if gadgetHandler:IsSyncedCode() then
 
 	-- a nuke / heavy shell about to land near the hero: the point and the blast radius
 	local function incomingBlast(x, z, ally)
-		local projs = Spring.GetProjectilesInRectangle(x - 1600, z - 1600, x + 1600, z + 1600, false, false)
+		local projs = Spring.GetProjectilesInRectangle(x - 3000, z - 3000, x + 3000, z + 3000, false, false)
 		for _, p in ipairs(projs or {}) do
 			local aoe = bigShot[Spring.GetProjectileDefID(p) or -1]
 			if aoe then
 				local team = Spring.GetProjectileTeamID(p)
 				local pAlly = team and select(6, Spring.GetTeamInfo(team, false))
 				if pAlly and pAlly ~= ally then
+					-- where it is aimed (a unit or a point), else right under it
 					local tx, tz
 					local ttype, target = Spring.GetProjectileTarget(p)
-					if type(target) == "table" then
+					if type(target) == "table" and target[1] and target[1] > 0 and target[3] > 0 then
 						tx, tz = target[1], target[3]
 					elseif type(target) == "number" and ttype == string.byte("u") then
 						tx, _, tz = spGetUnitPosition(target)
 					end
-					if not tx then
-						tx, _, tz = Spring.GetProjectilePosition(p)
-					end
-					if tx and (tx - x) ^ 2 + (tz - z) ^ 2 < (aoe + 200) ^ 2 then
+					local r2 = (aoe + 200) ^ 2
+					if tx and (tx - x) ^ 2 + (tz - z) ^ 2 < r2 then
 						return tx, tz, aoe
+					end
+					local px, _, pz = Spring.GetProjectilePosition(p)
+					if px and (px - x) ^ 2 + (pz - z) ^ 2 < r2 then
+						return px, pz, aoe
 					end
 				end
 			end
