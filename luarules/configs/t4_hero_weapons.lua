@@ -346,6 +346,22 @@ function H.trackText(tr, amount, base)
 	return "+" .. num(amount)
 end
 
+-- a short form of a track's total for the upgrade window, e.g. "+1590 dmg"
+local SHORT = { damage = "dmg", range = "range", splash = "radius", pellets = "pellets", salvo = "salvo", pierce = "line",
+	burn = "burn", discharge = "para", chain = "arc", blast = "blast" }
+function H.trackShort(tr, total)
+	local st = tr.stat
+	if total <= 0 then
+		return ""
+	elseif st == "reload" then
+		return string.format("-%.2f s", total)
+	elseif st == "crit" then
+		return string.format("%d%% x%d", math.floor(total * 100 + 0.5), tr.mult or 2)
+	end
+	local v = total >= 10000 and string.format("%.1fk", total / 1000) or num(total)
+	return "+" .. v .. " " .. (SHORT[st] or "")
+end
+
 -- the visual step (0 .. #H.weaponSteps) of a weapon rank sum
 function H.weaponStep(rankSum)
 	local s = 0
