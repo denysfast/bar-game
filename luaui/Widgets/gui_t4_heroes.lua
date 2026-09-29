@@ -153,9 +153,8 @@ local function refreshRoster()
 	for _, name in ipairs(H.order) do
 		if UnitDefNames[name] then
 			local deadLevel = spGetTeamRulesParam(team, "hero_dead_" .. name) or 0
-			local built = (spGetTeamRulesParam(team, "hero_built_" .. name) or 0) > 0
 			local a = alive[name]
-			if a or deadLevel > 0 or built then
+			if a or deadLevel > 0 then -- alive (or being built) or fallen and revivable
 				roster[#roster + 1] = {
 					name = name, uid = a and a.uid, building = a and a.building, progress = a and a.progress,
 					deadLevel = deadLevel, revive = spGetTeamRulesParam(team, "hero_revive_" .. name) or 0,
@@ -257,7 +256,7 @@ end
 
 -- a Warcraft-like panel: dark stone fill, bronze double border
 local function panel(x1, y1, x2, y2)
-	gl.Color(0.05, 0.05, 0.07, 0.86)
+	gl.Color(0.05, 0.05, 0.07, 0.93)
 	gl.Rect(x1, y1, x2, y2)
 	gl.BeginEnd(GL.QUADS, function()
 		gl.Color(0.16, 0.14, 0.12, 0.6)
@@ -396,25 +395,76 @@ end
 
 ---------------------------------------------------------------------------- hero buttons (top left)
 
+-- the portrait of a hero, or its unit buildpic while the portrait art is missing
+local portraitCache = {}
+local function portraitOf(name)
+	local p = portraitCache[name]
+	if not p then
+		local path = ART .. "portrait_" .. name .. ".png"
+		if VFS.FileExists(path) then
+			p = path
+		else
+			local ud = UnitDefNames[name]
+			p = ud and ("#" .. ud.id) or path
+		end
+		portraitCache[name] = p
+	end
+	return p
+end
+
+local function heroTier(name)
+	return name:find("t2", 4, true) and 2 or 4
+end
+
+-- the layout of the roster: cards right of the minimap, in columns (top to bottom, then the next column),
+-- shrinking until everything fits the area right of the minimap and above the build menu
+local function rosterLayout(n)
+	local margin = floor(vsy * 0.012)
+	local x1 = margin
+	local mmX, mmY, mmW, mmH = Spring.GetMiniMapGeometry()
+	local areaH = floor(vsy * 0.3)
+	if mmW and mmW > 0 then
+		x1 = mmW + margin
+		if mmH and mmH > 0 then
+			areaH = max(floor(vsy * 0.22), mmH - margin)
+		end
+	end
+	local xMax = floor(vsx * 0.3)
+	if WG.topbar and WG.topbar.GetPosition then
+		local tp = WG.topbar.GetPosition()
+		if tp and tp[1] and tp[1] > x1 + vsy * 0.1 then
+			xMax = max(xMax, floor(tp[1]) - margin)
+		end
+	end
+	local areaW = xMax - x1
+	local big = floor(vsy * 0.062 * uiScale)
+	local small = floor(vsy * 0.03 * uiScale)
+	for size = big, small, -1 do
+		local gapX = floor(size * 0.3)
+		local cellH = floor(size * 1.3) + floor(size * 0.18)
+		local rows = max(1, floor((areaH + floor(size * 0.18)) / cellH))
+		local cols = math.ceil(n / rows)
+		if cols * (size + gapX) - gapX <= areaW or size == small then
+			return x1, vsy - margin, size, gapX, cellH, rows
+		end
+	end
+end
+
 local function drawHeroButtons()
 	if #roster == 0 then
 		return
 	end
-	local size = floor(vsy * 0.062 * uiScale)
-	local gap = floor(size * 0.42)
-	-- right of the minimap, like the hero icons of Warcraft 3 at the top left
-	local x1 = floor(vsy * 0.012)
-	local y = vsy - floor(vsy * 0.012)
-	local _, _, mmW = Spring.GetMiniMapGeometry()
-	if mmW and mmW > 0 then
-		x1 = mmW + floor(vsy * 0.012)
-	end
+	local x0, yTop, size, gapX, cellH, rows = rosterLayout(#roster)
 	local f = spGetGameFrame()
-	for _, r in ipairs(roster) do
-		local y2 = y
+	local barH = max(3, floor(size * 0.1))
+	for i, r in ipairs(roster) do
+		local col = floor((i - 1) / rows)
+		local row = (i - 1) % rows
+		local xa = x0 + col * (size + gapX)
+		local xb = xa + size
+		local y2 = yTop - row * cellH
 		local y1 = y2 - size
-		local xa, xb = x1, x1 + size
-		local portrait = ART .. "portrait_" .. r.name .. ".png"
+		local portrait = portraitOf(r.name)
 		if r.uid and not r.building then
 			local lvl = spGetUnitRulesParam(r.uid, "hero_level") or 1
 			local xp = spGetUnitRulesParam(r.uid, "hero_xp") or 0
@@ -423,33 +473,37 @@ local function drawHeroButtons()
 			local sel = r.uid == selectedHero
 			if pts > 0 then
 				local glow = 0.5 + 0.5 * sin(f * 0.2)
-				rect(xa - 5, y1 - 5, xb + 5, y2 + 5, { 1, 0.8, 0.2, 0.35 + 0.35 * glow })
+				rect(xa - 4, y1 - 4, xb + 4, y2 + 4, { 1, 0.8, 0.2, 0.35 + 0.35 * glow })
 			end
 			iconButton(portrait, xa, y1, xb, y2, true, sel and GOLD or nil, function()
 				local now = Spring.GetTimer()
 				local dbl = lastRosterClick.uid == r.uid and lastRosterClick.t and Spring.DiffTimers(now, lastRosterClick.t) < 0.4
 				focusUnit(r.uid, dbl)
 				lastRosterClick.uid, lastRosterClick.t = r.uid, now
-			end, string.format("%s - level %d%s\nClick: select, double click: go to", heroTitle(r.name), lvl,
+			end, string.format("%s - level %d  (T%d hero)%s\nClick: select, double click: go to", heroTitle(r.name), lvl, heroTier(r.name),
 				pts > 0 and ("\n\255\255\210\064" .. pts .. " skill points to spend") or ""))
 			-- level badge
-			local bs = size * 0.36
+			local bs = max(12, floor(size * 0.38))
 			rect(xb - bs, y1, xb, y1 + bs, { 0, 0, 0, 0.85 })
 			frame(xb - bs, y1, xb, y1 + bs, GOLD, 1)
 			text(tostring(lvl), xb - bs / 2, y1 + bs * 0.2, bs * 0.66, GOLD, "co")
-			bar(xa, y1 - size * 0.14, xb, y1 - size * 0.04, hp and maxHp and hp / maxHp or 0, { 0.2, 0.9, 0.25, 1 })
-			bar(xa, y1 - size * 0.25, xb, y1 - size * 0.16, xp, { 0.55, 0.35, 1, 1 })
+			bar(xa, y1 - 2 - barH, xb, y1 - 2, hp and maxHp and hp / maxHp or 0, { 0.2, 0.9, 0.25, 1 })
+			bar(xa, y1 - 3 - barH * 2, xb, y1 - 3 - barH, xp, { 0.55, 0.35, 1, 1 })
 		elseif r.uid and r.building then
 			iconButton(portrait, xa, y1, xb, y2, false, nil, nil,
 				r.deadLevel > 0 and string.format("Reviving %s at level %d", heroTitle(r.name), r.deadLevel) or string.format("Building %s", heroTitle(r.name)))
-			bar(xa, y1 - size * 0.14, xb, y1 - size * 0.04, r.progress or 0, { 0.5, 0.75, 1, 0.9 })
+			bar(xa, y1 - 2 - barH, xb, y1 - 2, r.progress or 0, { 0.5, 0.75, 1, 0.9 })
 		else
 			iconButton(portrait, xa, y1, xb, y2, false, { 0.5, 0.1, 0.1, 1 }, nil,
 				string.format("%s has fallen at level %d.\nRebuild it at the hero altar to revive it (%s metal).", heroTitle(r.name), r.deadLevel, fmtNum(r.revive)))
 			text("x", (xa + xb) / 2, y1 + size * 0.2, size * 0.7, { 0.8, 0.1, 0.1, 0.8 }, "co")
 			text(tostring(r.deadLevel), xb - size * 0.18, y1 + size * 0.05, size * 0.28, RED, "co")
 		end
-		y = y1 - gap
+		-- tier tag: T2 heroes (hero hall) and T4 heroes (altar)
+		local ts = max(11, floor(size * 0.3))
+		local t2 = heroTier(r.name) == 2
+		rect(xa, y2 - ts, xa + ts * 1.35, y2, t2 and { 0.1, 0.22, 0.35, 0.9 } or { 0.3, 0.2, 0.02, 0.9 })
+		text(t2 and "T2" or "T4", xa + ts * 0.68, y2 - ts * 0.8, ts * 0.72, t2 and { 0.6, 0.85, 1, 1 } or GOLD, "co")
 	end
 end
 
@@ -879,7 +933,7 @@ local function drawConsole(uid)
 	local px1, py2 = x1 + pad, y2 - pad
 	local px2, py1 = px1 + ps, py2 - ps
 	rect(px1 - 3, py1 - 3, px2 + 3, py2 + 3, { 0, 0, 0, 1 })
-	tex(ART .. "portrait_" .. name .. ".png", px1, py1, px2, py2)
+	tex(portraitOf(name), px1, py1, px2, py2)
 	frame(px1 - 3, py1 - 3, px2 + 3, py2 + 3, GOLD, 2)
 	-- health and experience under the portrait
 	local hp, maxHp = spGetUnitHealth(uid)
@@ -1055,7 +1109,8 @@ local function drawUpgrades(uid, yBottom)
 	local nW = #(cfg.weapons or {})
 	local rows = nW + 1
 	local W = floor(is * 20)
-	local Ht = floor(rowH * rows + is * 2.3)
+	-- the ability column (header, icons, names, the price note) needs ~5.6 icons of height even for one weapon
+	local Ht = floor(max(rowH * rows + is * 2.3, is * 5.9 + gap))
 	local x1 = floor((vsx - W) / 2)
 	local x2 = x1 + W
 	local y1 = yBottom + floor(vsy * 0.01)
@@ -1161,7 +1216,7 @@ local function drawUpgrades(uid, yBottom)
 	end
 	text(string.format("Metal per rank - weapons and chassis: %s x rank\nabilities: %s / %s / %s\nultimate: %s / %s / %s",
 		fmtNum(H.STAT_METAL), fmtNum(H.ABILITY_METAL[1]), fmtNum(H.ABILITY_METAL[2]), fmtNum(H.ABILITY_METAL[3]),
-		fmtNum(H.ULT_METAL[1]), fmtNum(H.ULT_METAL[2]), fmtNum(H.ULT_METAL[3])), ax, y + is * 0.6, is * 0.24, GREY)
+		fmtNum(H.ULT_METAL[1]), fmtNum(H.ULT_METAL[2]), fmtNum(H.ULT_METAL[3])), ax, y2 - is * 4.45 - gap, is * 0.24, GREY)
 end
 
 ---------------------------------------------------------------------------- world overlay
