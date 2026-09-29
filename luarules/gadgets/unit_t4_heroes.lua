@@ -16,6 +16,11 @@ end
 --
 -- Protocol (LuaRules messages from the owner's UI):
 --   t4hero:learn:<unitID>:<branch>      spend a talent point (arsenal|plating|servos|a1|a2|ult)
+--   t4hero:equip:<unitID>:<slot>_<stashIndex>[_<itemIndex>]   equip a team stash item into a slot of its category
+--   t4hero:unequip:<unitID>:<slot>      the item goes back to the team stash
+--   t4hero:use:<unitID>:<slot>          use an active item
+-- Items: unit rules params hero_item_<slot> (item index, in LOS), hero_itemcd_<slot> (frame ready),
+--   hero_itemcdlen_<slot>, hero_barrier; team rules params (allies) hero_stash_n, hero_stash_<i>, hero_stash_ver.
 -- Unit rules params: hero_level (in LOS), hero_xp (0..1 to the next level), hero_points,
 --   hero_rank_<branch>, hero_ready_<branch> (frame the ability is ready), hero_on_<branch> (frame an
 --   active effect ends; in LOS), hero_retreat (AI care). Team rules params (allies):
@@ -362,7 +367,116 @@ if gadgetHandler:IsSyncedCode() then
 
 	---------------------------------------------------------------- stats
 
-	local ITEM_KEYS = { "damage", "hp", "armor", "speed", "range", "reload", "sight", "lifesteal", "thorns", "cdr", "xp", "splash", "burn" }
+	---------------------------------------------------------------- items: stats
+	-- Equipped items (h.items[slot], slots 1..H.INVENTORY) add to the mods of sumMods. Stats in units (hp, speed,
+	-- range, sight, radar) are turned into the fractions applyStats uses, from the hero's own base values, so the
+	-- hero gets exactly that many HP / elmos; regen, income, auras, procs and the other specials are collected
+	-- in h.itemFx and handled by the item code below (itemPassives, itemAttackMult, itemDefense, itemOnHit).
+
+	local ITEM_FRACTIONS = { "damage", "armor", "reload", "splash", "burn", "lifesteal", "thorns", "cdr", "xp" }
+
+	local function addItemMods(h, m)
+		local def = h.def
+		local fx = { regen = 0, income = 0, chains = {}, blasts = {}, zaps = {}, slayers = {}, executes = {} }
+		local abs = { hp = 0, speed = 0, range = 0, sight = 0, radar = 0 }
+		local critChance, critMult = 0, 0
+		for slot = 1, H.INVENTORY do
+			local id = h.items[slot]
+			local it = id and H.items[id]
+			if it then
+				local st = it.stats
+				for _, k in ipairs(ITEM_FRACTIONS) do
+					if st[k] then
+						m[k] = (m[k] or 0) + st[k]
+					end
+				end
+				for k in pairs(abs) do
+					if st[k] then
+						abs[k] = abs[k] + st[k]
+					end
+				end
+				fx.regen = fx.regen + (st.regen or 0)
+				fx.income = fx.income + (st.income or 0)
+				if st.crit then
+					critChance = critChance + st.crit[1]
+					critMult = max(critMult, st.crit[2])
+				end
+				if it.procChain then
+					fx.chains[#fx.chains + 1] = { id = id, p = it.procChain }
+				end
+				if it.procBlast then
+					fx.blasts[#fx.blasts + 1] = { id = id, p = it.procBlast }
+				end
+				if it.zap then
+					fx.zaps[#fx.zaps + 1] = it.zap
+				end
+				if it.slayer then
+					fx.slayers[#fx.slayers + 1] = it.slayer
+				end
+				if it.execute then
+					fx.executes[#fx.executes + 1] = it.execute
+				end
+				if it.barrier then
+					local b = fx.barrier or { cap = 0, regen = 0, delay = it.barrier.delay }
+					b.cap = b.cap + it.barrier.cap
+					b.regen = max(b.regen, it.barrier.regen)
+					b.delay = min(b.delay, it.barrier.delay)
+					fx.barrier = b
+				end
+				if it.lastStand and (not fx.lastStand or it.lastStand.armor > fx.lastStand.armor) then
+					fx.lastStand = it.lastStand
+				end
+				if it.cheatDeath then
+					fx.cheatDeath = it.cheatDeath
+				end
+				if it.aura then
+					local a = fx.aura or { radius = 0, damage = 0, armor = 0, heal = 0 }
+					a.radius = max(a.radius, it.aura.radius)
+					a.damage = max(a.damage, it.aura.damage or 0)
+					a.armor = max(a.armor, it.aura.armor or 0)
+					a.heal = max(a.heal, it.aura.heal or 0)
+					fx.aura = a
+				end
+			end
+		end
+		if critChance > 0 then
+			m.crit = { min(0.5, critChance), critMult }
+		end
+		-- an Overcharge Cell in use
+		local b = h.itemBuff
+		if b and b.expire > spGetGameFrame() then
+			m.damage = (m.damage or 0) + b.damage
+			m.reload = (m.reload or 0) + b.reload
+		end
+		-- units -> fractions of the base values (hp: of the level-grown health, so +N HP is exactly N)
+		local levelHp = 1 + H.LEVEL_HP * (h.level - 1)
+		if abs.hp ~= 0 and def.health > 0 then
+			m.hp = (m.hp or 0) + abs.hp / (def.health * levelHp)
+		end
+		if abs.speed ~= 0 and def.speed > 0 then
+			m.speed = (m.speed or 0) + abs.speed / def.speed
+		end
+		if abs.sight ~= 0 and def.sight > 0 then
+			m.sight = (m.sight or 0) + abs.sight / def.sight
+		end
+		if abs.radar ~= 0 and def.radar > 0 then
+			m.radar = (m.radar or 0) + abs.radar / def.radar
+		end
+		if abs.range ~= 0 then
+			local longest = 0
+			for _, w in pairs(def.weapons) do
+				if w.damage > 0 then
+					longest = max(longest, w.range)
+				end
+			end
+			if longest > 0 then
+				m.range = (m.range or 0) + abs.range / longest
+			end
+		end
+		fx.abs = abs
+		h.itemFx = fx
+	end
+
 
 	local function sumMods(h)
 		local cfg = h.def.cfg
@@ -419,25 +533,7 @@ if gadgetHandler:IsSyncedCode() then
 			m.tree[wi] = t
 		end
 		-- items
-		for slot = 1, H.INVENTORY do
-			local it = h.items[slot] and H.items[h.items[slot]]
-			if it then
-				for _, k in ipairs(ITEM_KEYS) do
-					if it.stats[k] then
-						m[k] = m[k] + it.stats[k]
-					end
-				end
-				if it.stats.crit and (not m.crit or it.stats.crit[1] > m.crit[1]) then
-					m.crit = it.stats.crit
-				end
-				if it.aura and (not m.aura or it.aura.damage > m.aura.damage) then
-					m.aura = it.aura
-				end
-				if it.zap then
-					m.zap = it.zap
-				end
-			end
-		end
+		addItemMods(h, m)
 		return m
 	end
 
@@ -741,7 +837,7 @@ if gadgetHandler:IsSyncedCode() then
 		local h = {
 			unitID = unitID, def = def, team = teamID, level = 1, xp = 0, picks = {}, ranks = {},
 			ready = {}, shots = {}, autocast = true, buff = nil, lastCrit = 0, undyingReady = 0, undyingUntil = 0,
-			items = {}, itemReady = {}, kills = 0,
+			items = {}, itemReady = {}, itemCd = {}, kills = 0,
 		}
 		if rec then
 			h.level = rec.level
@@ -920,6 +1016,152 @@ if gadgetHandler:IsSyncedCode() then
 		end
 	end
 
+	---------------------------------------------------------------- items: combat
+	-- Hooks of the item specials in the damage callins (one line each there): itemAttackMult (slayer, execute),
+	-- itemDefense (aura armor, last stand, shield and barrier absorb, cheat death, item invulnerability),
+	-- itemOnHit (procs). Proc damage goes through UnitPreDamaged like any hero damage, so it grows with the
+	-- hero's power.
+
+	local itemGuard = {}      -- unitID -> damage taken reduction of an item aura (Bulwark Beacon), refreshed every second
+	local itemProcReady = {}  -- "<hero>:<item>" -> frame the proc may fire again
+
+	local function itemCeg(name, fallback, x, y, z)
+		if x and not spSpawnCEG(name, x, y, z, 0, 1, 0, 0, 0) and fallback then
+			spSpawnCEG(fallback, x, y, z, 0, 1, 0, 0, 0)
+		end
+	end
+
+	local function itemAttackMult(a, victimID, victimDefID)
+		local fx = a.itemFx
+		if not fx then
+			return 1
+		end
+		local mult = 1
+		for _, s in ipairs(fx.slayers) do
+			if (unitCost[victimDefID] or 0) >= s.minCost then
+				mult = mult * (1 + s.mult)
+			end
+		end
+		if #fx.executes > 0 then
+			local hp, maxHp = spGetUnitHealth(victimID)
+			if hp and maxHp and maxHp > 0 then
+				for _, e in ipairs(fx.executes) do
+					if hp / maxHp < e.below then
+						mult = mult * (1 + e.mult)
+					end
+				end
+			end
+		end
+		return mult
+	end
+
+	-- m: the damage multiplier so far; returns the new one (0: no damage)
+	local function itemDefense(unitID, v, damage, m, paralyzer)
+		local g = itemGuard[unitID]
+		if g then
+			m = m * (1 - g)
+		end
+		if not v or paralyzer or damage <= 0 then
+			return m
+		end
+		local f = frameNow()
+		if (v.itemInvulnUntil or 0) > f then
+			return 0
+		end
+		local fx = v.itemFx
+		if not fx then
+			return m
+		end
+		local hp, maxHp = spGetUnitHealth(unitID)
+		if fx.lastStand and hp and hp < maxHp * fx.lastStand.below then
+			m = m * (1 - fx.lastStand.armor)
+		end
+		v.itemLastHit = f
+		-- the active shield first, then the barrier; both hold effective HP
+		local hpMult = v.hpMult or 1
+		local eff = damage * m * hpMult
+		local sh = v.itemShield
+		if sh and sh.expire > f and sh.hp > 0 and eff > 0 then
+			local take = min(eff, sh.hp)
+			sh.hp = sh.hp - take
+			eff = eff - take
+		end
+		if (v.itemBarrier or 0) > 0 and eff > 0 then
+			local take = min(eff, v.itemBarrier)
+			v.itemBarrier = v.itemBarrier - take
+			eff = eff - take
+		end
+		m = eff / (damage * hpMult)
+		local c = fx.cheatDeath
+		if c and hp and damage * m >= hp and (v.itemCheatReady or 0) <= f then
+			v.itemCheatReady = f + c.cooldown * GAME_SPEED
+			v.itemInvulnUntil = f + c.invuln * GAME_SPEED
+			spSetUnitRulesParam(unitID, "hero_item_cheat", v.itemCheatReady, ALLIED)
+			delayed[#delayed + 1] = { frame = f + 1, fn = function()
+				if heroes[unitID] then
+					local _, mhp = spGetUnitHealth(unitID)
+					spSetUnitHealth(unitID, mhp * c.heal)
+					local x, y, z = spGetUnitPosition(unitID)
+					itemCeg("hero-undying", "hero-revive", x, y, z)
+					toUI("cheatdeath", unitID)
+				end
+			end }
+			return 0
+		end
+		return m
+	end
+
+	local function itemOnHit(attackerID, h, victimID)
+		local fx = h.itemFx
+		if not fx or (#fx.chains == 0 and #fx.blasts == 0) then
+			return
+		end
+		local f = frameNow()
+		local ally = spGetUnitAllyTeam(attackerID)
+		for _, c in ipairs(fx.chains) do
+			local key = attackerID .. ":" .. c.id
+			if (itemProcReady[key] or 0) <= f and random() < c.p.chance then
+				itemProcReady[key] = f + floor(H.ITEM_PROC_ICD * GAME_SPEED)
+				local hit = { [victimID] = true }
+				local cur = victimID
+				for j = 0, c.p.jumps do
+					local x, y, z = spGetUnitPosition(cur)
+					if not x then
+						break
+					end
+					ceg("hero-zap", x, y, z)
+					spAddUnitDamage(cur, c.p.dmg, 0, attackerID)
+					local nxt, best
+					for _, uid in ipairs(enemiesIn(x, z, c.p.radius, ally)) do
+						if not hit[uid] then
+							local ux, _, uz = spGetUnitPosition(uid)
+							local d = (ux - x) ^ 2 + (uz - z) ^ 2
+							if not best or d < best then
+								nxt, best = uid, d
+							end
+						end
+					end
+					if not nxt then
+						break
+					end
+					hit[nxt] = true
+					cur = nxt
+				end
+			end
+		end
+		for _, b in ipairs(fx.blasts) do
+			local key = attackerID .. ":" .. b.id
+			if (itemProcReady[key] or 0) <= f and random() < b.p.chance then
+				itemProcReady[key] = f + floor(H.ITEM_PROC_ICD * GAME_SPEED)
+				local x, y, z = spGetUnitPosition(victimID)
+				if x then
+					itemCeg("hero-nova-fire", "hero-crit", x, y, z)
+					damageArea(x, z, b.p.radius, ally, b.p.dmg, attackerID)
+				end
+			end
+		end
+	end
+
 	---------------------------------------------------------------- damage
 
 	function gadget:UnitPreDamaged(unitID, unitDefID, unitTeam, damage, paralyzer, weaponDefID, projectileID, attackerID, attackerDefID, attackerTeam)
@@ -967,6 +1209,9 @@ if gadgetHandler:IsSyncedCode() then
 		elseif attackerID and auraDamage[attackerID] then
 			m = m * (1 + auraDamage[attackerID])
 		end
+		if a then
+			m = m * itemAttackMult(a, unitID, unitDefID) -- items: slayer / execute
+		end
 		local v = heroes[unitID]
 		if v then
 			m = m * (1 - v.armor) / (v.hpMult or 1)
@@ -1002,6 +1247,10 @@ if gadgetHandler:IsSyncedCode() then
 					return 0, 0
 				end
 			end
+		end
+		m = itemDefense(unitID, v, damage, m, paralyzer) -- items: aura armor, last stand, shields, cheat death
+		if m <= 0 then
+			return 0, 0
 		end
 		if m ~= 1 then
 			return damage * m, 1
@@ -1054,6 +1303,7 @@ if gadgetHandler:IsSyncedCode() then
 				spSetUnitHealth(attackerID, min(mhp, hp + damage * mods.lifesteal / (h.hpMult or 1)))
 			end
 		end
+		itemOnHit(attackerID, h, unitID) -- items: procs
 		local fx = h.wfx and h.wfx[tierBase[weaponDefID] or weaponDefID]
 		if not fx then
 			return
@@ -1752,23 +2002,7 @@ if gadgetHandler:IsSyncedCode() then
 						end
 					end
 				end
-				-- item aura (Warlord's Banner) and the Crown of Storms
-				local m = h.mods or {}
-				if m.aura then
-					for _, uid in ipairs(alliesIn(x, z, m.aura.radius, ally)) do
-						if uid ~= unitID then
-							auraDamage[uid] = max(auraDamage[uid] or 0, m.aura.damage)
-						end
-					end
-				end
-				if m.zap and f % (m.zap.period * GAME_SPEED) < GAME_SPEED then
-					local target = Spring.GetUnitNearestEnemy(unitID, m.zap.radius, true)
-					if target then
-						local tx, ty, tz = spGetUnitPosition(target)
-						ceg("hero-zap", tx, ty, tz)
-						spAddUnitDamage(target, m.zap.damage * h.dmgMult, 0, unitID)
-					end
-				end
+				-- item auras and the Crown of Storms: itemPassives
 				-- shield capacity (Aegis) and shield recharge boosts (Siege Protocol)
 				local num = h.def.shieldNum
 				if num then
@@ -2118,14 +2352,176 @@ if gadgetHandler:IsSyncedCode() then
 		end
 	end
 
-	---------------------------------------------------------------- inventory
+	---------------------------------------------------------------- items: team stash and equipment
+	-- Every pickup goes to the picking hero's TEAM stash (H.STASH_SIZE). A full stash scraps the oldest item of
+	-- its lowest rarity for metal (H.rarities[].scrap) - or the new item itself when nothing in the stash is
+	-- rarer-or-equal cheaper than it, so a pickup never fails and never loses a better item.
+	-- Team rules params (allies): hero_stash_n, hero_stash_<i> = item index (H.itemOrder), hero_stash_ver (bumped
+	-- on every change). A hero equips per category slot (H.slotCategory: 1-3 weapon, 4-6 defense, 7-9 utility);
+	-- the same item can't be worn twice by one hero. Item cooldowns stay with the hero per item (h.itemCd), so
+	-- swapping an item out and in does not reset it.
 
-	local function freeSlot(h)
+	local stash = {}        -- teamID -> { item id, ... } oldest first
+	local stashVer = {}     -- teamID -> version
+	local aiEquipDirty = {} -- teamID -> true: re-equip the AI heroes of that team soon
+
+	local function publishStash(teamID)
+		local s = stash[teamID] or {}
+		local oldN = Spring.GetTeamRulesParam(teamID, "hero_stash_n") or 0
+		for i, id in ipairs(s) do
+			spSetTeamRulesParam(teamID, "hero_stash_" .. i, H.itemIndex[id], ALLIED)
+		end
+		for i = #s + 1, max(oldN, #s) do
+			spSetTeamRulesParam(teamID, "hero_stash_" .. i, 0, ALLIED)
+		end
+		spSetTeamRulesParam(teamID, "hero_stash_n", #s, ALLIED)
+		stashVer[teamID] = (stashVer[teamID] or 0) + 1
+		spSetTeamRulesParam(teamID, "hero_stash_ver", stashVer[teamID], ALLIED)
+		aiEquipDirty[teamID] = true
+	end
+
+	-- into the team stash; returns true, or false + metal when the item (or another) was scrapped
+	local function stashAdd(teamID, item, unitID)
+		if not H.items[item] then
+			return false
+		end
+		stash[teamID] = stash[teamID] or {}
+		local s = stash[teamID]
+		local scrapped, metal
+		if #s >= H.STASH_SIZE then
+			local lowRank, lowIdx = math.huge, nil
+			for i, id in ipairs(s) do
+				local r = H.rarities[H.items[id].rarity].rank
+				if r < lowRank then
+					lowRank, lowIdx = r, i
+				end
+			end
+			if H.rarities[H.items[item].rarity].rank <= lowRank then
+				scrapped = item
+			else
+				scrapped = table.remove(s, lowIdx)
+			end
+			metal = H.rarities[H.items[scrapped].rarity].scrap
+			Spring.AddTeamResource(teamID, "metal", metal)
+			toUI("scrap", unitID or -1, H.itemIndex[scrapped], metal)
+		end
+		if scrapped ~= item then
+			s[#s + 1] = item
+		end
+		publishStash(teamID)
+		return scrapped == nil, metal
+	end
+
+	local function stashRemoveAt(teamID, idx)
+		local s = stash[teamID]
+		local id = s and table.remove(s, idx)
+		if id then
+			publishStash(teamID)
+		end
+		return id
+	end
+
+	local function equippedSlotOf(h, item)
 		for slot = 1, H.INVENTORY do
+			if h.items[slot] == item then
+				return slot
+			end
+		end
+	end
+
+	local function firstSlotFor(h, cat)
+		local slots = H.itemCategories[cat].slots
+		for _, slot in ipairs(slots) do
 			if not h.items[slot] then
 				return slot
 			end
 		end
+		return slots[#slots]
+	end
+
+	-- put an item into a slot (no stash involved); the replaced one is returned
+	local function setSlot(unitID, h, slot, item)
+		local old = h.items[slot]
+		if old then
+			h.itemCd[old] = h.itemReady[slot]
+		end
+		h.items[slot] = item
+		h.itemReady[slot] = item and h.itemCd[item] or nil
+		return old
+	end
+
+	local function itemsChanged(unitID, h)
+		applyStats(unitID, h)
+		publishItems(unitID, h)
+	end
+
+	-- UI: equip stash item #idx (checked against item index `want` when given) into slot
+	local function equipFromStash(unitID, h, slot, idx, want)
+		local cat = H.slotCategory[slot]
+		local s = stash[h.team]
+		if not cat or not s then
+			return false
+		end
+		if want and H.itemOrder[want] and s[idx] ~= H.itemOrder[want] then
+			-- the stash moved under the click: take the first copy of that item
+			idx = nil
+			for i, id in ipairs(s) do
+				if id == H.itemOrder[want] then
+					idx = i
+					break
+				end
+			end
+		end
+		local item = idx and s[idx]
+		if not item or H.items[item].category ~= cat then
+			return false
+		end
+		local other = equippedSlotOf(h, item)
+		if other and other ~= slot then
+			toUI("itemdup", unitID, H.itemIndex[item])
+			return false
+		end
+		table.remove(s, idx)
+		local old = setSlot(unitID, h, slot, item)
+		if old then
+			s[#s + 1] = old
+		end
+		publishStash(h.team)
+		itemsChanged(unitID, h)
+		toUI("equip", unitID, H.itemIndex[item], slot)
+		return true
+	end
+
+	local function unequip(unitID, h, slot)
+		if not h.items[slot] then
+			return false
+		end
+		stash[h.team] = stash[h.team] or {}
+		if #stash[h.team] >= H.STASH_SIZE then
+			toUI("stashfull", unitID)
+			return false
+		end
+		local old = setSlot(unitID, h, slot, nil)
+		stash[h.team][#stash[h.team] + 1] = old
+		publishStash(h.team)
+		itemsChanged(unitID, h)
+		return true
+	end
+
+	-- scenes / GG: equip an item directly, into the first free slot of its category (else the last one; the
+	-- replaced item goes to the stash)
+	local function equipDirect(unitID, h, item)
+		local it = H.items[item]
+		if not it or equippedSlotOf(h, item) then
+			return false
+		end
+		local slot = firstSlotFor(h, it.category)
+		local old = setSlot(unitID, h, slot, item)
+		if old then
+			stashAdd(h.team, old, unitID)
+		end
+		itemsChanged(unitID, h)
+		return slot
 	end
 
 	local function pickups()
@@ -2134,25 +2530,17 @@ if gadgetHandler:IsSyncedCode() then
 		end
 		local r2 = H.ITEM_PICKUP_RADIUS * H.ITEM_PICKUP_RADIUS
 		for unitID, h in pairs(heroes) do
-			local slot = freeSlot(h)
-			if slot then
-				local x, y, z = heroPos(unitID)
-				if x then
-					for id, g in pairs(ground) do
-						if (g.x - x) ^ 2 + (g.z - z) ^ 2 <= r2 then
-							h.items[slot] = g.item
-							h.itemReady[slot] = 0
-							ground[id] = nil
-							groundDirty = true
-							applyStats(unitID, h)
-							publishItems(unitID, h)
-							ceg("hero-itempickup-" .. H.items[g.item].rarity, x, y, z)
-							toUI("pickup", unitID, H.itemIndex[g.item])
-							slot = freeSlot(h)
-							if not slot then
-								break
-							end
-						end
+			local x, y, z = heroPos(unitID)
+			if x then
+				for id, g in pairs(ground) do
+					if (g.x - x) ^ 2 + (g.z - z) ^ 2 <= r2 then
+						ground[id] = nil
+						groundDirty = true
+						local kept = stashAdd(h.team, g.item, unitID)
+						ceg("hero-itempickup-" .. H.items[g.item].rarity, x, y, z)
+						toUI("pickup", unitID, H.itemIndex[g.item], kept and 1 or 0)
+						Spring.Echo(string.format("[t4hero] team %d picked up %s into its stash (%d items)%s", h.team, g.item,
+							#(stash[h.team] or {}), kept and "" or " - stash full, scrapped for metal"))
 					end
 				end
 			end
@@ -2168,18 +2556,8 @@ if gadgetHandler:IsSyncedCode() then
 		end
 	end
 
-	local function dropSlot(unitID, h, slot)
-		local id = h.items[slot]
-		if not id then
-			return
-		end
-		h.items[slot] = nil
-		h.itemReady[slot] = nil
-		local x, _, z = heroPos(unitID)
-		local dx, _, dz = Spring.GetUnitDirection(unitID)
-		dropItem(id, x + (dx or 0) * 220, z + (dz or 1) * 220)
-		applyStats(unitID, h)
-		publishItems(unitID, h)
+	local function itemCooldown(h, act)
+		return act.cooldown * max(0.4, 1 - (h.mods and h.mods.cdr or 0))
 	end
 
 	local function useSlot(unitID, h, slot)
@@ -2191,23 +2569,73 @@ if gadgetHandler:IsSyncedCode() then
 			return false
 		end
 		local x, y, z = heroPos(unitID)
-		if act.kind == "heal" then
+		if not x then
+			return false
+		end
+		local ally = spGetUnitAllyTeam(unitID)
+		local k = act.kind
+		if k == "heal" then
 			local hp, maxHp = spGetUnitHealth(unitID)
-			spSetUnitHealth(unitID, min(maxHp, hp + maxHp * act.amount))
+			spSetUnitHealth(unitID, min(maxHp, hp + act.amount / (h.hpMult or 1)))
 			ceg("hero-itemheal", x, y, z)
-		elseif act.kind == "invuln" then
-			h.undyingUntil = max(h.undyingUntil, f + act.duration * GAME_SPEED)
+		elseif k == "invuln" then
+			h.itemInvulnUntil = max(h.itemInvulnUntil or 0, f + act.duration * GAME_SPEED)
 			markActive(unitID, "item" .. slot, act.duration)
 			ceg("hero-phase", x, y, z)
-		elseif act.kind == "dash" then
+		elseif k == "dash" then
 			local dx, _, dz = Spring.GetUnitDirection(unitID)
 			local nx = max(64, min(Game.mapSizeX - 64, x + dx * act.distance))
 			local nz = max(64, min(Game.mapSizeZ - 64, z + dz * act.distance))
 			ceg("hero-blink", x, y, z)
 			Spring.SetUnitPosition(unitID, nx, nz)
 			ceg("hero-blink", nx, spGetGroundHeight(nx, nz), nz)
+		elseif k == "shield" then
+			h.itemShield = { hp = act.absorb, expire = f + act.duration * GAME_SPEED }
+			markActive(unitID, "item" .. slot, act.duration)
+			itemCeg("hero-shield", "hero-phase", x, y, z)
+		elseif k == "emp" then
+			for _, uid in ipairs(enemiesIn(x, z, act.radius, ally)) do
+				spAddUnitDamage(uid, act.dmg, 0, unitID)
+				stun(uid, act.stun, unitID)
+			end
+			itemCeg("hero-nova-emp", "hero-static-field", x, y, z)
+		elseif k == "overcharge" then
+			h.itemBuff = { expire = f + act.duration * GAME_SPEED, damage = act.damage, reload = act.reload }
+			markActive(unitID, "item" .. slot, act.duration)
+			applyStats(unitID, h)
+			itemCeg("hero-buff-power", "hero-overdrive", x, y, z)
+		elseif k == "repair" then
+			for _, uid in ipairs(alliesIn(x, z, act.radius, ally)) do
+				local hp, maxHp, _, _, bp = spGetUnitHealth(uid)
+				if hp and bp and bp >= 1 then
+					local ah = heroes[uid]
+					spSetUnitHealth(uid, min(maxHp, hp + act.amount / (ah and ah.hpMult or 1)))
+				end
+			end
+			itemCeg("hero-nova-heal", "hero-itemheal", x, y, z)
+		elseif k == "recall" then
+			local bx, bz
+			local best
+			for _, uid in ipairs(Spring.GetTeamUnits(h.team) or {}) do
+				if foundryDefs[spGetUnitDefID(uid) or -1] then
+					local ux, _, uz = spGetUnitPosition(uid)
+					local d = (ux - x) ^ 2 + (uz - z) ^ 2
+					if not best or d < best then
+						best, bx, bz = d, ux, uz + 260
+					end
+				end
+			end
+			if not bx then
+				return false
+			end
+			ceg("hero-blink", x, y, z)
+			Spring.SetUnitPosition(unitID, bx, bz)
+			Spring.GiveOrderToUnit(unitID, CMD.STOP, {}, 0)
+			ceg("hero-blink", bx, spGetGroundHeight(bx, bz), bz)
 		end
-		h.itemReady[slot] = f + act.cooldown * GAME_SPEED
+		h.itemReady[slot] = f + floor(itemCooldown(h, act) * GAME_SPEED)
+		h.itemCd[id] = h.itemReady[slot]
+		spSetUnitRulesParam(unitID, "hero_itemcdlen_" .. slot, floor(itemCooldown(h, act) * GAME_SPEED), ALLIED)
 		publishItems(unitID, h)
 		toUI("useitem", unitID, H.itemIndex[id])
 		return true
@@ -2220,11 +2648,237 @@ if gadgetHandler:IsSyncedCode() then
 			return
 		end
 		local frac = hp / maxHp
+		local f = frameNow()
+		local x, _, z = heroPos(unitID)
+		local ally = spGetUnitAllyTeam(unitID)
+		local fighting = f - (h.lastHit or -1000) < 5 * GAME_SPEED
 		for slot = 1, H.INVENTORY do
 			local it = h.items[slot] and H.items[h.items[slot]]
 			local act = it and it.active
-			if act and ((act.kind == "heal" and frac < 0.55) or (act.kind == "invuln" and frac < 0.3)) then
-				useSlot(unitID, h, slot)
+			if act and (h.itemReady[slot] or 0) <= f then
+				local k, use = act.kind, false
+				if k == "heal" then
+					use = frac < 0.55
+				elseif k == "invuln" then
+					use = frac < 0.3
+				elseif k == "shield" then
+					use = fighting and frac < 0.7
+				elseif k == "emp" then
+					local n = #enemiesIn(x, z, act.radius, ally)
+					use = n >= 3 or (n >= 1 and frac < 0.4)
+				elseif k == "overcharge" then
+					local range = Spring.GetUnitRulesParam(unitID, "hero_range") or 900
+					use = Spring.GetUnitNearestEnemy(unitID, range, true) ~= nil
+				elseif k == "repair" then
+					local hurt = frac < 0.6 and 3 or 0
+					for _, uid in ipairs(alliesIn(x, z, act.radius, ally)) do
+						local ahp, amax = spGetUnitHealth(uid)
+						if ahp and amax - ahp > act.amount * 0.5 then
+							hurt = hurt + 1
+						end
+					end
+					use = hurt >= 3
+				elseif k == "dash" then
+					use = isAITeam[h.team] and h.retreating and frac < 0.45
+				elseif k == "recall" then
+					use = isAITeam[h.team] and h.retreating and frac < 0.3
+				end
+				if use then
+					useSlot(unitID, h, slot)
+				end
+			end
+		end
+	end
+
+	-- every second (after passives): item auras, the Crown, regen, income, barrier, the overcharge end
+	local function itemPassives(f)
+		for k in pairs(itemGuard) do
+			itemGuard[k] = nil
+		end
+		for unitID, h in pairs(heroes) do
+			local fx = h.itemFx
+			local x, y, z = heroPos(unitID)
+			if fx and x then
+				local ally = spGetUnitAllyTeam(unitID)
+				local a = fx.aura
+				if a then
+					if f % 60 < 30 then
+						ceg(a.heal > 0 and "hero-aura-heal" or "hero-aura-command", x, y, z)
+					end
+					for _, uid in ipairs(alliesIn(x, z, a.radius, ally)) do
+						if uid ~= unitID and a.damage > 0 then
+							auraDamage[uid] = max(auraDamage[uid] or 0, a.damage)
+						end
+						if a.armor > 0 then
+							itemGuard[uid] = max(itemGuard[uid] or 0, a.armor)
+						end
+						if a.heal > 0 then
+							local hp, maxHp, _, _, bp = spGetUnitHealth(uid)
+							if hp and bp and bp >= 1 and hp < maxHp then
+								local ah = heroes[uid]
+								spSetUnitHealth(uid, min(maxHp, hp + a.heal / (ah and ah.hpMult or 1)))
+							end
+						end
+					end
+				end
+				for _, zap in ipairs(fx.zaps) do
+					if f % (zap.period * GAME_SPEED) < GAME_SPEED then
+						local target = Spring.GetUnitNearestEnemy(unitID, zap.radius, true)
+						if target then
+							local tx, ty, tz = spGetUnitPosition(target)
+							ceg("hero-zap", tx, ty, tz)
+							spAddUnitDamage(target, zap.damage, 0, unitID)
+						end
+					end
+				end
+				if fx.regen > 0 then
+					local hp, maxHp = spGetUnitHealth(unitID)
+					if hp and hp < maxHp then
+						spSetUnitHealth(unitID, min(maxHp, hp + fx.regen / (h.hpMult or 1)))
+					end
+				end
+				if fx.income > 0 then
+					Spring.AddTeamResource(h.team, "metal", fx.income)
+				end
+				local b = fx.barrier
+				if b then
+					if f - (h.itemLastHit or -1e6) >= b.delay * GAME_SPEED then
+						h.itemBarrier = min(b.cap, (h.itemBarrier or 0) + b.regen)
+					end
+					spSetUnitRulesParam(unitID, "hero_barrier", floor(h.itemBarrier or 0), INLOS)
+				elseif h.itemBarrier then
+					h.itemBarrier = nil
+					spSetUnitRulesParam(unitID, "hero_barrier", 0, INLOS)
+				end
+			end
+			if h.itemBuff and h.itemBuff.expire <= f then
+				h.itemBuff = nil
+				applyStats(unitID, h)
+			end
+			if h.itemShield and h.itemShield.expire <= f then
+				h.itemShield = nil
+			end
+		end
+	end
+
+	-- AI teams: every hero wears the best items of the team stash for its role (higher levels choose first)
+	local function itemScore(item, role)
+		local it = H.items[item]
+		local w = H.itemRoleWeights[role] or H.itemRoleWeights.center
+		local k = 1
+		for _, t in ipairs(it.tags or {}) do
+			k = k + (w[t] or 0)
+		end
+		if it.active then
+			k = k + 0.15
+		end
+		if role == "front" and it.stats.hp and it.stats.hp < 0 then
+			k = k - 0.4
+		end
+		return H.rarities[it.rarity].score * k
+	end
+
+	local function aiEquipTeam(teamID)
+		local list = {}
+		for unitID, h in pairs(heroes) do
+			if h.team == teamID then
+				list[#list + 1] = { uid = unitID, h = h }
+			end
+		end
+		table.sort(list, function(p, q) return p.h.level > q.h.level end)
+		local teamChanged = false
+		for _, e in ipairs(list) do
+			local h, unitID = e.h, e.uid
+			local role = h.def.cfg.aiRole or "center"
+			local changed = false
+			for _, cat in ipairs(H.categoryOrder) do
+				local s = stash[teamID] or {}
+				local slots = H.itemCategories[cat].slots
+				-- candidates: what it wears + the stash items of this category
+				local cand = {}
+				for _, slot in ipairs(slots) do
+					if h.items[slot] then
+						cand[#cand + 1] = { item = h.items[slot], slot = slot }
+					end
+				end
+				for i, id in ipairs(s) do
+					if H.items[id].category == cat then
+						cand[#cand + 1] = { item = id, idx = i }
+					end
+				end
+				for _, c in ipairs(cand) do
+					c.score = itemScore(c.item, role) + (c.slot and 0.01 or 0) -- keep what it wears on a tie
+				end
+				table.sort(cand, function(p, q) return p.score > q.score end)
+				local want, seen = {}, {}
+				for _, c in ipairs(cand) do
+					if #want < #slots and not seen[c.item] then
+						seen[c.item] = true
+						want[#want + 1] = c
+					end
+				end
+				local keep = {}
+				for _, c in ipairs(want) do
+					if c.slot then
+						keep[c.slot] = true
+					end
+				end
+				-- stash indices of the new ones, highest first so removals don't shift the others
+				local take = {}
+				for _, c in ipairs(want) do
+					if c.idx then
+						take[#take + 1] = c
+					end
+				end
+				table.sort(take, function(p, q) return p.idx > q.idx end)
+				local back = {}
+				for _, slot in ipairs(slots) do
+					if h.items[slot] and not keep[slot] then
+						back[#back + 1] = setSlot(unitID, h, slot, nil)
+					end
+				end
+				for _, c in ipairs(take) do
+					table.remove(s, c.idx)
+				end
+				for _, c in ipairs(take) do
+					local slot = firstSlotFor(h, cat)
+					setSlot(unitID, h, slot, c.item)
+					changed = true
+					Spring.Echo(string.format("[t4hero] AI team %d: %s (%s, lv %d) equips %s (%s) in slot %d", teamID, h.def.name, role,
+						h.level, c.item, H.items[c.item].rarity, slot))
+				end
+				for _, id in ipairs(back) do
+					s[#s + 1] = id
+				end
+				stash[teamID] = s
+				changed = changed or #back > 0
+			end
+			if changed then
+				teamChanged = true
+				itemsChanged(unitID, h)
+			end
+		end
+		if teamChanged then
+			publishStash(teamID)
+		end
+		aiEquipDirty[teamID] = nil
+	end
+
+	local function aiEquip(f)
+		for teamID, isAI in pairs(isAITeam) do
+			if isAI and (aiEquipDirty[teamID] or f % 300 == 13) then
+				local any = false
+				for _, h in pairs(heroes) do
+					if h.team == teamID then
+						any = true
+						break
+					end
+				end
+				if any then
+					aiEquipTeam(teamID)
+				else
+					aiEquipDirty[teamID] = nil
+				end
 			end
 		end
 	end
@@ -2262,6 +2916,8 @@ if gadgetHandler:IsSyncedCode() then
 		end
 		if f % 30 == 13 then
 			passives(f)
+			itemPassives(f)
+			aiEquip(f)
 			for unitID, h in pairs(heroes) do
 				if isAITeam[h.team] then
 					aiHero(unitID, h, f)
@@ -2371,15 +3027,17 @@ if gadgetHandler:IsSyncedCode() then
 			learn(uid, h, key)
 		elseif what == "use" then
 			useSlot(uid, h, tonumber(key) or 0)
-		elseif what == "drop" then
-			dropSlot(uid, h, tonumber(key) or 0)
-		elseif what == "swap" then
-			local a, b = key:match("^(%d)_(%d)$")
-			a, b = tonumber(a), tonumber(b)
-			if a and b and a >= 1 and b >= 1 and a <= H.INVENTORY and b <= H.INVENTORY then
-				h.items[a], h.items[b] = h.items[b], h.items[a]
-				h.itemReady[a], h.itemReady[b] = h.itemReady[b], h.itemReady[a]
-				publishItems(uid, h)
+		elseif what == "equip" then
+			-- <slot>_<stash index>[_<item index>]
+			local slot, idx, want = key:match("^(%d+)_(%d+)_?(%d*)$")
+			slot, idx = tonumber(slot), tonumber(idx)
+			if slot and idx and H.slotCategory[slot] then
+				equipFromStash(uid, h, slot, idx, tonumber(want))
+			end
+		elseif what == "unequip" then
+			local slot = tonumber(key)
+			if slot and H.slotCategory[slot] then
+				unequip(uid, h, slot)
 			end
 		end
 		return true
@@ -2418,9 +3076,17 @@ if gadgetHandler:IsSyncedCode() then
 			end
 		end
 		publishGround()
+		for _, teamID in ipairs(Spring.GetTeamList()) do
+			publishStash(teamID)
+		end
 		GG.T4Heroes = { heroes = heroes, learn = function(uid, key) local h = heroes[uid]; return h and learn(uid, h, key) end,
-			give = function(uid, item) local h = heroes[uid]; local slot = h and freeSlot(h)
-				if slot and H.items[item] then h.items[slot] = item; h.itemReady[slot] = 0; applyStats(uid, h); publishItems(uid, h) end end,
+			-- give: into the hero's team stash; equip: straight into a slot of its category (scenes)
+			give = function(uid, item) local h = heroes[uid]; if h then return stashAdd(h.team, item, uid) end end,
+			equip = function(uid, item) local h = heroes[uid]; if h then return equipDirect(uid, h, item) end end,
+			stashAdd = function(teamID, item) return stashAdd(teamID, item) end, stash = stash,
+			useItem = function(uid, slot) local h = heroes[uid]; return h and useSlot(uid, h, slot) end,
+			equipFromStash = function(uid, slot, idx) local h = heroes[uid]; return h and equipFromStash(uid, h, slot, idx) end,
+			unequip = function(uid, slot) local h = heroes[uid]; return h and unequip(uid, h, slot) end,
 			drop = function(item, x, z) dropItem(item, x, z) end, randomItem = function(level) return randomItem(level) end,
 			setLevel = function(uid, level) local h = heroes[uid]
 				if h then h.xp = H.xpFor(level, xpMult) * h.def.cost + 1

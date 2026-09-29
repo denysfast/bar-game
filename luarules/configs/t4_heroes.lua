@@ -8,8 +8,8 @@
 --   plating / servos                 common chassis branches
 --   a1 / a2                          two signature abilities, 3 ranks (levels 3 / 15 / 30)
 --   ult                              the ultimate, 3 ranks (levels 20 / 45 / 70)
--- 99 points for 120+ ranks: a maxed hero still has to leave something out. Six inventory slots take items
--- (H.items) that drop from slain heroes.
+-- 99 points for 120+ ranks: a maxed hero still has to leave something out. Nine item slots (weapon / defense /
+-- utility, H.itemCategories) take items (H.items) from the team's shared stash.
 --
 -- Rank effects ("mods") of the abilities are summed over every learned rank:
 --   damage, hp, armor, regen (share of max HP per second), speed, range, sight, radar       fractions
