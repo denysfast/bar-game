@@ -5,9 +5,10 @@
 --           * hero buttons at the top left (portrait, level, health, experience, unspent points,
 --             fallen heroes with their revive level and price)
 --           * the hero console at the bottom when a hero is selected: portrait, name, level and
---             experience, stats, the six-slot inventory, the command card with the abilities
+--             experience, stats, nine item slots (weapon / defense / utility), the command card with the abilities
 --             (cooldown sweeps, hotkeys Q W R) and the upgrade window (weapon trees, plating,
 --             servos, abilities, each rank for a talent point and metal)
+--           * the item picker (click a slot: equip from the team stash), the team stash window
 --           * items lying on the ground, levels above heroes, aura rings, floating texts
 --  The rules live in luarules/gadgets/unit_t4_heroes.lua, the design data in luarules/configs/t4_heroes.lua,
 --  the art in bitmaps/t4heroes/ (generated with content-master, see CUSTOM.md).
@@ -68,6 +69,10 @@ local hoverTip
 local showUpgrades = false
 local groundItems = {} -- { id, item, x, z }
 local groundStr
+local picker          -- { uid, slot }: the item picker popup over a slot
+local showStash = false
+local stashSeenVer = 0  -- the stash version the player has looked at (the Stash button glows on new items)
+local slotRects = {}    -- slot -> { x1, y1, x2, y2 } of the last frame (scenes, the picker anchor)
 
 -- colors
 local GOLD = { 1, 0.82, 0.25, 1 }
@@ -372,11 +377,16 @@ local function learnTip(uid, name, key)
 	return s
 end
 
+local function colorCode(c)
+	return "\255" .. string.char(max(1, floor(c[1] * 255))) .. string.char(max(1, floor(c[2] * 255))) .. string.char(max(1, floor(c[3] * 255)))
+end
+
 local function itemTip(item)
 	local it = H.items[item]
 	local c = H.rarities[it.rarity].color
-	return string.format("\255%s%s%s%s\255\255\255\255  (%s)\n%s", string.char(floor(c[1] * 255)), string.char(floor(c[2] * 255)),
-		string.char(floor(c[3] * 255)), it.name, it.rarity, it.desc)
+	local cat = H.itemCategories[it.category]
+	return string.format("%s%s\255\255\255\255  %s%s\255\180\180\180 %s\n\255\255\255\255%s", colorCode(c), it.name,
+		colorCode(cat.color), cat.label, it.rarity, it.desc)
 end
 
 ---------------------------------------------------------------------------- hero buttons (top left)
@@ -436,6 +446,373 @@ local function drawHeroButtons()
 		end
 		y = y1 - gap
 	end
+end
+
+---------------------------------------------------------------------------- items: slots, picker, team stash
+-- Nine slots in three rows (H.itemCategories: weapon 1-3, defense 4-6, utility 7-9). Everything picked up goes
+-- to the team stash (team rules params hero_stash_n / hero_stash_<i>); a click on a slot opens the picker of the
+-- stash items of its category, a right click puts the worn item back into the stash.
+
+local stashCache = { team = -1, ver = -1, list = {} }
+
+local function stashTeam(uid)
+	local team = uid and spGetUnitTeam(uid)
+	if team and spIsUnitAllied(uid) then
+		return team
+	end
+	return myTeam()
+end
+
+-- { { idx = <stash index>, item = <id> }, ... } of a team (cached by hero_stash_ver)
+local function readStash(team)
+	local ver = spGetTeamRulesParam(team, "hero_stash_ver") or 0
+	if stashCache.team == team and stashCache.ver == ver then
+		return stashCache.list, ver
+	end
+	local list = {}
+	local n = spGetTeamRulesParam(team, "hero_stash_n") or 0
+	for i = 1, n do
+		local item = H.itemOrder[spGetTeamRulesParam(team, "hero_stash_" .. i) or 0]
+		if item then
+			list[#list + 1] = { idx = i, item = item }
+		end
+	end
+	stashCache.team, stashCache.ver, stashCache.list = team, ver, list
+	return list, ver
+end
+
+local function byRarity(a, b)
+	local ra, rb = H.rarities[H.items[a.item].rarity].rank, H.rarities[H.items[b.item].rarity].rank
+	if ra ~= rb then
+		return ra > rb
+	end
+	if a.item ~= b.item then
+		return H.items[a.item].name < H.items[b.item].name
+	end
+	return a.idx < b.idx
+end
+
+local function stashOf(team, cat)
+	local out = {}
+	for _, e in ipairs(readStash(team)) do
+		if not cat or H.items[e.item].category == cat then
+			out[#out + 1] = e
+		end
+	end
+	table.sort(out, byRarity)
+	return out
+end
+
+local function wornItem(uid, slot)
+	return H.itemOrder[spGetUnitRulesParam(uid, "hero_item_" .. slot) or 0]
+end
+
+local function sendEquip(uid, slot, e)
+	Spring.SendLuaRulesMsg(string.format("t4hero:equip:%d:%d_%d_%d", uid, slot, e.idx, H.itemIndex[e.item]))
+	Spring.PlaySoundFile("sounds/ui/beep6.wav", 0.5, "ui")
+end
+
+local function sendUnequip(uid, slot)
+	Spring.SendLuaRulesMsg("t4hero:unequip:" .. uid .. ":" .. slot)
+	Spring.PlaySoundFile("sounds/ui/beep6.wav", 0.4, "ui")
+end
+
+local function sendUse(uid, slot)
+	Spring.SendLuaRulesMsg("t4hero:use:" .. uid .. ":" .. slot)
+end
+
+local function openPicker(uid, slot)
+	if picker and picker.uid == uid and picker.slot == slot then
+		picker = nil
+		return
+	end
+	picker = { uid = uid, slot = slot }
+	showStash = false
+	showUpgrades = false
+end
+
+local function itemCooldown(uid, slot, item, f)
+	local act = H.items[item].active
+	if not act then
+		return 0, 1
+	end
+	local ready = spGetUnitRulesParam(uid, "hero_itemcd_" .. slot) or 0
+	local len = spGetUnitRulesParam(uid, "hero_itemcdlen_" .. slot) or act.cooldown * 30
+	return max(0, ready - f), max(1, len)
+end
+
+-- one item slot of the console
+local function drawSlot(uid, own, slot, bx1, by1, bx2, by2, f)
+	local cat = H.itemCategories[H.slotCategory[slot]]
+	local cc = cat.color
+	local item = wornItem(uid, slot)
+	slotRects[slot] = { bx1, by1, bx2, by2 }
+	local isPicked = picker and picker.uid == uid and picker.slot == slot
+	local open = own and function() openPicker(uid, slot) end or nil
+	if item then
+		local it = H.items[item]
+		local rc = H.rarities[it.rarity].color
+		local on = spGetUnitRulesParam(uid, "hero_on_item" .. slot) or 0
+		if on > f then
+			local glow = 0.5 + 0.5 * sin(f * 0.35)
+			rect(bx1 - 5, by1 - 5, bx2 + 5, by2 + 5, { 0.4, 1, 0.5, 0.35 + 0.4 * glow })
+		end
+		iconButton(ART .. "item_" .. item .. ".png", bx1, by1, bx2, by2, true, isPicked and GOLD or { rc[1], rc[2], rc[3], 1 }, open,
+			itemTip(item) .. (own and ("\n\255\180\180\180Click: swap / " .. (it.active and "use / " or "") .. "unequip.  Right click: back to the stash") or ""),
+			own and function() sendUnequip(uid, slot) end or nil)
+		local left, len = itemCooldown(uid, slot, item, f)
+		if left > 0 then
+			sweep(bx1, by1, bx2, by2, left / len)
+			text(tostring(floor(left / 30) + 1), (bx1 + bx2) / 2, by1 + (by2 - by1) * 0.3, (by2 - by1) * 0.4, WHITE, "co")
+		elseif it.active then
+			-- a small "ready" pip on active items
+			local ps = (bx2 - bx1) * 0.18
+			rect(bx2 - ps - 2, by2 - ps - 2, bx2 - 2, by2 - 2, { 0.4, 1, 0.5, 0.9 })
+		end
+	else
+		local hov = own and hovered(bx1, by1, bx2, by2)
+		rect(bx1, by1, bx2, by2, { cc[1] * 0.12, cc[2] * 0.12, cc[3] * 0.12, 0.85 })
+		tex(ART .. cat.glyph .. ".png", bx1 + (bx2 - bx1) * 0.18, by1 + (by2 - by1) * 0.18, bx2 - (bx2 - bx1) * 0.18, by2 - (by2 - by1) * 0.18,
+			1, 1, 1, hov and 0.45 or 0.22)
+		frame(bx1 - 2, by1 - 2, bx2 + 2, by2 + 2, isPicked and GOLD or (hov and { 1, 0.9, 0.5, 1 } or { cc[1] * 0.45, cc[2] * 0.45, cc[3] * 0.45, 1 }), 2)
+		addBox(bx1, by1, bx2, by2, open, string.format("%sEmpty %s slot\255\255\255\255\n%s", colorCode(cc), cat.label:lower(),
+			own and "Click: equip an item from the team stash" or "Items drop from slain heroes and big enemies"))
+	end
+end
+
+-- the nine slots and the Stash button inside the console rectangle x1..x2, y1..y2
+local function drawInventory(uid, own, x1, y1, x2, y2)
+	local f = spGetGameFrame()
+	local th = (y2 - y1) * 0.16
+	local rowsH = y2 - y1 - th
+	local pitch = rowsH / 3
+	local is = floor(pitch * 0.84)
+	local glyph = floor(is * 0.5)
+	local gap = floor((x2 - x1 - glyph - is * 3) / 3.5)
+	gap = max(3, min(gap, floor(is * 0.2)))
+	local total = glyph + gap + is * 3 + gap * 2
+	local ox = floor(x1 + (x2 - x1 - total) / 2)
+	-- title: "Items" and the Stash button
+	local team = stashTeam(uid)
+	local list, ver = readStash(team)
+	text("Items", ox, y2 - th * 0.82, th * 0.62, GOLD)
+	local sw = floor(is * 1.9)
+	local sx2 = ox + total
+	local sx1 = sx2 - sw
+	local sy1, sy2 = floor(y2 - th * 0.95), floor(y2 - th * 0.08)
+	local fresh = ver > stashSeenVer and #list > 0
+	local glow = fresh and (0.5 + 0.5 * sin(f * 0.25)) or 0
+	local hov = hovered(sx1, sy1, sx2, sy2)
+	rect(sx1, sy1, sx2, sy2, showStash and { 0.3, 0.22, 0.05, 0.95 } or { 0.1 + 0.25 * glow, 0.08 + 0.18 * glow, 0.02, 0.95 })
+	frame(sx1, sy1, sx2, sy2, hov and { 1, 0.9, 0.5, 1 } or GOLD, 1)
+	text(string.format("Stash %d", #list), (sx1 + sx2) / 2, sy1 + (sy2 - sy1) * 0.22, (sy2 - sy1) * 0.62, fresh and GOLD or WHITE, "co")
+	addBox(sx1, sy1, sx2, sy2, function()
+		showStash = not showStash
+		picker = nil
+		if showStash then
+			showUpgrades = false
+		end
+	end, string.format("Team stash: %d / %d items. Everything your heroes pick up lands here;\nopen it to see them all, click a slot to equip one.", #list, H.STASH_SIZE))
+	for ci, catId in ipairs(H.categoryOrder) do
+		local cat = H.itemCategories[catId]
+		local cc = cat.color
+		local ry2 = floor(y2 - th - (ci - 1) * pitch - (pitch - is) / 2)
+		local ry1 = ry2 - is
+		-- category tint and glyph
+		rect(ox - 3, ry1 - 3, ox + total + 3, ry2 + 3, { cc[1], cc[2], cc[3], 0.07 })
+		tex(ART .. cat.glyph .. ".png", ox, ry1 + (is - glyph) / 2, ox + glyph, ry1 + (is + glyph) / 2, 1, 1, 1, 0.9)
+		addBox(ox, ry1, ox + glyph, ry2, nil, colorCode(cc) .. cat.label .. " items\255\255\255\255: " ..
+			(catId == "weapon" and "damage, fire rate, blast, crits, procs" or catId == "defense" and "health, armor, regeneration, shields"
+				or "range, speed, sight, cooldowns, auras, experience"))
+		for k, slot in ipairs(cat.slots) do
+			local bx1 = ox + glyph + gap + (k - 1) * (is + gap)
+			drawSlot(uid, own, slot, bx1, ry1, bx1 + is, ry2, f)
+		end
+	end
+end
+
+-- a list row of an item: icon, name, short stats; returns nothing (adds its box)
+local function itemRow(e, x1, y1, w, h, enabled, fn, extraTip, note)
+	local it = H.items[e.item]
+	local rc = H.rarities[it.rarity].color
+	local hov = hovered(x1, y1, x1 + w, y1 + h)
+	rect(x1, y1, x1 + w, y1 + h, hov and enabled and { 0.25, 0.2, 0.1, 0.9 } or { 0.08, 0.08, 0.1, 0.85 })
+	local pad = floor(h * 0.08)
+	local k = enabled and 1 or 0.4
+	tex(ART .. "item_" .. e.item .. ".png", x1 + pad, y1 + pad, x1 + h - pad, y1 + h - pad, k, k, k, 1)
+	frame(x1 + pad - 1, y1 + pad - 1, x1 + h - pad + 1, y1 + h - pad + 1, { rc[1] * k, rc[2] * k, rc[3] * k, 1 }, 1)
+	local tx = x1 + h + pad
+	text(it.name, tx, y1 + h * 0.52, h * 0.34, enabled and { rc[1], rc[2], rc[3], 1 } or GREY)
+	text(note or it.short or "", tx, y1 + h * 0.14, h * 0.28, enabled and { 0.78, 0.78, 0.78, 1 } or DARK)
+	addBox(x1, y1, x1 + w, y1 + h, enabled and fn or nil, itemTip(e.item) .. (extraTip or ""))
+end
+
+local function smallButton(label, x1, y1, x2, y2, c, enabled, fn, tip)
+	local hov = enabled and hovered(x1, y1, x2, y2)
+	rect(x1, y1, x2, y2, enabled and { c[1] * 0.25, c[2] * 0.25, c[3] * 0.25, 0.95 } or { 0.12, 0.12, 0.12, 0.9 })
+	frame(x1, y1, x2, y2, hov and { 1, 0.9, 0.5, 1 } or (enabled and c or DARK), 1)
+	text(label, (x1 + x2) / 2, y1 + (y2 - y1) * 0.26, (y2 - y1) * 0.5, enabled and WHITE or GREY, "co")
+	addBox(x1, y1, x2, y2, enabled and fn or nil, tip)
+end
+
+-- the picker over a slot: the worn item (unequip / use) and the team stash items of the slot's category
+local function drawPicker(uid, yBottom)
+	local slot = picker.slot
+	local catId = H.slotCategory[slot]
+	local cat = H.itemCategories[catId]
+	local cc = cat.color
+	local own = spGetUnitTeam(uid) == myTeam()
+	local f = spGetGameFrame()
+	local list = stashOf(stashTeam(uid), catId)
+	local worn = wornItem(uid, slot)
+	local wornHere = {}
+	for s2 = 1, H.INVENTORY do
+		local w2 = wornItem(uid, s2)
+		if w2 then
+			wornHere[w2] = s2
+		end
+	end
+	local rh = floor(vsy * 0.042 * uiScale)
+	local rw = floor(rh * 6.8)
+	local cols = #list > 16 and 3 or (#list > 7 and 2 or 1)
+	local rows = max(1, math.ceil(#list / cols))
+	local pad = floor(rh * 0.3)
+	local head = floor(rh * 0.9)
+	local wornH = worn and (rh + pad * 2) or 0
+	local W = cols * rw + (cols - 1) * pad + pad * 2
+	W = max(W, floor(rh * 8.5))
+	rw = floor((W - pad * 2 - (cols - 1) * pad) / cols)
+	local Ht = head + wornH + rows * (rh + 3) + pad * 2 + floor(rh * 0.5)
+	local anchor = slotRects[slot]
+	local cx = anchor and (anchor[1] + anchor[3]) / 2 or vsx / 2
+	local x1 = floor(max(8, min(vsx - W - 8, cx - W / 2)))
+	local x2 = x1 + W
+	local y1 = yBottom + floor(vsy * 0.01)
+	local y2 = min(vsy - 8, y1 + Ht)
+	panel(x1, y1, x2, y2)
+	addBox(x1, y1, x2, y2, nil, nil)
+	-- header
+	rect(x1 + 5, y2 - head, x2 - 5, y2 - 5, { cc[1] * 0.3, cc[2] * 0.3, cc[3] * 0.3, 0.6 })
+	tex(ART .. cat.glyph .. ".png", x1 + pad, y2 - head + 4, x1 + pad + head - 10, y2 - 6)
+	local idxInCat = 1
+	for k, s2 in ipairs(cat.slots) do
+		if s2 == slot then
+			idxInCat = k
+		end
+	end
+	text(string.format("%s slot %d", cat.label, idxInCat), x1 + pad + head, y2 - head * 0.72, head * 0.45, { cc[1], cc[2], cc[3], 1 })
+	iconButton(nil, x2 - head * 0.8, y2 - head * 0.8, x2 - head * 0.3, y2 - head * 0.3, true, RED, function() picker = nil end, "Close (Esc)")
+	text("x", x2 - head * 0.55, y2 - head * 0.72, head * 0.4, RED, "co")
+	local y = y2 - head - pad
+	-- the worn item
+	if worn then
+		local it = H.items[worn]
+		local by1 = y - rh
+		local bw = floor(rh * 2.2)
+		local btnX2 = x2 - pad
+		local rowW = btnX2 - x1 - pad
+		if own then
+			rowW = rowW - bw - pad
+			if it.active then
+				rowW = rowW - bw - pad
+			end
+		end
+		itemRow({ item = worn }, x1 + pad, by1, rowW, rh, true, nil, "", "Worn: " .. (it.short or ""))
+		if own then
+			smallButton("Unequip", btnX2 - bw, by1 + rh * 0.18, btnX2, by1 + rh * 0.82, GOLD, true, function() sendUnequip(uid, slot) end,
+				"Back to the team stash (right click on the slot does the same)")
+			if it.active then
+				local left = itemCooldown(uid, slot, worn, f)
+				smallButton(left > 0 and string.format("%ds", floor(left / 30) + 1) or "Use", btnX2 - bw * 2 - pad, by1 + rh * 0.18, btnX2 - bw - pad,
+					by1 + rh * 0.82, GREEN, left <= 0, function() sendUse(uid, slot) end, "Use now (autocast also uses it when it helps)")
+			end
+		end
+		y = by1 - pad
+		rect(x1 + pad, y + 1, x2 - pad, y + 2, { 0.45, 0.34, 0.16, 1 })
+		y = y - pad * 0.6
+	end
+	text(#list > 0 and string.format("Team stash: %d %s item%s", #list, cat.label:lower(), #list == 1 and "" or "s") or "", x1 + pad, y - rh * 0.4,
+		rh * 0.3, GREY)
+	y = y - rh * 0.5
+	if #list == 0 then
+		text("No " .. cat.label:lower() .. " items in the team stash.", x1 + pad, y - rh * 0.55, rh * 0.32, WHITE)
+		text("Slain heroes and big enemies drop items - walk over them.", x1 + pad, y - rh * 0.95, rh * 0.26, GREY)
+	end
+	for i, e in ipairs(list) do
+		local col = floor((i - 1) / rows)
+		local row = (i - 1) % rows
+		local rx = x1 + pad + col * (rw + pad)
+		local ry = y - (row + 1) * (rh + 3)
+		local elsewhere = wornHere[e.item]
+		itemRow(e, rx, ry, rw, rh, own and not elsewhere, function() sendEquip(uid, slot, e) end,
+			own and (worn and "\n\255\180\180\180Click: swap it in (the worn one goes to the stash)" or "\n\255\180\180\180Click: equip") or "",
+			elsewhere and "Already worn by this hero" or nil)
+	end
+	return y2
+end
+
+-- the whole team stash, by category
+local function drawStashWindow(uid, yBottom)
+	local own = uid and spGetUnitTeam(uid) == myTeam()
+	local team = stashTeam(uid)
+	local _, ver = readStash(team)
+	stashSeenVer = max(stashSeenVer, ver)
+	local rh = floor(vsy * 0.038 * uiScale)
+	local rw = floor(rh * 6.6)
+	local pad = floor(rh * 0.35)
+	local head = floor(rh * 1.1)
+	local lists, rows = {}, 1
+	local total = 0
+	for _, catId in ipairs(H.categoryOrder) do
+		lists[catId] = stashOf(team, catId)
+		rows = max(rows, #lists[catId])
+		total = total + #lists[catId]
+	end
+	local maxRows = floor((vsy - yBottom - head - pad * 4 - rh) / (rh + 3))
+	local colsPer = rows > maxRows and 2 or 1
+	local rowsShown = math.ceil(rows / colsPer)
+	local W = 3 * colsPer * rw + (3 * colsPer - 1) * pad + pad * 4
+	local Ht = head + rh * 1.1 + rowsShown * (rh + 3) + pad * 3
+	local x1 = floor(max(8, (vsx - W) / 2))
+	local x2 = x1 + W
+	local y1 = yBottom + floor(vsy * 0.01)
+	local y2 = min(vsy - 8, y1 + Ht)
+	panel(x1, y1, x2, y2)
+	addBox(x1, y1, x2, y2, nil, nil)
+	text(string.format("Team stash  %d / %d", total, H.STASH_SIZE), x1 + pad * 1.5, y2 - head * 0.72, head * 0.45, GOLD)
+	text("When full, the oldest item of the lowest rarity is scrapped for metal", x2 - head * 1.2, y2 - head * 0.66, head * 0.34, GREY, "ro")
+	iconButton(nil, x2 - head * 0.8, y2 - head * 0.8, x2 - head * 0.3, y2 - head * 0.3, true, RED, function() showStash = false end, "Close (Esc)")
+	text("x", x2 - head * 0.55, y2 - head * 0.72, head * 0.4, RED, "co")
+	local hero = uid and heroDefIDs[spGetUnitDefID(uid) or -1] and uid
+	for ci, catId in ipairs(H.categoryOrder) do
+		local cat = H.itemCategories[catId]
+		local cc = cat.color
+		local cx1 = x1 + pad * 2 + (ci - 1) * colsPer * (rw + pad)
+		local ty = y2 - head - rh * 0.9
+		tex(ART .. cat.glyph .. ".png", cx1, ty, cx1 + rh * 0.8, ty + rh * 0.8)
+		text(string.format("%s  (%d)", cat.label, #lists[catId]), cx1 + rh, ty + rh * 0.2, rh * 0.42, { cc[1], cc[2], cc[3], 1 })
+		for i, e in ipairs(lists[catId]) do
+			local col = floor((i - 1) / rowsShown)
+			local row = (i - 1) % rowsShown
+			local rx = cx1 + col * (rw + pad)
+			local ry = ty - pad * 0.5 - (row + 1) * (rh + 3)
+			local fn
+			if own and hero then
+				fn = function()
+					-- into the first empty slot of its category, else open the picker of its first slot
+					for _, s2 in ipairs(cat.slots) do
+						if not wornItem(hero, s2) then
+							sendEquip(hero, s2, e)
+							return
+						end
+					end
+					openPicker(hero, cat.slots[1])
+				end
+			end
+			itemRow(e, rx, ry, rw, rh, true, fn, fn and "\n\255\180\180\180Click: equip on the selected hero" or "")
+		end
+	end
+	return y2
 end
 
 ---------------------------------------------------------------------------- console (bottom)
@@ -542,40 +919,9 @@ local function drawConsole(uid)
 		text(w.name .. " " .. stars, sx + ((wi - 1) % 2) * ss * 12.5, wy - floor((wi - 1) / 2) * ss * 1.3, ss * 0.9, WHITE)
 	end
 
-	-- inventory 2 x 3
-	local is = floor((H0 - pad * 2 - H0 * 0.1) / 3.3)
-	local ig = floor(is * 0.14)
-	local ix1 = x1 + floor(W * 0.56)
-	local iy2 = y2 - pad - H0 * 0.1
-	text("Inventory", ix1 + is + ig / 2, iy2 + H0 * 0.015, H0 * 0.07, GOLD, "co")
-	for slot = 1, H.INVENTORY do
-		local col = (slot - 1) % 2
-		local row = floor((slot - 1) / 2)
-		local bx1 = ix1 + col * (is + ig)
-		local by2s = iy2 - row * (is + ig)
-		local bx2, by1 = bx1 + is, by2s - is
-		local idx = spGetUnitRulesParam(uid, "hero_item_" .. slot) or 0
-		local item = H.itemOrder[idx]
-		if item then
-			local it = H.items[item]
-			local rc = H.rarities[it.rarity].color
-			iconButton(ART .. "item_" .. item .. ".png", bx1, by1, bx2, by2s, own, { rc[1], rc[2], rc[3], 1 },
-				it.active and function() Spring.SendLuaRulesMsg("t4hero:use:" .. uid .. ":" .. slot) end or nil,
-				itemTip(item) .. (own and ("\n\255\180\180\180" .. (it.active and "Click: use.  " or "") .. "Right click: drop") or ""),
-				own and function() Spring.SendLuaRulesMsg("t4hero:drop:" .. uid .. ":" .. slot) end or nil)
-			if it.active then
-				local ready = spGetUnitRulesParam(uid, "hero_itemcd_" .. slot) or 0
-				if ready > f then
-					sweep(bx1, by1, bx2, by2s, (ready - f) / (it.active.cooldown * 30))
-					text(tostring(floor((ready - f) / 30) + 1), (bx1 + bx2) / 2, by1 + is * 0.3, is * 0.4, WHITE, "co")
-				end
-			end
-		else
-			rect(bx1, by1, bx2, by2s, { 0, 0, 0, 0.75 })
-			frame(bx1 - 2, by1 - 2, bx2 + 2, by2s + 2, { 0.25, 0.2, 0.12, 1 }, 2)
-			addBox(bx1, by1, bx2, by2s, nil, "Empty slot. Items drop from slain heroes and big enemies - walk over one to pick it up.")
-		end
-	end
+	-- items: nine slots in three category rows, between the stats and the command card
+	local cardX1 = x2 - pad - floor(H0 * 0.36) * 3 - floor(floor(H0 * 0.36) * 0.13) * 2
+	drawInventory(uid, own, x1 + floor(W * 0.545), y1 + pad, cardX1 - pad, y2 - pad)
 
 	-- command card: abilities, upgrades, autocast
 	local cs = floor(H0 * 0.36)
@@ -627,7 +973,7 @@ local function drawConsole(uid)
 		rect(cx1, ry1, bx2, ry2, { 0.1 + 0.25 * glowOn, 0.08 + 0.18 * glowOn, 0.02, 0.95 })
 		frame(cx1, ry1, bx2, ry2, hov and { 1, 0.9, 0.5, 1 } or GOLD, 2)
 		text(pts > 0 and string.format("Upgrades  (+%d)", pts) or "Upgrades", (cx1 + bx2) / 2, (ry1 + ry2) / 2 - cs * 0.1, cs * 0.24, pts > 0 and GOLD or WHITE, "co")
-		addBox(cx1, ry1, bx2, ry2, function() showUpgrades = not showUpgrades end, "Open the upgrade window: weapons, plating, servos and abilities (hotkey: U)")
+		addBox(cx1, ry1, bx2, ry2, function() showUpgrades = not showUpgrades; picker = nil; showStash = false end, "Open the upgrade window: weapons, plating, servos and abilities (hotkey: U)")
 		local auto = (spGetUnitRulesParam(uid, "hero_autocast") or 1) == 1
 		local ax1 = bx2 + cg
 		local ax2 = ax1 + cs
@@ -785,7 +1131,7 @@ local function drawGroundItems()
 			frame(sx - s / 2 - 1, sy - s / 2 - 1, sx + s / 2 + 1, sy + s / 2 + 1, { c[1], c[2], c[3], 1 }, 2)
 			itemScreen[#itemScreen + 1] = { sx = sx, sy = sy, r = s * 0.7, g = g }
 			if hovered(sx - s / 2, sy - s / 2, sx + s / 2, sy + s / 2) then
-				hoverTip = itemTip(g.item) .. "\n\255\180\180\180Right click with a hero selected: pick it up"
+				hoverTip = itemTip(g.item) .. "\n\255\180\180\180A hero walking over it puts it into its team stash.\nRight click with a hero selected: go get it"
 			end
 		end
 	end
@@ -896,8 +1242,21 @@ function widget:T4HeroEvent(kind, uid, a, b)
 		local item = H.itemOrder[a]
 		if item then
 			local c = H.rarities[H.items[item].rarity].color
-			float(uid, "+ " .. H.items[item].name, c, 0.028, 2.5, "item")
+			float(uid, "+ " .. H.items[item].name .. (b == 1 and "  (to stash)" or "  (scrapped)"), c, 0.028, 2.5, "item")
 		end
+	elseif kind == "scrap" and spIsUnitAllied(uid) then
+		local item = H.itemOrder[a]
+		if item then
+			Spring.Echo(string.format("Team stash full: %s scrapped for %d metal", H.items[item].name, b))
+		end
+	elseif kind == "cheatdeath" then
+		float(uid, "PHOENIX!", { 1, 0.6, 0.2 }, 0.045, 3, "state")
+	elseif kind == "stashfull" and mine then
+		float(uid, "Team stash is full", RED, 0.026, 2.5, "warn")
+		Spring.PlaySoundFile("sounds/ui/cantdothat.wav", 0.6, "ui")
+	elseif kind == "itemdup" and mine then
+		float(uid, "Already wearing that item", RED, 0.026, 2.5, "warn")
+		Spring.PlaySoundFile("sounds/ui/cantdothat.wav", 0.6, "ui")
 	elseif kind == "cast" and name then
 		local key = H.abilityKeys[b - 3] -- the gadget sends 4 / 5 / 6
 		local br = key and H.branch(name, key)
@@ -950,9 +1309,18 @@ function widget:DrawScreen()
 	drawHeroButtons()
 	if selectedHero and spValidUnitID(selectedHero) then
 		local top = drawConsole(selectedHero)
+		if picker and (picker.uid ~= selectedHero or not top) then
+			picker = nil
+		end
 		if showUpgrades and top then
 			drawUpgrades(selectedHero, top)
+		elseif picker and top then
+			drawPicker(selectedHero, top)
+		elseif showStash and top then
+			drawStashWindow(selectedHero, top)
 		end
+	else
+		picker = nil
 	end
 	font:End()
 	gl.Color(1, 1, 1, 1)
@@ -1002,6 +1370,17 @@ function widget:GetTooltip()
 end
 
 function widget:MousePress(x, y, button)
+	local inside = false
+	for _, bx in ipairs(boxes) do
+		if x >= bx[1] and x <= bx[3] and y >= bx[2] and y <= bx[4] then
+			inside = true
+			break
+		end
+	end
+	if not inside and (picker or showStash) then
+		picker = nil
+		showStash = false
+	end
 	for i = #boxes, 1, -1 do
 		local bx = boxes[i]
 		if x >= bx[1] and x <= bx[3] and y >= bx[2] and y <= bx[4] then
@@ -1030,6 +1409,11 @@ end
 local HOTKEY = { q = "a1", w = "a2", r = "ult" }
 
 function widget:KeyPress(key, mods, isRepeat)
+	if key == 27 and (picker or showStash) then -- escape
+		picker = nil
+		showStash = false
+		return true
+	end
 	if not selectedHero or mods.ctrl or mods.alt or isRepeat then
 		return false
 	end
@@ -1043,6 +1427,8 @@ function widget:KeyPress(key, mods, isRepeat)
 	sym = type(sym) == "string" and sym:lower() or string.char(key):lower()
 	if sym == "u" then
 		showUpgrades = not showUpgrades
+		picker = nil
+		showStash = false
 		return true
 	end
 	local ab = HOTKEY[sym]
@@ -1064,7 +1450,14 @@ function widget:Initialize()
 	end
 	widgetHandler:RegisterGlobal("T4HeroEvent", function(...) widget:T4HeroEvent(...) end)
 	widget:ViewResize()
-	WG.T4HeroesUI = { setUpgrades = function(v) showUpgrades = v end }
+	WG.T4HeroesUI = {
+		setUpgrades = function(v) showUpgrades = v end,
+		-- items (scenes, other widgets): open the picker of a slot / the stash window of the selected hero
+		openPicker = function(slot) if selectedHero then picker = nil; openPicker(selectedHero, slot) end end,
+		openStash = function() showStash = true; picker = nil; showUpgrades = false end,
+		closeItems = function() picker = nil; showStash = false end,
+		slotRect = function(slot) return slotRects[slot] end,
+	}
 	refreshTracked()
 	refreshRoster()
 	pickSelected()
