@@ -201,6 +201,19 @@ local function scaleCegRefs(wd, fx)
 	end
 end
 
+-- the hero design data (luarules/configs/t4_heroes.lua), loaded once; nil when it cannot load here
+local heroH
+local function heroConfig()
+	if heroH == nil then
+		local ok, res = pcall(VFS.Include, "luarules/configs/t4_heroes.lua")
+		heroH = ok and res or false
+		if not ok and Spring and Spring.Echo then
+			Spring.Echo("[custom_t4] hero config not loaded: " .. tostring(res))
+		end
+	end
+	return heroH or nil
+end
+
 function T4.hero(ud, fx, extraWeapons)
 	ud.maxthisunit = 1
 	local cp = ud.customparams
@@ -214,21 +227,38 @@ function T4.hero(ud, fx, extraWeapons)
 			ud.sfxtypes.explosiongenerators[i] = FX.ref(ref, fx)
 		end
 	end
-	-- v14 visual tiers: every real weapon gets <key>_t2.._t4 copies with thicker beams, bigger shells and
-	-- scaled flashes/trails/blasts; the hero gadget swaps a shot to the tier its weapon tree has reached
+	-- v15 visual steps: every weapon of the hero's weapon trees gets <key>_s1.._s8 copies, each a little bigger
+	-- (x(1 + H.STEP_GROWTH * step), up to x2): thicker beams, bigger shells, scaled flashes/trails/blasts. The
+	-- hero gadget swaps a shot to the step its tree's rank sum has reached (H.weaponSteps). Only the keys named
+	-- in the hero's `weapons` get copies (each copy is a weapondef); flamethrowers and shields none.
+	local H = heroConfig()
+	local name = ud.objectname and ud.objectname:match("([^/]+)%.s3o$")
+	local cfg = H and name and H.heroes[name]
+	local wanted
+	if cfg and cfg.weapons then
+		wanted = {}
+		for _, w in ipairs(cfg.weapons) do
+			for _, k in ipairs(w.keys or {}) do
+				wanted[k] = true
+			end
+		end
+	end
+	local steps = H and #H.weaponSteps or 8
+	local growth = H and H.STEP_GROWTH or 0.125
 	local tiers = {}
 	for key, wd in pairs(ud.weapondefs or {}) do
 		local wt = wd.weapontype
 		local dmg = wd.damage and (wd.damage.default or wd.damage.vtol) or 0
-		if wt ~= "Shield" and wt ~= "Flame" and (wd.range or 0) > 0 and dmg > 0 then
-			for tier = 2, #FX.tierMult do
-				local m = FX.tierMult[tier]
+		if (not wanted or wanted[key]) and wt ~= "Shield" and wt ~= "Flame" and (wd.range or 0) > 0 and dmg > 0 then
+			for step = 1, steps do
+				local m = 1 + growth * step
 				local c = deepcopy(wd)
-				c.name = (wd.name or key) .. " (tier " .. tier .. ")"
+				c.name = (wd.name or key) .. " (+" .. step .. ")"
 				mulField(c, "size", m)
 				mulField(c, "thickness", m)
 				mulField(c, "laserflaresize", m)
 				mulField(c, "sizedecay", 1 / m)
+				mulField(c, "intensity", math.min(1.5, m ^ 0.5))
 				if c.explosiongenerator then
 					c.explosiongenerator = FX.ref(c.explosiongenerator, fx * m)
 				end
@@ -244,14 +274,18 @@ function T4.hero(ud, fx, extraWeapons)
 				c.avoidfriendly = false
 				c.customparams = c.customparams or {}
 				c.customparams.t4_hero_weapon = 1
-				c.customparams.t4_tier = tier
+				c.customparams.t4_step = step
 				c.customparams.t4_tier_of = key
-				tiers[key .. "_t" .. tier] = c
+				tiers[key .. "_s" .. step] = c
 			end
 		end
 	end
 	for key, wd in pairs(tiers) do
 		ud.weapondefs[key] = wd
+	end
+	-- the ability kit's projectiles every hero shares (gamedata/custom_t4_abilities.lua)
+	for key, wd in pairs(VFS.Include("gamedata/custom_t4_abilities.lua")(T4)) do
+		ud.weapondefs[key] = ud.weapondefs[key] or wd
 	end
 	for key, wd in pairs(extraWeapons or {}) do
 		wd.customparams = wd.customparams or {}

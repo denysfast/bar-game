@@ -223,6 +223,39 @@ CCircuitDef@ T4Foundry()
 	return null;
 }
 
+/*
+ * custom v15: the T2 hero hall (<side>t2hall, one per team) once a T2 lab of that side stands and the metal
+ * income reaches TECH_HALL_INCOME (Main::AiUpdate -> UpdateHall). The hall is not in factory.json: its heroes
+ * are built one of each (and revived) by the hero gadget unit_t4_heroes.lua, which reads them from the hall's
+ * build options - no hero names here. Without a factory.json entry there is no representative unit for
+ * TaskB::Factory, so the hall is ordered as a plain structure (BUNKER task; block_map places it with the T2
+ * labs' yard). One order per HALL_RETRY frames while it is missing.
+ */
+const float TECH_HALL_INCOME = 120.f;
+const int HALL_RETRY = 3 * MINUTE;
+int lastHallPick = -HALL_RETRY;
+
+void UpdateHall()
+{
+	if (aiEconomyMgr.metal.income < TECH_HALL_INCOME || ai.frame - lastHallPick < HALL_RETRY || Base::positions.length() == 0)
+		return;
+	array<string> labs  = {armalab, armavp, coralab, coravp, legalab, legavp};
+	array<string> halls = {"armt2hall", "armt2hall", "cort2hall", "cort2hall", "legt2hall", "legt2hall"};
+	for (uint i = 0; i < labs.length(); ++i) {
+		CCircuitDef@ lab = ai.GetCircuitDef(labs[i]);
+		if (lab is null || lab.count < 1)
+			continue;
+		CCircuitDef@ hall = ai.GetCircuitDef(halls[i]);
+		if (hall is null || !hall.IsAvailable(ai.frame) || hall.count >= hall.maxThisUnit)
+			continue;
+		lastHallPick = ai.frame;
+		const AIFloat3 pos = Base::positions[0];
+		aiBuilderMgr.Enqueue(TaskB::Common(Task::BuildType::BUNKER, Task::Priority::HIGH, hall, pos, SQUARE_SIZE * 48));
+		AiLog("[custom] hall: +" + halls[i] + " (income " + int(aiEconomyMgr.metal.income) + ", " + labs[i] + " x" + lab.count + ")");
+		return;
+	}
+}
+
 CCircuitDef@ TechUp(CCircuitDef@ d)
 {
 	const float income = aiEconomyMgr.metal.income;

@@ -13,10 +13,11 @@
 
 local FX = {}
 
-FX.scales = { 2.2, 2.5 }
--- v14: visual tiers of upgraded hero weapons (T4.hero): the base scale x FX.tierMult[tier]
-FX.tierMult = { 1, 1.3, 1.65, 2.0 }
-FX.tierScales = { 2.9, 3.3, 3.6, 4.1, 4.4, 5.0 }
+-- v15: base scales of every hero (T4 heroes 2.2-2.5, T2 heroes 1.3-1.9: T4.hero(ud, fx) picks the nearest)
+FX.scales = { 1.3, 1.5, 1.7, 1.9, 2.2, 2.5 }
+-- v15: visual steps of upgraded hero weapons (T4.hero, H.weaponSteps): the base scale x (1 + H.STEP_GROWTH * step),
+-- up to x2 - FX.ref picks the nearest of FX.scales and FX.tierScales
+FX.tierScales = { 2.8, 3.1, 3.5, 3.9, 4.4, 5.0 }
 
 -- stock CEGs used by the hero weapons and unit scripts
 FX.sources = {
@@ -81,7 +82,7 @@ function FX.ref(ref, scale)
 	end
 	name = name:gsub("%-%-x[%d%.]+$", "") -- a reference already scaled: scale the source again
 	local best, bestD
-	for _, list in ipairs({ FX.scales, scale > 2.6 and FX.tierScales or {} }) do
+	for _, list in ipairs({ FX.scales, FX.tierScales }) do
 		for _, s in ipairs(list) do
 			local d = math.abs(s - scale)
 			if not bestD or d < bestD then

@@ -847,6 +847,15 @@ local function unitDef_Post(name, uDef)
 	if t4Foundry[name] and buildoptions then
 		buildoptions[#buildoptions + 1] = t4Foundry[name]
 	end
+	-- custom T2 heroes (denysfast/bar-game): T2 constructors build the T2 hero hall of their side
+	local t2HeroHall = {
+		armack = "armt2hall", armacv = "armt2hall", armaca = "armt2hall",
+		corack = "cort2hall", coracv = "cort2hall", coraca = "cort2hall",
+		legack = "legt2hall", legacv = "legt2hall", legaca = "legt2hall",
+	}
+	if t2HeroHall[name] and buildoptions then
+		buildoptions[#buildoptions + 1] = t2HeroHall[name]
+	end
 
 	if next(buildoptions) then
 		-- Remove invalid unit defs.
