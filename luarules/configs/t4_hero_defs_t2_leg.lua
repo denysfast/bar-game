@@ -20,13 +20,13 @@ local heroes = {
 				{ hp = 3000, armor = 0.12, regen = 30 },
 				{ hp = 4500, armor = 0.18, regen = 45 },
 			},
-			text = { "+1500 HP, -6% damage taken, +15 HP/s", "+3000 HP, -12%, +30 HP/s", "+4500 HP, -18%, +45 HP/s" },
+			text = { "+1500 HP, -6% damage taken, +15 HP/s", "+3000 HP, -12% damage taken, +30 HP/s", "+4500 HP, -18% damage taken, +45 HP/s" },
 		},
 		a2 = {
 			name = "Shield Bash", kind = "active_nova", cmd = 36401, action = "hero_shieldbash", fx = "hero-nova-kinetic",
 			desc = "Slams the shield into the ground: damages and stuns every enemy around",
 			radius = { 260, 300, 340 }, dmg = { 900, 1600, 2400 }, stun = { 1.5, 2, 2.5 }, cooldown = { 24, 21, 18 },
-			text = { "260 radius, 900 dmg, 1.5 s stun, cd 24s", "300, 1600 dmg, 2 s, cd 21s", "340, 2400 dmg, 2.5 s, cd 18s" },
+			text = { "260 radius, 900 dmg, 1.5 s stun, cd 24s", "300 radius, 1600 dmg, 2 s stun, cd 21s", "340 radius, 2400 dmg, 2.5 s stun, cd 18s" },
 		},
 		ult = {
 			name = "Testudo", kind = "active_guard", cmd = 36402, action = "hero_testudo",
@@ -44,7 +44,7 @@ local heroes = {
 			name = "Heat Haze", kind = "aura_burn", passive = true,
 			desc = "The air around Pyre scorches every enemy, every second",
 			radius = { 220, 260, 300 }, dps = { 90, 180, 300 },
-			text = { "220 radius, 90 damage/s", "260, 180/s", "300, 300/s" },
+			text = { "220 radius, 90 damage/s", "260 radius, 180/s", "300 radius, 300/s" },
 		},
 		a2 = {
 			name = "Overheat", kind = "active_buff", cmd = 36403, action = "hero_overheat", fx = "hero-buff-power",
@@ -75,7 +75,7 @@ local heroes = {
 			name = "Ghillie Field", kind = "active_cloak", cmd = 36405, action = "hero_ghillie", fx = "hero-cloak",
 			desc = "Cloaks Longshot; moving slowly keeps the field up",
 			duration = { 8, 12, 16 }, speed = 0.6, cooldown = { 40, 35, 30 },
-			text = { "8 s cloak, cd 40s", "12 s, cd 35s", "16 s, cd 30s" },
+			text = { "8 s cloak, cd 40s", "12 s cloak, cd 35s", "16 s cloak, cd 30s" },
 		},
 		ult = {
 			name = "Piercing Rail", kind = "active_spear", cmd = 36406, action = "hero_piercingrail", target = "unit",
@@ -94,7 +94,7 @@ local heroes = {
 			name = "Bloodletting", kind = "lifesteal", passive = true,
 			desc = "Part of the damage dealt returns to Harrier as health",
 			frac = { 0.1, 0.17, 0.25 },
-			text = { "10% of damage as health", "17%", "25%" },
+			text = { "10% of damage as health", "17% of damage as health", "25% of damage as health" },
 		},
 		a2 = {
 			name = "Adrenaline", kind = "active_buff", cmd = 36407, action = "hero_adrenaline", fx = "hero-buff-speed",
@@ -124,7 +124,7 @@ local heroes = {
 			name = "Backdraft", kind = "active_nova", cmd = 36409, action = "hero_backdraft", fx = "hero-nova-fire",
 			desc = "Vents the fuel tanks: a ring of fire around Scorch",
 			radius = { 280, 330, 380 }, dmg = { 1000, 1700, 2500 }, cooldown = { 28, 25, 22 },
-			text = { "280 radius, 1000 dmg, cd 28s", "330, 1700, cd 25s", "380, 2500, cd 22s" },
+			text = { "280 radius, 1000 dmg, cd 28s", "330 radius, 1700 dmg, cd 25s", "380 radius, 2500 dmg, cd 22s" },
 		},
 		ult = {
 			name = "Napalm Deluge", kind = "active_barrage", cmd = 36410, action = "hero_deluge", target = "map",
@@ -143,7 +143,7 @@ local heroes = {
 			name = "Target Uplink", kind = "stats", passive = true,
 			desc = "Sight and radar to find targets for the salvos",
 			ranks = { { sight = 150, radar = 600 }, { sight = 300, radar = 1100 }, { sight = 450, radar = 1600 } },
-			text = { "+150 sight, +600 radar", "+300, +1100", "+450, +1600" },
+			text = { "+150 sight, +600 radar", "+300 sight, +1100 radar", "+450 sight, +1600 radar" },
 		},
 		a2 = {
 			name = "Brace", kind = "active_buff", cmd = 36411, action = "hero_brace", fx = "hero-buff-armor",
@@ -168,7 +168,7 @@ local heroes = {
 			name = "War Cry", kind = "aura_damage", passive = true,
 			desc = "Allied units around Gladius deal more damage",
 			radius = 700, mult = { 0.06, 0.11, 0.16 },
-			text = { "+6% damage", "+11%", "+16%" },
+			text = { "+6% damage", "+11% damage", "+16% damage" },
 		},
 		a2 = {
 			name = "Scutum", kind = "active_shield", cmd = 36413, action = "hero_scutum", fx = "hero-shield",
@@ -192,13 +192,13 @@ local heroes = {
 			name = "Molten Hull", kind = "thorns", passive = true,
 			desc = "Part of the damage Vulcan takes splashes back on the attacker as molten metal",
 			frac = { 0.1, 0.17, 0.25 },
-			text = { "10% of damage taken returned", "17%", "25%" },
+			text = { "10% of damage taken returned", "17% of damage taken returned", "25% of damage taken returned" },
 		},
 		a2 = {
 			name = "Magma Ram", kind = "active_dash", cmd = 36415, action = "hero_magmaram", target = "map", fx = "hero-dash",
 			desc = "Charges to a point and burns everything along the way",
 			range = { 450, 550, 650 }, dmg = { 800, 1300, 1900 }, radius = 150, cooldown = { 26, 23, 20 },
-			text = { "450 charge, 800 dmg, cd 26s", "550, 1300 dmg, cd 23s", "650, 1900 dmg, cd 20s" },
+			text = { "450 charge, 800 dmg, cd 26s", "550 charge, 1300 dmg, cd 23s", "650 charge, 1900 dmg, cd 20s" },
 		},
 		ult = {
 			name = "Phoenix Core", kind = "undying", passive = true,
@@ -216,7 +216,7 @@ local heroes = {
 			name = "Nanite Cloud", kind = "aura_heal", passive = true,
 			desc = "Repair nanites mend allies and structures around the carrier",
 			radius = { 450, 550, 650 }, rate = { 20, 40, 65 },
-			text = { "450 radius, 20 HP/s", "550, 40 HP/s", "650, 65 HP/s" },
+			text = { "450 radius, 20 HP/s", "550 radius, 40 HP/s", "650 radius, 65 HP/s" },
 		},
 		a2 = {
 			name = "Seeker Swarm", kind = "active_missiles", cmd = 36416, action = "hero_seekers", fx = "hero-missile-launch",
@@ -240,7 +240,7 @@ local heroes = {
 			name = "Stone Gaze", kind = "aura_slow", passive = true,
 			desc = "Enemies near the Gorgon move slower",
 			radius = { 400, 480, 560 }, slow = { 0.15, 0.25, 0.35 },
-			text = { "400 radius, -15% speed", "480, -25%", "560, -35%" },
+			text = { "400 radius, -15% speed", "480 radius, -25% speed", "560 radius, -35% speed" },
 		},
 		a2 = {
 			name = "Serpent Arcs", kind = "proc_chain", passive = true,
@@ -253,7 +253,7 @@ local heroes = {
 			desc = "A pulse from the Gorgon's eye: stuns and paralyses every enemy around",
 			radius = { 450, 550, 650 }, dmg = { 600, 1000, 1500 }, stun = { 3, 4, 5 }, emp = { 3000, 5000, 8000 },
 			cooldown = { 80, 70, 60 },
-			text = { "450 radius, 3 s stun, cd 80s", "550, 4 s, cd 70s", "650, 5 s, cd 60s" },
+			text = { "450 radius, 3 s stun, cd 80s", "550 radius, 4 s stun, cd 70s", "650 radius, 5 s stun, cd 60s" },
 		},
 	},
 }

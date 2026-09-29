@@ -47,7 +47,7 @@ local heroes = {
 			name = "Ghost Protocol", kind = "active_cloak", cmd = 36203, action = "hero_deadeye_ghost", fx = "hero-cloak",
 			desc = "Vanishes from sight and moves faster, free of the cloak's energy upkeep",
 			duration = { 8, 12, 16 }, speed = 0.25, cooldown = { 45, 40, 35 },
-			text = { "8 s cloak, +25% speed, cd 45s", "12 s, cd 40s", "16 s, cd 35s" },
+			text = { "8 s cloak, +25% speed, cd 45s", "12 s cloak, cd 40s", "16 s cloak, cd 35s" },
 		},
 		ult = {
 			name = "Execution Round", kind = "active_spear", cmd = 36204, action = "hero_deadeye_execute", target = "unit",
@@ -67,19 +67,19 @@ local heroes = {
 			name = "Impulse Dash", kind = "active_dash", cmd = 36205, action = "hero_outlaw_dash", target = "map", fx = "hero-dash",
 			desc = "Dashes to a point, hitting every enemy on the way",
 			range = { 500, 650, 800 }, dmg = { 400, 800, 1300 }, radius = 120, cooldown = { 20, 17, 14 },
-			text = { "500 dash, 400 damage, cd 20s", "650, 800, cd 17s", "800, 1300, cd 14s" },
+			text = { "500 dash, 400 damage, cd 20s", "650 dash, 800 damage, cd 17s", "800 dash, 1300 damage, cd 14s" },
 		},
 		a2 = {
 			name = "Scavenger Rounds", kind = "lifesteal", passive = true,
 			desc = "A share of the damage dealt repairs the Outlaw",
 			frac = { 0.08, 0.14, 0.2 },
-			text = { "8% of damage as HP", "14%", "20%" },
+			text = { "8% of damage as HP", "14% of damage as HP", "20% of damage as HP" },
 		},
 		ult = {
 			name = "Bullet Storm", kind = "active_bladestorm", cmd = 36206, action = "hero_outlaw_storm",
 			desc = "Spins its guns: hits everything around several times a second and shrugs off damage",
 			radius = { 350, 420, 500 }, dmg = { 250, 400, 600 }, duration = 6, armor = 0.4, cooldown = { 75, 65, 55 },
-			text = { "350 radius, 250 per 0.25 s, cd 75s", "420, 400, cd 65s", "500, 600, cd 55s" },
+			text = { "350 radius, 250 per 0.25 s, cd 75s", "420 radius, 400, cd 65s", "500 radius, 600, cd 55s" },
 		},
 	},
 
@@ -123,7 +123,7 @@ local heroes = {
 			name = "Static Field", kind = "aura_emp", passive = true,
 			desc = "Enemies around are shocked and paralysed every 2 seconds",
 			radius = { 300, 380, 460 }, dmg = { 100, 200, 320 }, emp = { 800, 1600, 2600 }, period = 2,
-			text = { "300 radius, 100 damage, 800 EMP", "380, 200, 1600 EMP", "460, 320, 2600 EMP" },
+			text = { "300 radius, 100 damage, 800 EMP", "380 radius, 200 damage, 1600 EMP", "460 radius, 320 damage, 2600 EMP" },
 		},
 		ult = {
 			name = "Thunderstorm", kind = "active_barrage", cmd = 36209, action = "hero_tesla_storm", target = "map",
@@ -194,19 +194,19 @@ local heroes = {
 			name = "Reinforced Hull", kind = "stats", passive = true,
 			desc = "Thicker armour and self-repair",
 			ranks = { { hp = 3000, armor = 0.06, regen = 20 }, { hp = 6000, armor = 0.12, regen = 40 }, { hp = 9000, armor = 0.18, regen = 60 } },
-			text = { "+3000 HP, -6% damage taken, +20 HP/s", "+6000, -12%, +40 HP/s", "+9000, -18%, +60 HP/s" },
+			text = { "+3000 HP, -6% damage taken, +20 HP/s", "+6000 HP, -12% damage taken, +40 HP/s", "+9000 HP, -18% damage taken, +60 HP/s" },
 		},
 		a2 = {
 			name = "Battering Ram", kind = "active_dash", cmd = 36215, action = "hero_bulldog_ram", target = "map", fx = "hero-dash",
 			desc = "Charges to a point, crushing every enemy on the way",
 			range = { 400, 500, 600 }, dmg = { 800, 1400, 2100 }, radius = 150, cooldown = { 25, 22, 19 },
-			text = { "400 charge, 800 damage, cd 25s", "500, 1400, cd 22s", "600, 2100, cd 19s" },
+			text = { "400 charge, 800 damage, cd 25s", "500 charge, 1400 damage, cd 22s", "600 charge, 2100 damage, cd 19s" },
 		},
 		ult = {
 			name = "Iron Wall", kind = "active_guard", cmd = 36216, action = "hero_bulldog_wall", fx = "hero-buff-armor",
 			desc = "Allies within 800 take less damage for 10 seconds",
 			radius = 800, reduce = { 0.25, 0.35, 0.45 }, duration = 10, cooldown = { 90, 80, 70 },
-			text = { "-25% damage taken, cd 90s", "-35%, cd 80s", "-45%, cd 70s" },
+			text = { "-25% damage taken, cd 90s", "-35% damage taken, cd 80s", "-45% damage taken, cd 70s" },
 		},
 	},
 
@@ -219,7 +219,7 @@ local heroes = {
 			name = "Forward Observer", kind = "stats", passive = true,
 			desc = "Longer sight and radar",
 			ranks = { { sight = 150, radar = 400 }, { sight = 300, radar = 800 }, { sight = 450, radar = 1200 } },
-			text = { "+150 sight, +400 radar", "+300, +800", "+450, +1200" },
+			text = { "+150 sight, +400 radar", "+300 sight, +800 radar", "+450 sight, +1200 radar" },
 		},
 		a2 = {
 			name = "Countermeasures", kind = "active_shield", cmd = 36217, action = "hero_envoy_shield", fx = "hero-shield",
@@ -258,7 +258,7 @@ local heroes = {
 			desc = "An EMP wave paralyses everything around",
 			radius = { 450, 550, 650 }, dmg = { 400, 700, 1000 }, stun = { 4, 6, 8 }, emp = { 4000, 7000, 11000 },
 			cooldown = { 80, 70, 60 },
-			text = { "450 radius, 4 s stun, cd 80s", "550, 6 s, cd 70s", "650, 8 s, cd 60s" },
+			text = { "450 radius, 4 s stun, cd 80s", "550 radius, 6 s stun, cd 70s", "650 radius, 8 s stun, cd 60s" },
 		},
 	},
 }

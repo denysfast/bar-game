@@ -95,13 +95,13 @@ local heroes = {
 			desc = "Dumps half of the shield charge as an EMP shockwave that stuns everything around",
 			radius = { 500, 600, 700 }, dmg = { 1500, 2500, 3500 }, stun = { 3, 4, 5 }, shieldRatio = { 1.0, 1.4, 1.8 },
 			cooldown = { 35, 30, 25 },
-			text = { "1500 dmg + the charge, 500 radius, 3 s stun, cd 35 s", "2500 + 1.4x charge, 600 radius, 4 s, cd 30 s", "3500 + 1.8x charge, 700 radius, 5 s, cd 25 s" },
+			text = { "1500 dmg + the charge, 500 radius, 3 s stun, cd 35 s", "2500 + 1.4x charge, 600 radius, 4 s stun, cd 30 s", "3500 + 1.8x charge, 700 radius, 5 s stun, cd 25 s" },
 		},
 		ult = {
 			name = "Aegis Dome", kind = "active_dome", cmd = 36104, action = "hero_dome",
 			desc = "Allies under the dome cannot be damaged",
 			radius = { 800, 900, 1000 }, duration = { 4, 6, 8 }, cooldown = { 120, 110, 100 },
-			text = { "800 radius, 4 s invulnerable, cd 120 s", "900 radius, 6 s, cd 110 s", "1000 radius, 8 s, cd 100 s" },
+			text = { "800 radius, 4 s invulnerable, cd 120 s", "900 radius, 6 s invulnerable, cd 110 s", "1000 radius, 8 s invulnerable, cd 100 s" },
 		},
 	},
 
@@ -140,7 +140,7 @@ local heroes = {
 			name = "War Stomp", kind = "active_nova", cmd = 36111, action = "hero_stomp", fx = "hero-nova-kinetic",
 			desc = "Slams the ground: damages and stuns everything around",
 			radius = { 450, 550, 650 }, dmg = { 3000, 5500, 8500 }, stun = { 2, 3, 4 }, cooldown = { 30, 27, 24 },
-			text = { "450 radius, 3000 dmg, 2 s stun, cd 30 s", "550 radius, 5500 dmg, 3 s, cd 27 s", "650 radius, 8500 dmg, 4 s, cd 24 s" },
+			text = { "450 radius, 3000 dmg, 2 s stun, cd 30 s", "550 radius, 5500 dmg, 3 s stun, cd 27 s", "650 radius, 8500 dmg, 4 s stun, cd 24 s" },
 		},
 		a2 = {
 			name = "Command Aura", kind = "aura_damage", passive = true,
@@ -164,7 +164,7 @@ local heroes = {
 			name = "Reactive Armor", kind = "stats", passive = true,
 			desc = "Less damage taken, faster self-repair",
 			ranks = { { armor = 0.08, regen = 300 }, { armor = 0.16, regen = 600 }, { armor = 0.24, regen = 1000 } },
-			text = { "-8% damage taken, +300 HP/s", "-16%, +600 HP/s", "-24%, +1000 HP/s" },
+			text = { "-8% damage taken, +300 HP/s", "-16% damage taken, +600 HP/s", "-24% damage taken, +1000 HP/s" },
 		},
 		a2 = {
 			name = "Siege Protocol", kind = "active_buff", cmd = 36112, action = "hero_siege", fx = "hero-siege",
@@ -189,7 +189,7 @@ local heroes = {
 			name = "Salvage Nanites", kind = "lifesteal", passive = true,
 			desc = "Part of the damage the rockets deal repairs Armageddon",
 			frac = { 0.05, 0.08, 0.12 },
-			text = { "heals 5% of damage dealt", "8%", "12%" },
+			text = { "heals 5% of damage dealt", "heals 8% of damage dealt", "heals 12% of damage dealt" },
 		},
 		a2 = {
 			name = "Hunter Swarm", kind = "active_missiles", cmd = 36116, action = "hero_swarm",
@@ -221,7 +221,7 @@ local heroes = {
 			desc = "Charges through the enemy line, burning everything it passes and leaving fire behind",
 			range = { 700, 850, 1000 }, dmg = { 2500, 4000, 6000 }, radius = 220, burn = { 600, 1000, 1500 },
 			cooldown = { 24, 21, 18 },
-			text = { "700 range, 2500 dmg, fire 600 dmg/s for 4 s, cd 24 s", "850, 4000 dmg, fire 1000/s, cd 21 s", "1000, 6000 dmg, fire 1500/s, cd 18 s" },
+			text = { "700 range, 2500 dmg, fire 600 dmg/s for 4 s, cd 24 s", "850 range, 4000 dmg, fire 1000/s, cd 21 s", "1000 range, 6000 dmg, fire 1500/s, cd 18 s" },
 		},
 		ult = {
 			name = "Rain of Fire", kind = "active_barrage", cmd = 36114, action = "hero_rainfire", target = "map",
@@ -241,13 +241,13 @@ local heroes = {
 			name = "Solar Flare", kind = "active_nova", cmd = 36121, action = "hero_flare", fx = "hero-nova-fire",
 			desc = "A blinding burst: burns enemies around and repairs allies",
 			radius = { 600, 700, 800 }, dmg = { 4000, 6500, 9500 }, heal = { 3000, 5000, 8000 }, cooldown = { 35, 30, 25 },
-			text = { "600 radius, 4000 dmg, allies +3000 HP, cd 35 s", "700, 6500 dmg, +5000 HP, cd 30 s", "800, 9500 dmg, +8000 HP, cd 25 s" },
+			text = { "600 radius, 4000 dmg, allies +3000 HP, cd 35 s", "700 radius, 6500 dmg, +5000 HP, cd 30 s", "800 radius, 9500 dmg, +8000 HP, cd 25 s" },
 		},
 		a2 = {
 			name = "Heat Haze", kind = "aura_slow", passive = true,
 			desc = "Enemies around wade through shimmering heat and move slower",
 			radius = { 600, 700, 800 }, slow = { 0.2, 0.3, 0.4 },
-			text = { "600 radius, -20% speed", "700 radius, -30%", "800 radius, -40%" },
+			text = { "600 radius, -20% speed", "700 radius, -30% speed", "800 radius, -40% speed" },
 		},
 		ult = {
 			name = "Sunstrike", kind = "active_beam", cmd = 36122, action = "hero_sunstrike", target = "map",
@@ -297,7 +297,7 @@ local heroes = {
 			name = "Phase Cloak", kind = "active_cloak", cmd = 36127, action = "hero_phase",
 			desc = "Fades from sight and moves faster; holds fire until the cloak ends, an order to attack breaks it",
 			duration = { 6, 9, 12 }, speed = 0.4, cooldown = { 40, 35, 30 },
-			text = { "invisible for 6 s, +40% speed, cd 40 s", "9 s, cd 35 s", "12 s, cd 30 s" },
+			text = { "invisible for 6 s, +40% speed, cd 40 s", "invisible for 9 s, cd 35 s", "invisible for 12 s, cd 30 s" },
 		},
 		ult = {
 			name = "Spear of Longinus", kind = "active_spear", cmd = 36124, action = "hero_spear", target = "unit",
@@ -328,7 +328,7 @@ local heroes = {
 			name = "Bladestorm", kind = "active_bladestorm", cmd = 36126, action = "hero_bladestorm",
 			desc = "Spins into a storm of blades: shreds everything around, takes half damage",
 			radius = { 420, 500, 580 }, dmg = { 900, 1500, 2300 }, duration = 6, armor = 0.5, cooldown = { 75, 65, 55 },
-			text = { "420 radius, 900 dmg per 0.2 s for 6 s, cd 75 s", "500, 1500 per 0.2 s, cd 65 s", "580, 2300 per 0.2 s, cd 55 s" },
+			text = { "420 radius, 900 dmg per 0.2 s for 6 s, cd 75 s", "500 radius, 1500 per 0.2 s, cd 65 s", "580 radius, 2300 per 0.2 s, cd 55 s" },
 		},
 	},
 }

@@ -13,13 +13,13 @@ local heroes = {
 			name = "Ironhide", kind = "stats", passive = true,
 			desc = "Layered plating: more health and less damage taken",
 			ranks = { { hp = 2000, armor = 0.05 }, { hp = 4500, armor = 0.10 }, { hp = 7500, armor = 0.15 } },
-			text = { "+2000 HP, -5% damage taken", "+4500 HP, -10%", "+7500 HP, -15%" },
+			text = { "+2000 HP, -5% damage taken", "+4500 HP, -10% damage taken", "+7500 HP, -15% damage taken" },
 		},
 		a2 = {
 			name = "Sumo Stance", kind = "active_guard", cmd = 36301, action = "hero_sumostance", fx = "hero-buff-armor",
 			desc = "Plants its feet and covers the allies within 700: they take less damage for 7 seconds",
 			radius = 700, reduce = { 0.20, 0.30, 0.40 }, duration = 7, cooldown = { 45, 40, 35 },
-			text = { "700 radius, -20% damage taken, 7 s, cd 45 s", "-30%, cd 40 s", "-40%, cd 35 s" },
+			text = { "700 radius, -20% damage taken, 7 s, cd 45 s", "-30% radius, cd 40 s", "-40% radius, cd 35 s" },
 		},
 		ult = {
 			name = "Unbreakable", kind = "active_shield", cmd = 36302, action = "hero_unbreakable", fx = "hero-shield",
@@ -37,7 +37,7 @@ local heroes = {
 			name = "Scrapper", kind = "lifesteal", passive = true,
 			desc = "Every hit repairs Can by a share of the damage dealt",
 			frac = { 0.08, 0.14, 0.20 },
-			text = { "8% of damage dealt as HP", "14%", "20%" },
+			text = { "8% of damage dealt as HP", "14% of damage dealt as HP", "20% of damage dealt as HP" },
 		},
 		a2 = {
 			name = "Shoulder Charge", kind = "active_dash", cmd = 36303, action = "hero_shouldercharge", target = "map", fx = "hero-dash",
@@ -85,7 +85,7 @@ local heroes = {
 			name = "Burrow", kind = "active_cloak", cmd = 36307, action = "hero_burrow", fx = "hero-cloak",
 			desc = "Burrows out of sight: cloaked and a little faster until the time runs out",
 			duration = { 6, 9, 12 }, speed = 0.2, cooldown = { 35, 30, 25 },
-			text = { "6 s cloak, +20% speed, cd 35 s", "9 s, cd 30 s", "12 s, cd 25 s" },
+			text = { "6 s cloak, +20% speed, cd 35 s", "9 s cloak, cd 30 s", "12 s cloak, cd 25 s" },
 		},
 		a2 = {
 			name = "Static Legs", kind = "aura_emp", passive = true,
@@ -98,7 +98,7 @@ local heroes = {
 			desc = "Discharges an EMP shockwave: damages and stuns everything around",
 			radius = { 450, 550, 650 }, dmg = { 800, 1500, 2500 }, stun = { 3, 4, 5 }, emp = { 3000, 6000, 10000 },
 			cooldown = { 60, 55, 50 },
-			text = { "450 radius, 800 damage, 3 s stun, cd 60 s", "550 radius, 1500 damage, 4 s, cd 55 s", "650 radius, 2500 damage, 5 s, cd 50 s" },
+			text = { "450 radius, 800 damage, 3 s stun, cd 60 s", "550 radius, 1500 damage, 4 s stun, cd 55 s", "650 radius, 2500 damage, 5 s stun, cd 50 s" },
 		},
 	},
 
@@ -116,7 +116,7 @@ local heroes = {
 			name = "Target Designator", kind = "aura_damage", passive = true,
 			desc = "Allied units around deal more damage to what the Arbiter marks",
 			radius = 800, mult = { 0.06, 0.10, 0.15 },
-			text = { "800 radius, allies +6% damage", "+10%", "+15%" },
+			text = { "800 radius, allies +6% damage", "+10% radius", "+15% radius" },
 		},
 		ult = {
 			name = "Judgement Swarm", kind = "active_missiles", cmd = 36309, action = "hero_judgement", fx = "hero-missile-launch",
@@ -159,19 +159,19 @@ local heroes = {
 			name = "Bulwark Projector", kind = "shield_cap", passive = true,
 			desc = "Capacity and recharge of the plasma deflector over the escort",
 			cap = { 0.5, 0.75, 1.0 }, base = 0.3, regen = { 1.5, 2.0, 2.6 },
-			text = { "50% capacity, x1.5 recharge", "75%, x2", "100%, x2.6" },
+			text = { "50% capacity, x1.5 recharge", "75% capacity, x2 recharge", "100% capacity, x2.6 recharge" },
 		},
 		a2 = {
 			name = "Iron Phalanx", kind = "aura_armor", passive = true,
 			desc = "Allied units around take less damage",
 			radius = 600, reduce = { 0.08, 0.14, 0.20 },
-			text = { "600 radius, allies -8% damage taken", "-14%", "-20%" },
+			text = { "600 radius, allies -8% damage taken", "-14% radius", "-20% radius" },
 		},
 		ult = {
 			name = "Goliath Dome", kind = "active_dome", cmd = 36312, action = "hero_goliathdome", fx = "hero-shield",
 			desc = "Allies within 650 cannot be damaged for a few seconds",
 			radius = 650, duration = { 3, 5, 7 }, cooldown = { 110, 100, 90 },
-			text = { "3 s invulnerability, cd 110 s", "5 s, cd 100 s", "7 s, cd 90 s" },
+			text = { "3 s invulnerability, cd 110 s", "5 s invulnerability, cd 100 s", "7 s invulnerability, cd 90 s" },
 		},
 	},
 
@@ -232,13 +232,13 @@ local heroes = {
 			name = "Ground Quake", kind = "active_nova", cmd = 36316, action = "hero_groundquake", fx = "hero-nova-kinetic",
 			desc = "Shakes the ground around: damages and stuns the enemies that got close",
 			radius = { 350, 420, 500 }, dmg = { 600, 1000, 1600 }, stun = { 1, 1.5, 2 }, cooldown = { 30, 27, 24 },
-			text = { "350 radius, 600 damage, 1 s stun, cd 30 s", "420, 1000, 1.5 s, cd 27 s", "500, 1600, 2 s, cd 24 s" },
+			text = { "350 radius, 600 damage, 1 s stun, cd 30 s", "420 radius, 1000 damage, 1.5 s stun, cd 27 s", "500 radius, 1600 damage, 2 s stun, cd 24 s" },
 		},
 		a2 = {
 			name = "Seismic Field", kind = "aura_slow", passive = true,
 			desc = "Enemies around are slowed by the constant tremors",
 			radius = { 400, 500, 600 }, slow = { 0.15, 0.25, 0.35 },
-			text = { "400 radius, -15% speed", "500 radius, -25%", "600 radius, -35%" },
+			text = { "400 radius, -15% speed", "500 radius, -25% speed", "600 radius, -35% speed" },
 		},
 		ult = {
 			name = "Carpet Barrage", kind = "active_barrage", cmd = 36317, action = "hero_carpetbarrage", target = "map", fx = "hero-target",
