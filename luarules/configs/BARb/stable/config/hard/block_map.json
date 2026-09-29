@@ -169,7 +169,7 @@
 	//	}
 	//},
 	"instance": {
-		"fac_land_t2": ["armalab", "armavp", "coralab", "coravp", "legalab", "legavp", "armt2hall", "cort2hall", "legt2hall"],  // custom v15: T2 hero halls
+		"fac_land_t2": ["armalab", "armavp", "coralab", "coravp", "legalab", "legavp"],
 		"fac_land_t1": ["armlab", "armvp", "armhp", "corlab", "corvp", "corhp", "leglab", "legvp", "leghp"],
 		"fac_water": ["armsy", "armasy", "corsy", "corasy", "legsy", "legadvshipyard"],
 		"fac_air":["armap","armaap", "corap", "coraap", "legap", "legaap"],

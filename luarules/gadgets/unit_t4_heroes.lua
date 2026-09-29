@@ -95,7 +95,6 @@ if gadgetHandler:IsSyncedCode() then
 		end
 		if ud.name == "armt4gant" or ud.name == "cort4gant" or ud.name == "legt4gant" then
 			foundryDefs[udid] = true
-		elseif ud.name:find("t2hall$") then foundryDefs[udid] = true -- v15: the T2 hero halls (<side>t2hall)
 		elseif ud.isFactory then
 			factoryDefs[udid] = true
 		end
@@ -107,7 +106,11 @@ if gadgetHandler:IsSyncedCode() then
 				health = ud.health, speed = ud.speed, sight = ud.losRadius or ud.sightDistance or 0,
 				airSight = ud.airLosRadius or 0, radar = ud.radarDistance or ud.radarRadius or 0,
 				weapons = {}, keyNum = {}, extra = {}, cmds = {},
+				altWeapon = {}, -- v17: keys of the second arc of a gun (not counted in the DPS)
 			}
+			for key in (ud.customParams.t4_alt_weapons or ""):gmatch("%S+") do
+				def.altWeapon[key] = true
+			end
 			local prefix = ud.name .. "_"
 			for n, w in ipairs(ud.weapons) do
 				local wd = WeaponDefs[w.weaponDef]
@@ -338,7 +341,7 @@ if gadgetHandler:IsSyncedCode() then
 
 	-- ability damage, healing and absorb grow with the hero's level
 	local function abilityPower(h)
-		return 1 + POWER_PER_LEVEL * (((h and h.level) or 1) - 1)
+		return (H.ABILITY_POWER_BASE or 1) * (1 + POWER_PER_LEVEL * (((h and h.level) or 1) - 1))
 	end
 
 	-- the learned ability of a kind: b, rank, key
@@ -709,8 +712,10 @@ if gadgetHandler:IsSyncedCode() then
 			end
 			local mult = (1 + (m.weaponDamage[w.key] or 0)) * (1 + frac(t.damage, b.damage))
 			h.wdmg[w.wdid] = mult
-			if w.damage > 0 then
-				dps = dps + w.damage * mult * h.dmgMult * proj * burst / max(0.05, reload)
+			-- v17: the shown DPS counts what T4.weaponDps balances: the weapons of the trees, not paralyzers, and of a
+			-- the other arc of a gun (customparams.t4_alt_weapons, the high/low shells of Olympus)
+			if w.damage > 0 and wi and not def.altWeapon[w.key] and not WeaponDefs[w.wdid].paralyzer then
+				dps = dps + w.damage * mult * h.dmgMult * proj * burst / max(0.03, reload)
 			end
 			for _, cw in pairs(def.tierWdid[n] or {}) do
 				h.wdmg[cw] = mult
@@ -989,7 +994,7 @@ if gadgetHandler:IsSyncedCode() then
 			toUI("nometal", unitID, price)
 			return false, "metal"
 		end
-		h.buyReady = f + H.BUY_COOLDOWN * GAME_SPEED
+		h.buyReady = f + (isAITeam[h.team] and H.AI_BUY_COOLDOWN or H.BUY_COOLDOWN) * GAME_SPEED
 		-- the experience moves on by one level's worth: the progress toward the next level is kept
 		local lo = H.xpFor(h.level, xpMult) * h.def.cost
 		local hi = H.xpFor(h.level + 1, xpMult) * h.def.cost
@@ -3539,7 +3544,7 @@ if gadgetHandler:IsSyncedCode() then
 				cost = cost + costOf(uid)
 			end
 		end
-		local want = min(h.def.cost * H.AI_ESCORT_COST, max(g.cost / 3, h.def.cost * 0.15))
+		local want = min(h.def.cost * H.AI_ESCORT_COST, max(g.cost * H.AI_ESCORT_GROUP, h.def.cost * 0.15))
 		if e.n >= H.AI_ESCORT_MAX or (e.n >= H.AI_ESCORT_MIN and cost >= want) then
 			return
 		end
@@ -4030,9 +4035,11 @@ if gadgetHandler:IsSyncedCode() then
 							for _, o in ipairs(order) do
 								local h = o.h
 								local bought = h.bought or 0
-								if h.level < H.AI_BUY_MAX_LEVEL and bought < max(2, h.level - 1 - bought) then
+								-- v17: at a quarter of the price, every H.AI_BUY_COOLDOWN, up to H.AI_BUY_MAX_LEVEL - no cap by the
+								-- levels earned in combat any more (heroes that had not fought yet stuck at level 5)
+								if h.level < H.AI_BUY_MAX_LEVEL then
 									buyer = o
-									buyPrice = H.levelPrice(h.def.name, h.level, h.def.cost)
+									buyPrice = H.aiLevelPrice(h.def.name, h.level, h.def.cost)
 									need = max(need, buyPrice or 0)
 									break
 								end

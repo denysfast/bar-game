@@ -25,6 +25,7 @@
 --   nova: a number (the finale's damage) or true (novaDmg, else 3x the ability's damage).
 local H = ...
 
+H.ABILITY_POWER_BASE = 1.5 -- v17: every ability hits (and heals, absorbs) 50% harder
 H.ABILITY_POWER_PER_LEVEL = 0.015 -- ability damage / healing / absorb: +1.5% per hero level above 1
 
 local heroes = {

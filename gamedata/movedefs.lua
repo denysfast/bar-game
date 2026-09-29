@@ -469,10 +469,12 @@ local moveDatas = {
 		speedModClass = SPEED_CLASS.Hover,
 	},
 
-	-- custom T4 tier (denysfast/bar-game, gamedata/custom_t4.lua): scaled T3 models
+	-- custom T4 tier (denysfast/bar-game, gamedata/custom_t4.lua): scaled T3 models. v17: CRUSH.MAXIMUM -
+	-- a feature crushes when its crushResistance (default: its mass = 0.4 metal + 0.1 health) is lower, and
+	-- titan/building wrecks weighed more than MASSIVE: the heroes stuck on them instead of walking over
 	-- armt4atlas armt4aegis cort4armageddon cort4hellwalker legt4tempest
 	T4BOT8 = {
-		crushstrength = CRUSH.MASSIVE,
+		crushstrength = CRUSH.MAXIMUM,
 		depthMod = 0,
 		footprint = 8,
 		maxslope = SLOPE.DIFFICULT,
@@ -482,7 +484,7 @@ local moveDatas = {
 	},
 	-- cort4colossus cort4bastion legt4helios legt4starfall
 	T4BOT11 = {
-		crushstrength = CRUSH.MASSIVE,
+		crushstrength = CRUSH.MAXIMUM,
 		depthMod = 0,
 		footprint = 11,
 		maxslope = SLOPE.DIFFICULT,
@@ -492,7 +494,7 @@ local moveDatas = {
 	},
 	-- armt4olympus (all-terrain walker like armvang)
 	T4TBOT9 = {
-		crushstrength = CRUSH.MASSIVE,
+		crushstrength = CRUSH.MAXIMUM,
 		footprint = 9,
 		maxslope = SLOPE.MAXIMUM,
 		maxwaterdepth = DEPTH.MAX_SHALLOW,
@@ -501,7 +503,7 @@ local moveDatas = {
 	},
 	-- armt4zeus legt4longinus
 	T4TANK9 = {
-		crushstrength = CRUSH.MASSIVE,
+		crushstrength = CRUSH.MAXIMUM,
 		footprint = 9,
 		maxslope = SLOPE.MODERATE,
 		slopeMod = SLOPE_MOD.GLACIAL,

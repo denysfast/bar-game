@@ -371,7 +371,7 @@ local function learnTip(uid, name, key)
 	if (key == "a1" or key == "a2" or key == "ult") and b.kind then
 		-- ability damage / healing grow with the hero's level (the gadget's abilityPower)
 		local lvl = spGetUnitRulesParam(uid, "hero_level") or 1
-		s = s .. string.format("\n\255\200\160\255Ability power x%.2f at level %d", 1 + (H.ABILITY_POWER_PER_LEVEL or 0.015) * (lvl - 1), lvl)
+		s = s .. string.format("\n\255\200\160\255Ability power x%.2f at level %d", (H.ABILITY_POWER_BASE or 1) * (1 + (H.ABILITY_POWER_PER_LEVEL or 0.015) * (lvl - 1)), lvl)
 	end
 	if rank < maxRank then
 		local req = H.reqLevel(name, key, rank + 1)
