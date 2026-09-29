@@ -1254,7 +1254,7 @@ if gadgetHandler:IsSyncedCode() then
 	-- Casting, damage, projectiles and timed effects of the ability kit. Kinds and their parameters:
 	-- CUSTOM.md, "Ability kit" (and the header of luarules/configs/t4_hero_defs_t4.lua).
 
-	local abilityReady, markActive, seenBy, cast, dashes, tryCast, castRange, processEvents, refreshProtection, abilityFrame, abilityPassivesBegin, abilityBuffTick, abilityAuras, abilityShield, abilityPassivesEnd
+	local abilityReady, markActive, seenBy, healUnit, cast, dashes, tryCast, castRange, processEvents, refreshProtection, abilityFrame, abilityPassivesBegin, abilityBuffTick, abilityAuras, abilityShield, abilityPassivesEnd
 	do
 		function abilityReady(h, key)
 			return rankOf(h, key) > 0 and (h.ready[key] or 0) <= frameNow()
@@ -1331,7 +1331,7 @@ if gadgetHandler:IsSyncedCode() then
 		end
 
 		-- healing in effective HP (a hero's health is divided by its toughness, see applyStats)
-		local function healUnit(uid, amount)
+		function healUnit(uid, amount)
 			local hp, maxHp, _, _, bp = spGetUnitHealth(uid)
 			if not hp or not bp or bp < 1 or hp >= maxHp then
 				return 0
@@ -1389,8 +1389,9 @@ if gadgetHandler:IsSyncedCode() then
 					return e[name]
 				end
 			end
-			if e["hero_ab_" .. proj] then
-				return e["hero_ab_" .. proj]
+			local kit = e["hero_ab_" .. (proj == "chain" and "bolt" or proj)]
+			if kit then
+				return kit
 			end
 			alog("%s: no weapondef for %s (%s), skipped", h.def.name, proj, tostring(b.weapon))
 		end
@@ -1438,15 +1439,20 @@ if gadgetHandler:IsSyncedCode() then
 
 		-- the nuclear (or EMP, or fire) finale of an ultimate: the hero's own hero_nova weapondef (T2 heroes) or
 		-- a nuke of the kit sized by the radius - only its effect and sound, the damage is the ability's
+		local FINALE_WEAPON = { ["hero-finale-emp"] = "hero_ab_finale_emp", ["hero-finale-fire"] = "hero_ab_finale_fire" }
 		local function abilityFinale(c, x, z, dmg, radius, stunSeconds, fx)
 			local y = spGetGroundHeight(x, z)
 			local e = c.extra or {}
-			local wdid = e[c.novaWeapon or "hero_nova"] or (radius >= 520 and e.hero_ab_nova) or (radius >= 300 and e.hero_ab_novamed) or e.hero_ab_novasmall
+			-- an EMP / fire finale is its own effect; otherwise a nuke sized by the radius under hero-finale
+			local own = fx and e[FINALE_WEAPON[fx] or ""]
+			local wdid = own or e[c.novaWeapon or "hero_nova"] or (radius >= 520 and e.hero_ab_nova) or (radius >= 300 and e.hero_ab_novamed) or e.hero_ab_novasmall
 			if wdid then
 				Spring.SpawnExplosion(x, y + 5, z, 0, 0, 0, { weaponDef = wdid, owner = ownerOf(c) or -1, damageGround = false,
 					craterAreaOfEffect = 0, damageAreaOfEffect = 0 })
 			end
-			ceg(fx or "hero-finale", x, y, z)
+			if not own then
+				ceg(fx or "hero-finale", x, y, z)
+			end
 			local hit = abilityBlast(c, x, z, radius, dmg, stunSeconds)
 			alog("%s %s finale dmg=%d radius=%d stun=%s hit=%d", c.name, c.key, dmg, radius, tostring(stunSeconds), #hit)
 		end
@@ -1477,13 +1483,25 @@ if gadgetHandler:IsSyncedCode() then
 				return
 			end
 			h.cloaked = on
+			-- the engine cloak needs a canCloak unitdef (unit_cloak.lua vetoes the rest): the enemies' line of
+			-- sight to the hero is switched off instead (a radar blip stays, like a cloaked unit's)
+			local myAlly = spGetUnitAllyTeam(unitID)
+			for _, at in ipairs(Spring.GetAllyTeamList()) do
+				if at ~= myAlly then
+					if on then
+						Spring.SetUnitLosState(unitID, at, { los = false, prevLos = false })
+						Spring.SetUnitLosMask(unitID, at, { los = true, prevLos = true })
+					else
+						Spring.SetUnitLosMask(unitID, at, 0)
+					end
+				end
+			end
 			if on then
 				local st = Spring.GetUnitStates(unitID)
 				h.cloakFire = st and st.firestate or 2
+				h.cloakFrom = frameNow()
 				Spring.GiveOrderToUnit(unitID, CMD.FIRE_STATE, { 0 }, 0) -- holds fire: a shot would reveal it
-				Spring.SetUnitCloak(unitID, 4, 0)
 			else
-				Spring.SetUnitCloak(unitID, 0)
 				Spring.GiveOrderToUnit(unitID, CMD.FIRE_STATE, { h.cloakFire or 2 }, 0)
 			end
 			spSetUnitRulesParam(unitID, "hero_cloaked", on and 1 or 0, ALLIED)
@@ -1668,7 +1686,7 @@ if gadgetHandler:IsSyncedCode() then
 		-- a hero's weapon hit an enemy (UnitDamaged): procs, and a hit ends its cloak
 		abilityOnHit = function(attackerID, h, victimID)
 			local f = frameNow()
-			if h.cloaked then
+			if h.cloaked and f - (h.cloakFrom or 0) > GAME_SPEED then -- shots fired before the cloak do not count
 				endBuffs(attackerID, h, "cloak")
 			end
 			local b, r, key = learnedOf(h, "proc_chain")
@@ -2088,6 +2106,7 @@ if gadgetHandler:IsSyncedCode() then
 				return false
 			end
 			startCooldown(unitID, h, key, b, r)
+			alog("%s %s cast %s rank %d", h.def.name, key, b.kind, r)
 			toUI("cast", unitID, r, key == "a1" and 4 or (key == "a2" and 5 or 6)) -- index in H.branchOrder
 			return true
 		end

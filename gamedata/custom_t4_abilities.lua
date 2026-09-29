@@ -68,6 +68,12 @@ return function(T4)
 	out.hero_ab_novasmall = visual(T4.novaWeapon({
 		name = "Hero nuclear finale (small)", aoe = 16, damage = 0, ceg = FX.custom("newnuketac", 0.45), soundhit = "xplolrg4",
 	}))
+	out.hero_ab_finale_emp = visual(T4.novaWeapon({
+		name = "Hero EMP finale", aoe = 16, damage = 0, ceg = "custom:hero-finale-emp", soundhit = "mismed1emp1",
+	}))
+	out.hero_ab_finale_fire = visual(T4.novaWeapon({
+		name = "Hero fire finale", aoe = 16, damage = 0, ceg = "custom:hero-finale-fire", soundhit = "nukearm",
+	}))
 	out.hero_ab_blast = visual(T4.novaWeapon({
 		name = "Hero blast", aoe = 16, damage = 0, ceg = FX.custom("genericshellexplosion-huge", 1.6), soundhit = "xplolrg4",
 	}))

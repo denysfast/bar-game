@@ -599,7 +599,7 @@ E["hero-impact-meteor"] = {
 	fire = sparks(FIRE, 14, 6, 50, 40, { texture = [[flamestream]], pos = [[-80 r160, 10, -80 r160]], gravity = [[0, 0.35, 0]], sizegrowth = 0.5 }),
 	rocks = sparks([[1 0.6 0.3 1   0.6 0.3 0.1 1   0.3 0.15 0.05 0.8   0 0 0 0]], 20, 10, 40, 8,
 		{ emitrot = 35, emitrotspread = 30, gravity = [[0, -0.4, 0]], airdrag = 0.98 }),
-	smoke = sparks(SMOKE, 6, 3, 110, 90, { texture = [[bigexplosmoke]], pos = [[-60 r120, 60, -60 r120]], gravity = [[0, 0.15, 0]], sizegrowth = 1.2 }),
+	smoke = sparks(SMOKE, 3, 3, 80, 60, { texture = [[bigexplosmoke]], pos = [[-50 r100, 60, -50 r100]], gravity = [[0, 0.2, 0]], sizegrowth = 0.8 }),
 }
 E["hero-impact-star"] = {
 	blast = later("starfire-explosion--x2", 0),
@@ -634,15 +634,15 @@ E["hero-finale"] = {
 	ring = ground([[t4g_ring]], fade(1, 0.75, 0.4, 1), 120, 60, 26),
 	ring2 = ground([[t4g_ring]], fade(1, 0.9, 0.7, 0.8), 60, 42, 34),
 	rune = ground([[t4g_rune]], fade(1, 0.45, 0.1, 1), 700, 0, 120),
-	flash = sprite([[t4_flare]], pop(1, 0.9, 0.7, 1), 1400, 12, 24, 200),
+	flash = sprite([[t4_flare]], pop(1, 0.9, 0.7, 0.8), 1000, 10, 20, 200),
 	dust = sparks(DUST, 80, 20, 70, 70, { emitrot = 88, emitrotspread = 3, texture = [[bigexplosmoke]], gravity = [[0, -0.03, 0]], pos = [[0, 10, 0]], sizegrowth = 1 }),
 }
 E["hero-finale-emp"] = {
 	blast = later("genericshellexplosion-huge-lightning--x4", 0, [[0, 40, 0]]),
 	ring = ground([[t4g_ring]], fade(0.5, 0.8, 1, 1), 120, 60, 26),
 	ring2 = ground([[t4g_ring]], fade(0.8, 0.95, 1, 0.9), 60, 42, 34),
-	glow = ground([[groundflashwhite]], fade(0.4, 0.7, 1, 0.9), 800, 0, 40),
-	flash = sprite([[t4_flare]], pop(0.6, 0.85, 1, 1), 1400, 12, 24, 200),
+	glow = ground([[groundflashwhite]], fade(0.3, 0.55, 1, 0.45), 650, 0, 30),
+	flash = sprite([[t4_flare]], pop(0.5, 0.75, 1, 0.8), 900, 10, 20, 200),
 	arcs = sparks(BLUE_SPARK, 40, 26, 20, 60, { texture = [[t4_bolt]], emitrot = 85, emitrotspread = 8, pos = [[0, 60, 0]], gravity = [[0, 0, 0]] }),
 	after = later("hero-static-field", 10),
 	after2 = later("hero-static-field", 30),
