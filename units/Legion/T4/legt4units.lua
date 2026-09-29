@@ -16,8 +16,8 @@ units.legt4gant = T4.foundry(T4.base("units/Legion/Labs/leggant.lua", "leggant")
 })
 
 
--- Helios, the Sunbringer (heat-ray mech x1.8): twin heat rays, a Solar Aura that repairs the army,
--- Solar Flare and Sunstrike - a beam of the sun that ends in a nuclear flare.
+-- Helios, the Sunbringer (heat-ray mech x1.8): twin heat rays, Solar Flare, Heat Haze and Sunstrike -
+-- a beam of the sun that ends in a nuclear flare.
 local helios = T4.derive(T4.base("units/Legion/T3/legeheatraymech.lua", "legeheatraymech"), {
 	name = "legt4helios",
 	value = 6.8,
@@ -32,8 +32,8 @@ local helios = T4.derive(T4.base("units/Legion/T3/legeheatraymech.lua", "legehea
 })
 units.legt4helios = T4.hero(helios, 2.2)
 
--- Starfall, the Astronomer (ELRPC mech x1.6): plasma volleys from ~7000 elmos that burst into
--- bomblets, and a Meteor Storm called from orbit anywhere in radar range.
+-- Starfall, the Astronomer (ELRPC mech x1.6): plasma volleys from ~7000 elmos, Starburst Rounds, and a
+-- Meteor Storm called from orbit.
 local starfall = T4.derive(T4.base("units/Legion/T3/legelrpcmech.lua", "legelrpcmech"), {
 	name = "legt4starfall",
 	value = 9.2,
@@ -50,7 +50,7 @@ local starfall = T4.derive(T4.base("units/Legion/T3/legelrpcmech.lua", "legelrpc
 })
 units.legt4starfall = T4.hero(starfall, 2.5)
 
--- Longinus, the Spear (rail tank x1.8): the titan hunter. Titan Slayer, Magnetic Coils, and the
+-- Longinus, the Spear (rail tank x1.8): the titan hunter. Titan Slayer, Phase Cloak, and the
 -- Spear of Longinus - one rail shot through everything, nuclear at rank 3.
 local longinus = T4.derive(T4.base("units/Legion/T3/legerailtank.lua", "legerailtank"), {
 	name = "legt4longinus",
@@ -69,7 +69,7 @@ local longinus = T4.derive(T4.base("units/Legion/T3/legerailtank.lua", "legerail
 })
 units.legt4longinus = T4.hero(longinus, 2.2)
 
--- Tempest, the Stormblade (shotgun mech x2): the melee blademaster. Critical Strike, Overdrive and
+-- Tempest, the Stormblade (shotgun mech x2): the melee blademaster. Critical Strike, Mirror Images and
 -- Bladestorm.
 local tempest = T4.derive(T4.base("units/Legion/T3/legeshotgunmech.lua", "legeshotgunmech"), {
 	name = "legt4tempest",

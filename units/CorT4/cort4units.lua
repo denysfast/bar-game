@@ -16,7 +16,7 @@ units.cort4gant = T4.foundry(T4.base("units/CorBuildings/LandFactories/corgant.l
 
 
 -- Colossus, the Warlord (Korgoth x1.8): War Stomp, a Command Aura for the army, and Undying -
--- it refuses to die, and at rank 3 it is reborn in a nuclear blast.
+-- it refuses to die and is reborn in a nuclear blast.
 local colossus = T4.derive(T4.base("units/CorGantry/corkorg.lua", "corkorg"), {
 	name = "cort4colossus",
 	value = 6.2,
@@ -35,8 +35,7 @@ local colossus = T4.derive(T4.base("units/CorGantry/corkorg.lua", "corkorg"), {
 })
 units.cort4colossus = T4.hero(colossus, 2.2)
 
--- Bastion, the Citadel (Juggernaut x1.6): Reactive Armor, Siege Protocol, and a gauss cannon that
--- ends as a nuclear gun.
+-- Bastion, the Citadel (Juggernaut x1.6): Reactive Armor, Siege Protocol, and the Citadel armor dome.
 local bastion = T4.derive(T4.base("units/CorGantry/corjugg.lua", "corjugg"), {
 	name = "cort4bastion",
 	value = 6.8,
@@ -61,8 +60,8 @@ bastion.weapondefs.t4_shield = T4.shieldWeapon(800, 12000, 200)
 bastion.weapons[#bastion.weapons + 1] = { def = "T4_SHIELD" }
 units.cort4bastion = T4.hero(bastion, 2.2)
 
--- Armageddon, the Doomsayer (Catapult x2): forty-rocket salvos from 2700 elmos (growing); Saturation adds
--- rockets, the ultimate puts nuclear warheads into the salvo - at rank 3 every rocket.
+-- Armageddon, the Doomsayer (Catapult x2): forty-rocket salvos from 2700 elmos (growing); Salvage Nanites,
+-- Hunter Swarm, and the Armageddon Protocol - a rain of rockets sealed with a nuke.
 local armageddon = T4.derive(T4.base("units/CorGantry/corcat.lua", "corcat"), {
 	name = "cort4armageddon",
 	value = 10.4,

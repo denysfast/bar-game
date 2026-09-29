@@ -18,7 +18,9 @@ end
 --   t4hero:learn:<unitID>:<branch>      spend a talent point (arsenal|plating|servos|a1|a2|ult)
 -- Unit rules params: hero_level (in LOS), hero_xp (0..1 to the next level), hero_points,
 --   hero_rank_<branch>, hero_ready_<branch> (frame the ability is ready), hero_on_<branch> (frame an
---   active effect ends; in LOS), hero_retreat (AI care). Team rules params (allies):
+--   active effect ends; in LOS), hero_retreat (AI care), hero_absorb (active_shield left), hero_cloaked,
+--   hero_summon_expire (on a summoned unit). Game rules param hero_ability_log = 1: "[ability]" infolog lines.
+--   Team rules params (allies):
 --   hero_dead_<name> (the level a revive brings back), hero_revive_<name> (revive metal cost).
 
 local H = VFS.Include("luarules/configs/t4_heroes.lua")

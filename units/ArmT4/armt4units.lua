@@ -16,8 +16,8 @@ units.armt4gant = T4.foundry(T4.base("units/ArmBuildings/LandFactories/armshltx.
 	buildoptions = { "armt4atlas", "armt4olympus", "armt4aegis", "armt4zeus" },
 })
 
--- Atlas, the Bulwark (Bantha x2): the assault anchor. Repair Field, Guardian Protocol, and rockets
--- that end the game as tactical nukes.
+-- Atlas, the Bulwark (Bantha x2): the assault anchor. Repair Field, Shoulder Battery, and a Doomsday
+-- Barrage of tactical nukes.
 local atlas = T4.derive(T4.base("units/ArmGantry/armbanth.lua", "armbanth"), {
 	name = "armt4atlas",
 	value = 8.8,
@@ -32,8 +32,8 @@ local atlas = T4.derive(T4.base("units/ArmGantry/armbanth.lua", "armbanth"), {
 })
 units.armt4atlas = T4.hero(atlas, 2.5)
 
--- Olympus, the Thunderer (Vanguard x2.2): strategic artillery from 4200. Spotter Uplink, Rapid
--- Barrage, and shells that turn nuclear.
+-- Olympus, the Thunderer (Vanguard x2.2): strategic artillery from 4200. Spotter Uplink, Blast
+-- Shield, and an Orbital Strike.
 local olympus = T4.derive(T4.base("units/ArmGantry/armvang.lua", "armvang"), {
 	name = "armt4olympus",
 	value = 14.4,
@@ -69,7 +69,7 @@ aegis.weapons[#aegis.weapons + 1] = { def = "T4_SHIELD" }
 units.armt4aegis = T4.hero(aegis, 2.5)
 
 -- Zeus Prime, the Stormlord (Thor x1.8): chain lightning, a paralysing static field and a called
--- lightning storm; its EMP missiles become EMP nukes.
+-- lightning storm that ends in an EMP blast.
 local zeus = T4.derive(T4.base("units/ArmGantry/armthor.lua", "armthor"), {
 	name = "armt4zeus",
 	value = 9.6,
