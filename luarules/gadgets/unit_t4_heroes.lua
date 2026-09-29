@@ -3218,6 +3218,7 @@ if gadgetHandler:IsSyncedCode() then
 	local escorts = {} -- heroID -> { units = { uid = true }, n }
 	local bank = {}    -- teamID -> metal the AI put aside for ranks and levels
 	do -- a block: its helpers do not count toward the chunk's limit of 200 locals
+		local visibleTo = seenBy -- (the autocast block's alias is out of scope here)
 
 	local armyDefs = {} -- mobile ground combat units the heroes escort
 	local armedDefs = {} -- anything with a weapon (danger estimate)
