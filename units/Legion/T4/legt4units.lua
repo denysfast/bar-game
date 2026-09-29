@@ -9,7 +9,7 @@ local units = {}
 -- Apex Forge: the Legion hero altar (Experimental Gantry model x1.5)
 units.legt4gant = T4.foundry(T4.base("units/Legion/Labs/leggant.lua", "leggant"), {
 	name = "legt4gant",
-	value = 4,
+	value = 8, -- v15: the altar costs 2x (metal, energy, build time); health and build power stay
 	scale = 1.5,
 	workertime = 12,
 	buildoptions = { "legt4helios", "legt4starfall", "legt4longinus", "legt4tempest" },

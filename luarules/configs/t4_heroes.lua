@@ -62,6 +62,21 @@ H.AI_RETURN_HP = 0.9
 H.AI_RETURN_HP_NO_FOUNTAIN = 0.7 -- no altar left to heal at: rejoin sooner
 H.AI_ROLE_OFFSET = { front = 150, center = -100, back = -500 }
 H.AI_ESCORT = 10000         -- the smallest army group (metal) a hero marches with; below it guards the altar
+-- v15: an escort of army units taken from the skirmish AI walks with every AI hero and covers its retreat
+H.AI_ESCORT_MIN = 6          -- units
+H.AI_ESCORT_MAX = 15
+H.AI_ESCORT_COST = 0.6       -- metal of the escort, share of the hero's cost (capped by a third of the army group)
+H.AI_ESCORT_RADIUS = 1600    -- escorts are recruited this close to the hero
+H.AI_FRONT_LEAD = 300        -- a hero never walks further than this ahead of its escort
+
+-- v15: buying levels for metal (the Buy level button; the AI saves its overflow metal for it)
+H.BUY_BASE = 0.6            -- a level costs cost * (BUY_BASE + BUY_PER_LEVEL * level) ...
+H.BUY_PER_LEVEL = 0.05
+H.BUY_COOLDOWN = 20         -- seconds between two bought levels of one hero
+H.AI_BUY_MAX_LEVEL = 60     -- the AI buys levels up to this one (combat takes a hero further)
+H.AI_BUY_SAVE = 0.25        -- the AI puts aside at most this share of its metal income ...
+H.AI_BUY_FULL = 0.5         -- ... and only while its storage is fuller than this (metal that would overflow)
+H.AI_BUY_INCOME = 100       -- ... and its metal income is at least this
 
 -- level needed for a rank of a branch
 local function reqLinear(rank) return rank * 2 - 1 end
@@ -253,6 +268,21 @@ function H.xpFor(level, mult)
 		return 0
 	end
 	return H.XP_TOTAL * ((level - 1) / H.XP_REF) ^ H.XP_EXP / (mult or 1)
+end
+
+-- metal to buy the next level at `level` (v15): cost * (BUY_BASE + BUY_PER_LEVEL * level), and never less than
+-- the metal of damage that level takes in combat (the experience between the two levels at hero_xp_mult 1).
+-- Level 10 of a 100k hero: 134k, level 30: 297k, level 60: 485k; a 4k T2 hero: 5.4k / 11.9k / 19.4k. Nil at the top.
+function H.levelPrice(heroName, level, cost)
+	if level >= H.MAX_LEVEL then
+		return nil
+	end
+	if not cost then
+		local ud = UnitDefNames and UnitDefNames[heroName]
+		cost = ud and (ud.metalCost or ud.metalcost) or 0
+	end
+	local combat = H.xpFor(level + 1) - H.xpFor(level)
+	return math.floor(cost * math.max(H.BUY_BASE + H.BUY_PER_LEVEL * level, combat) / 100 + 0.5) * 100
 end
 
 return H

@@ -21,12 +21,15 @@ end
 --   t4hero:use:<unitID>:<slot>          use an active item
 -- Items: unit rules params hero_item_<slot> (item index, in LOS), hero_itemcd_<slot> (frame ready),
 --   hero_itemcdlen_<slot>, hero_barrier; team rules params (allies) hero_stash_n, hero_stash_<i>, hero_stash_ver.
+--   t4hero:buylevel:<unitID>            buy one level for metal (v15; price H.levelPrice, one per H.BUY_COOLDOWN s)
 -- Unit rules params: hero_level (in LOS), hero_xp (0..1 to the next level), hero_points,
 --   hero_rank_<branch>, hero_ready_<branch> (frame the ability is ready), hero_on_<branch> (frame an
 --   active effect ends; in LOS), hero_retreat (AI care), hero_absorb (active_shield left), hero_cloaked,
 --   hero_summon_expire (on a summoned unit). Game rules param hero_ability_log = 1: "[ability]" infolog lines.
 --   Team rules params (allies):
 --   hero_dead_<name> (the level a revive brings back), hero_revive_<name> (revive metal cost).
+-- v15: hero_buy_price (metal of the next bought level, 0 at the top), hero_buy_ready (frame the next level can
+--   be bought) - unit, allied; hero_ai_bank - team, allied: metal an AI team put aside for ranks and levels.
 
 local H = VFS.Include("luarules/configs/t4_heroes.lua")
 
@@ -788,6 +791,8 @@ if gadgetHandler:IsSyncedCode() then
 			spSetUnitRulesParam(unitID, "hero_rank_" .. key, rankOf(h, key), ALLIED)
 		end
 		spSetUnitRulesParam(unitID, "hero_autocast", h.autocast and 1 or 0, ALLIED)
+		spSetUnitRulesParam(unitID, "hero_buy_price", H.levelPrice(h.def.name, h.level, h.def.cost) or 0, ALLIED)
+		spSetUnitRulesParam(unitID, "hero_buy_ready", h.buyReady or 0, ALLIED)
 	end
 
 	local function publishItems(unitID, h)
@@ -817,6 +822,8 @@ if gadgetHandler:IsSyncedCode() then
 
 	---------------------------------------------------------------- talents
 
+	local prepaid = 0 -- metal an AI rank is paid with from the team's hero bank (v15, see aiEconomy)
+
 	-- "ok", or why not: "points", "level", "max", "metal", "unknown"
 	local function learnState(h, key)
 		local name = h.def.name
@@ -835,7 +842,7 @@ if gadgetHandler:IsSyncedCode() then
 			return "level"
 		end
 		local cost = H.metalCost(name, key, r + 1)
-		if cost > 0 and (Spring.GetTeamResources(h.team, "metal") or 0) < cost then
+		if cost > 0 and (Spring.GetTeamResources(h.team, "metal") or 0) < cost and prepaid < cost then
 			return "metal", cost
 		end
 		return "ok", cost
@@ -848,7 +855,7 @@ if gadgetHandler:IsSyncedCode() then
 	-- the AI keeps a reserve for its army: a rank only when it has half as much metal again
 	local function aiCanLearn(h, key)
 		local state, cost = learnState(h, key)
-		return state == "ok" and (cost or 0) * 1.5 <= (Spring.GetTeamResources(h.team, "metal") or 0)
+		return state == "ok" and ((cost or 0) <= prepaid or (cost or 0) * 1.5 <= (Spring.GetTeamResources(h.team, "metal") or 0))
 	end
 
 	local function updateCmdDescs(unitID, h)
@@ -868,7 +875,9 @@ if gadgetHandler:IsSyncedCode() then
 			end
 			return false
 		end
-		if cost and cost > 0 and not Spring.UseTeamResource(h.team, "metal", cost) then
+		if cost and cost > 0 and prepaid >= cost then
+			prepaid = prepaid - cost
+		elseif cost and cost > 0 and not Spring.UseTeamResource(h.team, "metal", cost) then
 			return false
 		end
 		h.picks[#h.picks + 1] = key
@@ -961,6 +970,35 @@ if gadgetHandler:IsSyncedCode() then
 		if leveled then
 			publish(unitID, h)
 		end
+	end
+
+	-- v15: one level for metal (the Buy level button, t4hero:buylevel; an AI pays from its bank: paid = true).
+	-- Returns true, or false and why: "max", "cooldown", "metal"
+	local function buyLevel(unitID, h, paid)
+		if h.level >= H.MAX_LEVEL then
+			return false, "max"
+		end
+		local f = frameNow()
+		if f < (h.buyReady or 0) then
+			return false, "cooldown"
+		end
+		local price = H.levelPrice(h.def.name, h.level, h.def.cost)
+		if not paid and ((Spring.GetTeamResources(h.team, "metal") or 0) < price or not Spring.UseTeamResource(h.team, "metal", price)) then
+			toUI("nometal", unitID, price)
+			return false, "metal"
+		end
+		h.buyReady = f + H.BUY_COOLDOWN * GAME_SPEED
+		-- the experience moves on by one level's worth: the progress toward the next level is kept
+		local lo = H.xpFor(h.level, xpMult) * h.def.cost
+		local hi = H.xpFor(h.level + 1, xpMult) * h.def.cost
+		h.xp = max(h.xp, lo) + (hi - lo)
+		repeat
+			levelUp(unitID, h)
+		until h.level >= H.MAX_LEVEL or h.xp < H.xpFor(h.level + 1, xpMult) * h.def.cost
+		h.bought = (h.bought or 0) + 1
+		publish(unitID, h)
+		toUI("bought", unitID, h.level, price)
+		return true
 	end
 
 	---------------------------------------------------------------- lifecycle
@@ -1461,6 +1499,7 @@ if gadgetHandler:IsSyncedCode() then
 		local victim = heroes[unitID]
 		if victim and damage > 0 then
 			victim.lastHit = frameNow()
+			if attackerID and attackerTeam and not spAreTeamsAllied(attackerTeam, unitTeam) then victim.attackers = victim.attackers or {}; victim.attackers[attackerID] = victim.lastHit end -- AI escorts focus them
 			-- thorns: part of the damage goes back to the attacker
 			local th = victim.mods and victim.mods.thorns or 0
 			if th > 0 and not paralyzer and not inThorns and attackerID and spValidUnitID(attackerID)
@@ -3169,19 +3208,85 @@ if gadgetHandler:IsSyncedCode() then
 	-- drives them: the AI is told to let go of a hero ("detach", misc/aicmdr.as), the hero marches with
 	-- the strongest group of its army, keeps its role's place in it, and falls back to the fountain when
 	-- hurt or outnumbered.
+	-- v15: every AI hero takes an escort of 6-15 army units from the AI (detach, given back with attach): they
+	-- screen the hero on the march, focus the enemies that shoot it, and stand between it and the enemy while
+	-- it retreats. The hero stays inside its army (a front hero at most AI_FRONT_LEAD ahead of the escort),
+	-- does not walk into static defence, hunts weaker enemy heroes and steps back from stronger ones, dodges
+	-- nukes. Hero producers that the AI script does not drive (the T2 hero halls) are run from here.
+	-- infolog: "[heroai] ..." lines.
+	local aiHero, aiEconomy, aiMakers, aiSummary, aiEscortsTick
+	local escorts = {} -- heroID -> { units = { uid = true }, n }
+	local bank = {}    -- teamID -> metal the AI put aside for ranks and levels
+	do -- a block: its helpers do not count toward the chunk's limit of 200 locals
 
 	local armyDefs = {} -- mobile ground combat units the heroes escort
+	local armedDefs = {} -- anything with a weapon (danger estimate)
 	for udid, ud in pairs(UnitDefs) do
 		if ud.canMove and not ud.canFly and not ud.isBuilder and #ud.weapons > 0 and (ud.speed or 0) > 0 and not heroDefs[udid] then
 			armyDefs[udid] = true
 		end
+		if #ud.weapons > 0 then
+			armedDefs[udid] = true
+		end
+	end
+
+	-- units that build heroes (T4 altars, T2 hero halls): hero unitDefIDs in build order
+	local heroMakers = {}
+	for udid, ud in pairs(UnitDefs) do
+		for _, opt in ipairs(ud.buildOptions or {}) do
+			if heroDefs[opt] then
+				heroMakers[udid] = heroMakers[udid] or {}
+				heroMakers[udid][#heroMakers[udid] + 1] = opt
+			end
+		end
+	end
+	-- these the AI script builds with (Factory::AiMakeTask); the gadget runs every other hero producer
+	local scriptMakers = { armt4gant = true, cort4gant = true, legt4gant = true }
+	local makerList = {}
+	for udid in pairs(heroMakers) do
+		if not scriptMakers[UnitDefs[udid].name] then
+			makerList[#makerList + 1] = udid
+		end
+	end
+
+	-- projectiles worth running from: nukes, heavy artillery, hero warheads
+	local bigShot = {}
+	for wdid, wd in pairs(WeaponDefs) do
+		local aoe = wd.damageAreaOfEffect or 0
+		if aoe >= 350 then
+			bigShot[wdid] = aoe
+		end
+	end
+
+	local escortOf = {} -- uid -> heroID
+	local aiStats = {}  -- teamID -> counters for the periodic infolog line
+
+	local function gameTime(f)
+		return string.format("%d:%02d", floor(f / 1800), floor(f / 30) % 60)
+	end
+
+	local function aiLog(f, teamID, fmt, ...)
+		Spring.Echo(string.format("[heroai] t=%s team=%d ", gameTime(f), teamID) .. string.format(fmt, ...))
+	end
+
+	local function stat(teamID, key, n)
+		local s = aiStats[teamID]
+		if not s then
+			s = {}
+			aiStats[teamID] = s
+		end
+		s[key] = (s[key] or 0) + (n or 1)
+	end
+
+	local function isMaker(udid)
+		return foundryDefs[udid] or heroMakers[udid]
 	end
 
 	local function retreatPoint(teamID, x, z)
 		local best, bx, bz
 		for _, uid in ipairs(Spring.GetTeamUnits(teamID)) do
 			local udid = spGetUnitDefID(uid)
-			local prio = foundryDefs[udid] and 1 or (factoryDefs[udid] and 2 or nil)
+			local prio = isMaker(udid) and 1 or (factoryDefs[udid] and 2 or nil)
 			if prio then
 				local ux, _, uz = spGetUnitPosition(uid)
 				local d = (ux - x) ^ 2 + (uz - z) ^ 2 + (prio - 1) * 1e12
@@ -3217,6 +3322,7 @@ if gadgetHandler:IsSyncedCode() then
 	end
 
 	-- the strongest group of the team's army: 1000-elmo cells by metal, the front-most of the big ones
+	-- (escorts do not count: a hero must not follow its own bodyguard)
 	local armyCache = {} -- teamID -> { frame, x, z, cost }
 	local function armyGroup(teamID, f)
 		local c = armyCache[teamID]
@@ -3226,7 +3332,7 @@ if gadgetHandler:IsSyncedCode() then
 		local cells = {}
 		for _, uid in ipairs(Spring.GetTeamUnits(teamID)) do
 			local udid = spGetUnitDefID(uid)
-			if armyDefs[udid] then
+			if armyDefs[udid] and not escortOf[uid] then
 				local x, _, z = spGetUnitPosition(uid)
 				if x then
 					local key = floor(x / 1000) .. ":" .. floor(z / 1000)
@@ -3264,108 +3370,745 @@ if gadgetHandler:IsSyncedCode() then
 	local function orderMove(unitID, h, cmd, x, z, f)
 		h.lastOrder = f
 		h.orderX, h.orderZ = x, z
+		x = max(64, min(Game.mapSizeX - 64, x))
+		z = max(64, min(Game.mapSizeZ - 64, z))
 		Spring.GiveOrderToUnit(unitID, cmd, { x, spGetGroundHeight(x, z), z }, 0)
 	end
 
-	-- enemy metal around vs allied metal around (the hero counted at its grown strength)
-	local function danger(unitID, h, x, z)
-		local ally = spGetUnitAllyTeam(unitID)
-		local enemy, friend = 0, 0
-		for _, uid in ipairs(spGetUnitsInCylinder(x, z, 1100)) do
-			local a = spGetUnitAllyTeam(uid)
-			local c = costOf(uid)
-			if a == ally then
-				friend = friend + (uid == unitID and c * (h.hpMult or 1) * (h.dmgMult or 1) or c)
-			elseif not spGetUnitIsDead(uid) then
-				enemy = enemy + c
-			end
-		end
-		return enemy / max(1, friend)
+	-- a hero's fighting weight: metal cost at its grown strength and current health
+	local function heroPower(uid, h)
+		local hp, maxHp = spGetUnitHealth(uid)
+		local frac = hp and maxHp and maxHp > 0 and hp / maxHp or 1
+		return h.def.cost * (h.hpMult or 1) * (h.dmgMult or 1) * frac
 	end
 
-	local function startRetreat(unitID, h, x, z, f)
+	-- enemy metal around vs allied metal around: enemy heroes at their grown strength, static defence x1.5,
+	-- unarmed things x0.1, only what the team can see (and what shot the hero within 3 s: long-range guns fire
+	-- from outside the sight). Returns the ratio, the enemy centre and the enemy heroes.
+	local function danger(unitID, h, x, z)
+		local ally = spGetUnitAllyTeam(unitID)
+		local shooters = h.attackers or {}
+		local f = frameNow()
+		local enemy, friend, ex, ez = 0, 0, 0, 0
+		local foes
+		for _, uid in ipairs(spGetUnitsInCylinder(x, z, 1300)) do
+			local a = spGetUnitAllyTeam(uid)
+			local udid = spGetUnitDefID(uid)
+			local c = unitCost[udid] or 0
+			local hh = heroes[uid]
+			if a == ally then
+				if hh then
+					friend = friend + heroPower(uid, hh)
+				elseif armedDefs[udid] then
+					friend = friend + c
+				end
+			elseif not spGetUnitIsDead(uid) and (visibleTo(uid, ally) or f - (shooters[uid] or -999) < 90) then
+				local w = c
+				if hh then
+					w = heroPower(uid, hh)
+					foes = foes or {}
+					foes[#foes + 1] = uid
+				elseif not armedDefs[udid] then
+					w = c * 0.1
+				elseif structureDefs[udid] then
+					w = c * 1.5
+				end
+				local ux, _, uz = spGetUnitPosition(uid)
+				if ux then
+					enemy = enemy + w
+					ex, ez = ex + ux * w, ez + uz * w
+				end
+			end
+		end
+		if enemy > 0 then
+			ex, ez = ex / enemy, ez / enemy
+		else
+			ex, ez = nil, nil
+		end
+		return enemy / max(1, friend), ex, ez, foes, enemy, friend
+	end
+
+	-- visible enemy static defence (armed structures) around a point, in metal
+	local function defenceNear(x, z, r, ally)
+		local sum = 0
+		for _, uid in ipairs(spGetUnitsInCylinder(x, z, r)) do
+			local udid = spGetUnitDefID(uid)
+			if structureDefs[udid] and armedDefs[udid] and isEnemyOf(uid, ally) and visibleTo(uid, ally) then
+				sum = sum + (unitCost[udid] or 0)
+			end
+		end
+		return sum
+	end
+
+	-- a nuke / heavy shell about to land near the hero: the point and the blast radius
+	local function incomingBlast(x, z, ally)
+		local projs = Spring.GetProjectilesInRectangle(x - 3000, z - 3000, x + 3000, z + 3000, false, false)
+		for _, p in ipairs(projs or {}) do
+			local aoe = bigShot[Spring.GetProjectileDefID(p) or -1]
+			if aoe then
+				local team = Spring.GetProjectileTeamID(p)
+				local pAlly = team and select(6, Spring.GetTeamInfo(team, false))
+				if pAlly and pAlly ~= ally then
+					-- where it is aimed (a unit or a point), else right under it
+					local tx, tz
+					local ttype, target = Spring.GetProjectileTarget(p)
+					if type(target) == "table" and target[1] and target[1] > 0 and target[3] > 0 then
+						tx, tz = target[1], target[3]
+					elseif type(target) == "number" and ttype == string.byte("u") then
+						tx, _, tz = spGetUnitPosition(target)
+					end
+					local r2 = (aoe + 200) ^ 2
+					if tx and (tx - x) ^ 2 + (tz - z) ^ 2 < r2 then
+						return tx, tz, aoe
+					end
+					local px, _, pz = Spring.GetProjectilePosition(p)
+					if px and (px - x) ^ 2 + (pz - z) ^ 2 < r2 then
+						return px, pz, aoe
+					end
+				end
+			end
+		end
+	end
+
+	---------------------------------------------------------------- escorts
+
+	local function escortList(heroID)
+		local e = escorts[heroID]
+		local out = {}
+		if e then
+			for uid in pairs(e.units) do
+				out[#out + 1] = uid
+			end
+		end
+		return out
+	end
+
+	local function escortRelease(heroID, teamID, why, f, only)
+		local e = escorts[heroID]
+		if not e then
+			return
+		end
+		local ids = {}
+		for _, uid in ipairs(only or escortList(heroID)) do
+			if e.units[uid] then
+				e.units[uid] = nil
+				e.n = e.n - 1
+				escortOf[uid] = nil
+				if spValidUnitID(uid) and not spGetUnitIsDead(uid) and spGetUnitTeam(uid) == teamID then
+					Spring.GiveOrderToUnit(uid, CMD.STOP, {}, 0)
+					ids[#ids + 1] = uid
+				end
+			end
+		end
+		if #ids > 0 then
+			toAI(teamID, "attach " .. table.concat(ids, ","))
+			if why then
+				local h = heroes[heroID]
+				aiLog(f, teamID, "%s escort released %d units (%s), %d left", h and h.def.name or ("hero " .. heroID), #ids, why, e.n)
+				stat(teamID, "released", #ids)
+			end
+		end
+		if e.n <= 0 then
+			escorts[heroID] = nil
+		end
+	end
+
+	-- drop dead / given-away units, then take nearby army units from the AI up to the escort size
+	local function escortRecruit(heroID, h, x, z, g, f)
+		local e = escorts[heroID]
+		if not e then
+			e = { units = {}, n = 0 }
+			escorts[heroID] = e
+		end
+		local cost = 0
+		for uid in pairs(e.units) do
+			if not spValidUnitID(uid) or spGetUnitIsDead(uid) or spGetUnitTeam(uid) ~= h.team then
+				e.units[uid] = nil
+				e.n = e.n - 1
+				escortOf[uid] = nil
+			else
+				cost = cost + costOf(uid)
+			end
+		end
+		local want = min(h.def.cost * H.AI_ESCORT_COST, max(g.cost / 3, h.def.cost * 0.15))
+		if e.n >= H.AI_ESCORT_MAX or (e.n >= H.AI_ESCORT_MIN and cost >= want) then
+			return
+		end
+		local taken = GG.AICommanderUnits or {}
+		local cands = {}
+		for _, uid in ipairs(spGetUnitsInCylinder(x, z, H.AI_ESCORT_RADIUS, h.team)) do
+			local udid = spGetUnitDefID(uid)
+			if armyDefs[udid] and not escortOf[uid] and not heroes[uid] and not taken[uid]
+				and not Spring.GetUnitTransporter(uid) then
+				local _, _, _, _, bp = spGetUnitHealth(uid)
+				local ux, _, uz = spGetUnitPosition(uid)
+				if bp and bp >= 1 and ux then
+					cands[#cands + 1] = { uid = uid, d = (ux - x) ^ 2 + (uz - z) ^ 2, c = unitCost[udid] or 0 }
+				end
+			end
+		end
+		table.sort(cands, function(a, b) return a.d < b.d end)
+		local ids = {}
+		for _, cand in ipairs(cands) do
+			if e.n >= H.AI_ESCORT_MAX or (e.n >= H.AI_ESCORT_MIN and cost >= want) then
+				break
+			end
+			e.units[cand.uid] = true
+			e.n = e.n + 1
+			escortOf[cand.uid] = heroID
+			cost = cost + cand.c
+			ids[#ids + 1] = cand.uid
+		end
+		if #ids > 0 then
+			toAI(h.team, "detach " .. table.concat(ids, ","))
+			e.lastOrder = nil
+			-- (replacements of the fallen one by one are only counted, not logged)
+			if #ids >= 3 or #ids == e.n then
+				aiLog(f, h.team, "%s escort +%d -> %d units (%d metal)", h.def.name, #ids, e.n, cost)
+			end
+			stat(h.team, "escorted", #ids)
+		end
+	end
+
+	-- escort orders: march = a screen ahead of and around the hero; cover = a line between the retreating
+	-- hero and the enemy; a hero under fire gets its attackers focused
+	local function escortOrders(heroID, h, x, z, mode, dx, dz, f)
+		local e = escorts[heroID]
+		if not e or e.n <= 0 then
+			return
+		end
+		local ally = spGetUnitAllyTeam(heroID)
+		-- the nearest enemy that shot the hero within 3 s
+		local focus, fd
+		for att, fr in pairs(h.attackers or {}) do
+			if f - fr > 90 or not spValidUnitID(att) or spGetUnitIsDead(att) then
+				h.attackers[att] = nil
+			elseif visibleTo(att, ally) then
+				local ax, _, az = spGetUnitPosition(att)
+				local d = ax and (ax - x) ^ 2 + (az - z) ^ 2
+				if d and d < 1400 * 1400 and (not fd or d < fd) then
+					focus, fd = att, d
+				end
+			end
+		end
+		if h.focusHero and spValidUnitID(h.focusHero) and not spGetUnitIsDead(h.focusHero) then
+			focus = h.focusHero
+		end
+		if focus and focus ~= e.focus then
+			e.focus = focus
+			stat(h.team, "focus")
+		end
+		local reissue = not e.lastOrder or f - e.lastOrder >= 60
+		if not reissue and not (focus and focus ~= e.lastFocus) then
+			return
+		end
+		e.lastOrder = f
+		e.lastFocus = focus
+		local ids = escortList(heroID)
+		local n = #ids
+		local px, pz = -dz, dx -- lateral
+		for i, uid in ipairs(ids) do
+			local ux, _, uz = spGetUnitPosition(uid)
+			if ux then
+				local sx, sz
+				if mode == "cover" then
+					-- a line across the way the enemy comes, 250 in front of the hero
+					local lat = (i - (n + 1) / 2) * 70
+					sx, sz = x + dx * 250 + px * lat, z + dz * 250 + pz * lat
+				else
+					-- a screen: the front half-circle around the hero, 220 out
+					local a = (i - 0.5) / n * 3.4 - 1.7
+					local ca, sa = math.cos(a), math.sin(a)
+					sx, sz = x + (dx * ca - px * sa) * 220, z + (dz * ca - pz * sa) * 220
+				end
+				if focus and (mode == "cover" or (ux - x) ^ 2 + (uz - z) ^ 2 < 1100 * 1100) then
+					Spring.GiveOrderToUnit(uid, CMD.ATTACK, { focus }, 0)
+					Spring.GiveOrderToUnit(uid, CMD.FIGHT, { sx, spGetGroundHeight(sx, sz), sz }, CMD.OPT_SHIFT)
+				elseif (ux - sx) ^ 2 + (uz - sz) ^ 2 > 120 * 120 or Spring.GetUnitCommandCount(uid) == 0 then
+					sx = max(64, min(Game.mapSizeX - 64, sx))
+					sz = max(64, min(Game.mapSizeZ - 64, sz))
+					Spring.GiveOrderToUnit(uid, CMD.FIGHT, { sx, spGetGroundHeight(sx, sz), sz }, 0)
+				end
+			end
+		end
+	end
+
+	local function escortCentre(heroID)
+		local e = escorts[heroID]
+		if not e or e.n <= 0 then
+			return nil
+		end
+		local sx, sz, n = 0, 0, 0
+		for uid in pairs(e.units) do
+			local ux, _, uz = spGetUnitPosition(uid)
+			if ux then
+				sx, sz, n = sx + ux, sz + uz, n + 1
+			end
+		end
+		if n == 0 then
+			return nil
+		end
+		return sx / n, sz / n, n
+	end
+
+	local function unitDir(ax, az, bx, bz)
+		local dx, dz = bx - ax, bz - az
+		local d = sqrt(dx * dx + dz * dz)
+		if d < 1 then
+			return 0, 0, 0
+		end
+		return dx / d, dz / d, d
+	end
+
+	---------------------------------------------------------------- retreat
+
+	local function startRetreat(unitID, h, x, z, f, why, ex, ez)
 		local rx, rz = retreatPoint(h.team, x, z)
 		if not rx then
 			return
 		end
 		h.retreating = true
+		h.retreatStart = f
 		h.retreatX, h.retreatZ = rx, rz
+		h.threatX, h.threatZ = ex, ez
+		h.focusHero = nil
 		orderMove(unitID, h, CMD.MOVE, rx, rz, f)
 		spSetUnitRulesParam(unitID, "hero_retreat", 1, ALLIED)
 		-- cover the way back
 		for _, key in ipairs({ "a1", "a2", "ult" }) do
 			local b = h.def.cfg[key]
-			if b and (b.kind == "active_guard" or b.kind == "active_dome" or (b.kind == "active_buff" and b.buff.speed)) then
+			if b and (b.kind == "active_guard" or b.kind == "active_dome" or b.kind == "active_shield" or b.kind == "active_cloak"
+				or (b.kind == "active_buff" and b.buff and (b.buff.speed or b.buff.armor or b.buff.cloak))) then
 				tryCast(unitID, h, key)
 			end
 		end
+		local hp, maxHp = spGetUnitHealth(unitID)
+		local e = escorts[unitID]
+		aiLog(f, h.team, "%s L%d retreats (%s) hp=%d%%, escort of %d covers", h.def.name, h.level, why,
+			floor(100 * (hp or 0) / max(1, maxHp or 1)), e and e.n or 0)
+		stat(h.team, "retreats")
+		if e and e.n > 0 then
+			stat(h.team, "covered")
+		end
 	end
 
-	local function aiHero(unitID, h, f)
+	function aiHero(unitID, h, f)
 		local hp, maxHp = spGetUnitHealth(unitID)
 		if not hp then
 			return
 		end
 		local frac = hp / maxHp
 		local x, _, z = heroPos(unitID)
+		local ally = spGetUnitAllyTeam(unitID)
 		if not h.detached then
 			h.detached = true
 			toAI(h.team, "detach " .. unitID)
-		end
-		if h.retreating then
-			local back = H.AI_RETURN_HP
-			if not fountainNear(h.team, h.retreatX, h.retreatZ) then
-				back = H.AI_RETURN_HP_NO_FOUNTAIN
-			end
-			if frac >= back then
-				h.retreating = false
-				spSetUnitRulesParam(unitID, "hero_retreat", 0, ALLIED)
-			elseif f - (h.lastOrder or 0) > 5 * GAME_SPEED and (x - h.retreatX) ^ 2 + (z - h.retreatZ) ^ 2 > 400 * 400
-				and Spring.GetUnitCommandCount(unitID) == 0 then
-				orderMove(unitID, h, CMD.MOVE, h.retreatX, h.retreatZ, f)
-			end
-			return
 		end
 		-- health 5 seconds ago: a burst (artillery, nukes) means getting out even far from any enemy
 		h.hpHist = h.hpHist or {}
 		local sec = floor(f / GAME_SPEED)
 		h.hpHist[sec % 6] = frac
 		local before = h.hpHist[(sec + 1) % 6] or frac
-		if frac < H.AI_RETREAT_HP or (frac < H.AI_CAUTION_HP and danger(unitID, h, x, z) > H.AI_DANGER)
-			or (before - frac > H.AI_BURST and frac < 0.8) then
-			startRetreat(unitID, h, x, z, f)
+		-- a nuke or heavy shell on its way: step out of the blast first
+		local bx, bz, aoe = incomingBlast(x, z, ally)
+		if bx then
+			local dx, dz = unitDir(bx, bz, x, z)
+			if dx == 0 and dz == 0 then
+				dx, dz = unitDir(x, z, retreatPoint(h.team, x, z))
+			end
+			orderMove(unitID, h, CMD.MOVE, x + dx * (aoe + 350), z + dz * (aoe + 350), f)
+			h.dodgeUntil = f + 4 * GAME_SPEED
+			if f - (h.lastDodgeLog or -9999) > 300 then
+				h.lastDodgeLog = f
+				aiLog(f, h.team, "%s dodges a blast (aoe %d)", h.def.name, aoe)
+				stat(h.team, "dodges")
+			end
+			return
+		end
+		if h.dodgeUntil and f < h.dodgeUntil then
+			return
+		end
+		if h.retreating then
+			local back = H.AI_RETURN_HP
+			if not fountainNear(h.team, h.retreatX, h.retreatZ) then
+				back = H.AI_RETURN_HP_NO_FOUNTAIN
+			end
+			local home = (x - h.retreatX) ^ 2 + (z - h.retreatZ) ^ 2
+			-- the escort stands between the hero and the enemy until it is home
+			local ratio, ex, ez = danger(unitID, h, x, z)
+			ex, ez = ex or h.threatX, ez or h.threatZ
+			if ex then
+				local dx, dz = unitDir(x, z, ex, ez)
+				escortOrders(unitID, h, x, z, "cover", dx, dz, f)
+			end
+			if home < 700 * 700 and ratio < 0.5 and escorts[unitID] then
+				escortRelease(unitID, h.team, "hero is home", f)
+			end
+			-- back once healed, and not straight into what it ran from (a retreat for danger can start above
+			-- the return threshold)
+			if frac >= back and f - (h.retreatStart or 0) > 8 * GAME_SPEED and ratio < 1 then
+				h.retreating = false
+				spSetUnitRulesParam(unitID, "hero_retreat", 0, ALLIED)
+				aiLog(f, h.team, "%s back in the fight at %d%% hp", h.def.name, floor(frac * 100))
+			elseif f - (h.lastOrder or 0) > 5 * GAME_SPEED and home > 400 * 400
+				and Spring.GetUnitCommandCount(unitID) == 0 then
+				orderMove(unitID, h, CMD.MOVE, h.retreatX, h.retreatZ, f)
+			end
+			return
+		end
+		local ratio, ex, ez, foes, enemy, friend = danger(unitID, h, x, z)
+		-- the strongest enemy hero in sight vs this one
+		local myPow = heroPower(unitID, h)
+		local foe, foePow
+		for _, uid in ipairs(foes or {}) do
+			local p = heroPower(uid, heroes[uid])
+			if not foePow or p > foePow then
+				foe, foePow = uid, p
+			end
+		end
+		local why
+		if frac < H.AI_RETREAT_HP then
+			why = "low hp"
+		elseif frac < H.AI_CAUTION_HP and ratio > H.AI_DANGER then
+			why = string.format("outnumbered x%.1f", ratio)
+		elseif frac < 0.85 and ratio > H.AI_DANGER * 2.5 then
+			why = string.format("overwhelmed x%.1f", ratio)
+		elseif before - frac > H.AI_BURST and frac < 0.8 then
+			why = "burst damage"
+		elseif foe and foePow > myPow * 1.5 and frac < 0.75 and ratio > 0.8 then
+			why = "stronger enemy hero " .. heroes[foe].def.name
+		end
+		if why then
+			startRetreat(unitID, h, x, z, f, why, ex, ez)
 			return
 		end
 		-- march with the army
 		local g = armyGroup(h.team, f)
+		local e = escorts[unitID]
+		local escortCost = 0
+		if e then
+			for uid in pairs(e.units) do
+				escortCost = escortCost + costOf(uid)
+			end
+		end
 		local tx, tz
+		local dx, dz = 0, 0
+		if not g.x and escortCost > 0 then
+			-- the escort is all that is left of the army: it is the group
+			local ecx, ecz = escortCentre(unitID)
+			g = { x = ecx, z = ecz, cost = 0, ex = g.ex, ez = g.ez }
+		end
 		-- an escort worth a quarter of the hero, at most 10k metal (the expensive heroes otherwise waited
-		-- at the altar for an army cell of 35-45k that the AI rarely gathers)
-		if g.x and g.cost >= min(h.def.cost * 0.25, H.AI_ESCORT) then
+		-- at the altar for an army cell of 35-45k that the AI rarely gathers); the hero's own escort counts
+		local need = min(h.def.cost * 0.25, H.AI_ESCORT)
+		if escortCost > 0 then
+			need = need * 0.5 -- hysteresis: a hero with an escort keeps marching with less (no take / give back loop)
+		end
+		if g.x and g.cost + escortCost >= need then
 			local off = H.AI_ROLE_OFFSET[h.def.cfg.aiRole or "center"] or 0
 			tx, tz = g.x, g.z
 			if g.ex then
-				local dx, dz = g.ex - g.x, g.ez - g.z
-				local d = sqrt(dx * dx + dz * dz)
-				if d > 1 then
-					tx, tz = g.x + dx / d * off, g.z + dz / d * off
+				dx, dz = unitDir(g.x, g.z, g.ex, g.ez)
+			end
+			-- enemy static defence ahead that the group cannot take: hang back behind the army
+			local def = defenceNear(g.x + dx * 500, g.z + dz * 500, 1200, ally)
+			if def > 0 and def * 1.5 > g.cost + escortCost then
+				off = min(off, -250)
+				if f - (h.lastDefLog or -9999) > 1800 then
+					h.lastDefLog = f
+					aiLog(f, h.team, "%s holds back: enemy defence %d metal ahead", h.def.name, def)
+					stat(h.team, "holds")
 				end
 			end
+			tx, tz = g.x + dx * off, g.z + dz * off
+			escortRecruit(unitID, h, x, z, g, f)
 		else
-			-- no army to walk with: guard the altar
+			-- no army to walk with: guard the altar, the escort goes back to the AI
 			tx, tz = retreatPoint(h.team, x, z)
+			if escorts[unitID] then
+				escortRelease(unitID, h.team, "no army to march with", f)
+			end
 		end
 		if not tx then
 			return
 		end
-		tx = max(64, min(Game.mapSizeX - 64, tx))
-		tz = max(64, min(Game.mapSizeZ - 64, tz))
-		local moved = not h.orderX or (tx - h.orderX) ^ 2 + (tz - h.orderZ) ^ 2 > 350 * 350
-		local far = (tx - x) ^ 2 + (tz - z) ^ 2 > 300 * 300
-		if (moved and far) or (far and Spring.GetUnitCommandCount(unitID) == 0) then
-			orderMove(unitID, h, CMD.FIGHT, tx, tz, f)
+		-- enemy heroes: hunt a weaker one, step back from a stronger one
+		h.focusHero = nil
+		if foe then
+			if myPow >= foePow * 1.25 and ratio < 1.2 then
+				h.focusHero = foe
+				if h.lastHunt ~= foe then
+					h.lastHunt = foe
+					aiLog(f, h.team, "%s hunts enemy hero %s (power %d vs %d)", h.def.name, heroes[foe].def.name, myPow, foePow)
+					stat(h.team, "hunts")
+				end
+			elseif foePow > myPow * 1.3 then
+				local cx, cz = escortCentre(unitID)
+				cx, cz = cx or g.x or x, cz or g.z or z
+				tx, tz = cx - dx * 250, cz - dz * 250
+				if h.lastAvoid ~= foe then
+					h.lastAvoid = foe
+					aiLog(f, h.team, "%s avoids enemy hero %s (power %d vs %d)", h.def.name, heroes[foe].def.name, myPow, foePow)
+					stat(h.team, "avoids")
+				end
+			end
+		end
+		-- inside the army: never more than AI_FRONT_LEAD ahead of the escort
+		local cx, cz = escortCentre(unitID)
+		if cx and (dx ~= 0 or dz ~= 0) then
+			local lead = (tx - cx) * dx + (tz - cz) * dz
+			if lead > H.AI_FRONT_LEAD * 0.7 then
+				tx, tz = tx - dx * (lead - H.AI_FRONT_LEAD * 0.7), tz - dz * (lead - H.AI_FRONT_LEAD * 0.7)
+			end
+			local ahead = (x - cx) * dx + (z - cz) * dz
+			if ahead > H.AI_FRONT_LEAD and not h.focusHero then
+				-- too far out: back to the escort (a move, not a fight: no chasing)
+				if f - (h.lastOrder or 0) > 2 * GAME_SPEED then
+					orderMove(unitID, h, CMD.MOVE, cx + dx * 120, cz + dz * 120, f)
+					stat(h.team, "pullbacks")
+				end
+				escortOrders(unitID, h, x, z, "march", dx, dz, f)
+				return
+			end
+		end
+		if h.focusHero then
+			if h.lastFocusOrder ~= h.focusHero or f - (h.lastOrder or 0) > 5 * GAME_SPEED then
+				h.lastFocusOrder = h.focusHero
+				h.lastOrder = f
+				Spring.GiveOrderToUnit(unitID, CMD.ATTACK, { h.focusHero }, 0)
+			end
+		else
+			h.lastFocusOrder = nil
+			tx = max(64, min(Game.mapSizeX - 64, tx))
+			tz = max(64, min(Game.mapSizeZ - 64, tz))
+			local moved = not h.orderX or (tx - h.orderX) ^ 2 + (tz - h.orderZ) ^ 2 > 350 * 350
+			local far = (tx - x) ^ 2 + (tz - z) ^ 2 > 300 * 300
+			if (moved and far) or (far and Spring.GetUnitCommandCount(unitID) == 0) then
+				orderMove(unitID, h, CMD.FIGHT, tx, tz, f)
+			end
+		end
+		if dx == 0 and dz == 0 and ex then
+			dx, dz = unitDir(x, z, ex, ez)
+		end
+		if dx ~= 0 or dz ~= 0 then
+			escortOrders(unitID, h, x, z, "march", dx, dz, f)
 		end
 	end
+
+	---------------------------------------------------------------- AI economy: hero producers, ranks, levels
+
+	-- T2 hero halls (and any hero producer the AI script does not drive): one of each hero, a dead one again
+	function aiMakers(f)
+		for teamID, ai in pairs(isAITeam) do
+			if ai and #makerList > 0 then
+				for _, m in ipairs(Spring.GetTeamUnitsByDefs(teamID, makerList) or {}) do
+					local _, _, _, _, bp = spGetUnitHealth(m)
+					if bp and bp >= 1 then
+						local queue = Spring.GetFactoryCommands(m, -1)
+						local busy = Spring.GetUnitIsBuilding(m) or (type(queue) == "table" and #queue > 0)
+						if not busy then
+							local udid = spGetUnitDefID(m)
+							local pick, revive
+							for _, hid in ipairs(heroMakers[udid]) do
+								if Spring.GetTeamUnitDefCount(teamID, hid) == 0 then
+									local isDead = dead[teamID] and dead[teamID][heroDefs[hid].name]
+									if not pick or (revive and not isDead) then
+										pick, revive = hid, isDead
+									end
+								end
+							end
+							if pick then
+								toAI(teamID, "detach " .. m)
+								Spring.GiveOrderToUnit(m, -pick, {}, 0)
+								aiLog(f, teamID, "%s %s %s", UnitDefs[udid].name, revive and "revives" or "builds", heroDefs[pick].name)
+								stat(teamID, revive and "revives" or "built")
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+
+	-- a dead hero one of the team's producers can rebuild: the revive gets the metal first
+	local function reviveWanted(teamID)
+		local d = dead[teamID]
+		if not d or next(d) == nil then
+			return false
+		end
+		for _, uid in ipairs(Spring.GetTeamUnits(teamID)) do
+			local opts = heroMakers[spGetUnitDefID(uid)]
+			if opts then
+				for _, hid in ipairs(opts) do
+					if d[heroDefs[hid].name] and Spring.GetTeamUnitDefCount(teamID, hid) == 0 then
+						return heroDefs[hid].name
+					end
+				end
+			end
+		end
+		return false
+	end
+
+	local reviveLog = {}
+	local ROLE_WEIGHT = { front = 1.2, center = 1.0, back = 0.7 }
+
+	-- The AI's hero bank: storage is small (the AI builds no metal storage), so the price of a rank or a
+	-- level (tens to hundreds of thousands) is put aside over time - only overflow metal (storage fuller
+	-- than AI_BUY_FULL), at most AI_BUY_SAVE of the income, only up to what the next purchase needs (the rest
+	-- flows back), and nothing while a dead hero waits for its revive (then the bank flows back into the
+	-- storage). The bank pays for unspent points first (the same plan as learnAI), then for a level of the
+	-- best hero: alive, not retreating, fighting roles and lower levels first, one level per BUY_COOLDOWN,
+	-- up to AI_BUY_MAX_LEVEL, and never more bought levels than levels earned in combat (at least 2).
+	function aiEconomy(f)
+		for teamID, ai in pairs(isAITeam) do
+			if ai then
+				local mine = {}
+				for uid, h in pairs(heroes) do
+					if h.team == teamID then
+						mine[#mine + 1] = uid
+					end
+				end
+				local revive = reviveWanted(teamID)
+				if #mine > 0 or revive or (bank[teamID] or 0) > 0 then
+					local cur, stor, _, inc = Spring.GetTeamResources(teamID, "metal")
+					cur, stor, inc = cur or 0, stor or 0, inc or 0
+					local b = bank[teamID] or 0
+					local need = 0 -- metal the next purchase takes
+					local buyer, buyPrice
+					if not revive and #mine > 0 then
+						-- best hero first
+						local order = {}
+						for _, uid in ipairs(mine) do
+							local h = heroes[uid]
+							local hp, maxHp = spGetUnitHealth(uid)
+							local score = (ROLE_WEIGHT[h.def.cfg.aiRole or "center"] or 1) / (1 + h.level / 30)
+							if h.retreating then
+								score = score * 0.3
+							end
+							if hp and maxHp and hp / maxHp < 0.5 then
+								score = score * 0.5
+							end
+							order[#order + 1] = { uid = uid, h = h, score = score }
+						end
+						table.sort(order, function(a, c) return a.score > c.score end)
+						-- unspent points: ranks paid from the bank; a rank that waits only for metal is saved for
+						local saving = false
+						for _, o in ipairs(order) do
+							local h = o.h
+							if h.level - #h.picks > 0 then
+								prepaid = b
+								local picks = #h.picks
+								learnAI(o.uid, h)
+								if #h.picks > picks then
+									aiLog(f, teamID, "%s L%d learns %d rank(s) from the bank (%d -> %d)", h.def.name, h.level, #h.picks - picks, b, prepaid)
+									stat(teamID, "ranks", #h.picks - picks)
+								end
+								b = prepaid
+								if h.level - #h.picks > 0 then
+									for _, key in ipairs(h.def.keys) do
+										local st, cost = learnState(h, key)
+										if st == "metal" then
+											saving = true
+											need = max(need, cost or 0)
+											break
+										end
+									end
+								end
+								prepaid = 0
+							end
+						end
+						if not saving then
+							for _, o in ipairs(order) do
+								local h = o.h
+								local bought = h.bought or 0
+								if h.level < H.AI_BUY_MAX_LEVEL and bought < max(2, h.level - 1 - bought) then
+									buyer = o
+									buyPrice = H.levelPrice(h.def.name, h.level, h.def.cost)
+									need = max(need, buyPrice or 0)
+									break
+								end
+							end
+						end
+					end
+					if not revive and need > 0 and b < need * 1.2 and inc >= H.AI_BUY_INCOME and cur > stor * H.AI_BUY_FULL then
+						local take = min(inc * H.AI_BUY_SAVE, cur - stor * H.AI_BUY_FULL, need * 1.2 - b)
+						if take > 0 and Spring.UseTeamResource(teamID, "metal", take) then
+							b = b + take
+							stat(teamID, "saved", take)
+						end
+					elseif b > need * 1.5 then
+						-- more than anything needs (a revive waits, levels capped, heroes gone): back to the storage
+						local back = min(b - need * 1.5, max(0, stor - cur), max(3000, b * 0.1))
+						if back > 0 then
+							Spring.AddTeamResource(teamID, "metal", back)
+							b = b - back
+							stat(teamID, "returned", back)
+							if f - (reviveLog[teamID] or -9999) > 1800 then
+								reviveLog[teamID] = f
+								aiLog(f, teamID, "bank %d > needed %d%s: %d metal back to storage", b + back, need,
+									revive and (" (" .. revive .. " waits for its revive)") or "", back)
+							end
+						end
+					end
+					local h = buyer and buyer.h
+					if h and buyPrice and b >= buyPrice and f >= (h.buyReady or 0) then
+						b = b - buyPrice
+						local from = h.level
+						buyLevel(buyer.uid, h, true)
+						aiLog(f, teamID, "%s buys level %d -> %d for %d metal (bank left %d, income %d, bought %d of %d levels)",
+							h.def.name, from, h.level, buyPrice, b, inc, h.bought or 0, h.level - 1)
+						stat(teamID, "levels")
+						stat(teamID, "levelMetal", buyPrice)
+					end
+					bank[teamID] = b
+					spSetTeamRulesParam(teamID, "hero_ai_bank", floor(b), ALLIED)
+				end
+			end
+		end
+	end
+
+	-- every 2 minutes: what the AI heroes of each team are doing
+	function aiSummary(f)
+		for teamID, ai in pairs(isAITeam) do
+			if ai then
+				local parts = {}
+				for uid, h in pairs(heroes) do
+					if h.team == teamID then
+						local hp, maxHp = spGetUnitHealth(uid)
+						local e = escorts[uid]
+						parts[#parts + 1] = string.format("%s L%d (%d ranks, %d bought) %d%% %s esc=%d", h.def.name, h.level, #h.picks, h.bought or 0, floor(100 * (hp or 0) / max(1, maxHp or 1)),
+							h.retreating and "retreat" or (h.focusHero and "hunt" or "march"), e and e.n or 0)
+					end
+				end
+				local s = aiStats[teamID] or {}
+				if #parts > 0 or next(s) then
+					local cur, stor, _, inc = Spring.GetTeamResources(teamID, "metal")
+					aiLog(f, teamID, "summary bank=%d metal=%d/%d income=%d saved=%d returned=%d levels=%d (%d metal) ranks=%d escorted=%d released=%d retreats=%d covered=%d focus=%d hunts=%d avoids=%d holds=%d pullbacks=%d dodges=%d built=%d revives=%d | %s",
+						bank[teamID] or 0, cur or 0, stor or 0, inc or 0, s.saved or 0, s.returned or 0, s.levels or 0, s.levelMetal or 0, s.ranks or 0,
+						s.escorted or 0, s.released or 0, s.retreats or 0, s.covered or 0, s.focus or 0, s.hunts or 0, s.avoids or 0,
+						s.holds or 0, s.pullbacks or 0, s.dodges or 0, s.built or 0, s.revives or 0, table.concat(parts, "; "))
+				end
+			end
+		end
+	end
+
+	-- escorts of heroes that are gone go back to the AI
+	function aiEscortsTick(f)
+		for heroID in pairs(escorts) do
+			local h = heroes[heroID]
+			if not h then
+				local team
+				for uid in pairs(escorts[heroID].units) do
+					team = team or spGetUnitTeam(uid)
+				end
+				if team then
+					escortRelease(heroID, team, "hero fell", f)
+				end
+				escorts[heroID] = nil
+			end
+		end
+	end
+	end -- AI heroes
 
 	---------------------------------------------------------------- items: team stash and equipment
 	-- Every pickup goes to the picking hero's TEAM stash (H.STASH_SIZE). A full stash scraps the oldest item of
@@ -3920,6 +4663,17 @@ if gadgetHandler:IsSyncedCode() then
 				publishGround()
 			end
 		end
+		-- AI heroes' escorts, bank, hero halls (v15); also with no hero on the field yet
+		if f % 30 == 17 then
+			aiEscortsTick(f)
+			aiEconomy(f)
+			if f % 150 == 17 then
+				aiMakers(f)
+			end
+			if f % 3600 == 17 then
+				aiSummary(f)
+			end
+		end
 		if next(heroes) == nil and #events == 0 then
 			return
 		end
@@ -4041,6 +4795,8 @@ if gadgetHandler:IsSyncedCode() then
 		end
 		if what == "learn" then
 			learn(uid, h, key)
+		elseif what == "buylevel" then
+			buyLevel(uid, h)
 		elseif what == "use" then
 			useSlot(uid, h, tonumber(key) or 0)
 		elseif what == "equip" then
@@ -4113,7 +4869,9 @@ if gadgetHandler:IsSyncedCode() then
 			castAbility = function(uid, b, r, tx, tz, target) local h = heroes[uid]
 				return h and cast[b.kind] and cast[b.kind](uid, h, b.key or "item", b, r or 1, tx, tz, target) or false end,
 			abilityPower = function(uid) return abilityPower(heroes[uid]) end,
-			dead = dead, setAI = function(teamID, ai) isAITeam[teamID] = ai end }
+			dead = dead, setAI = function(teamID, ai) isAITeam[teamID] = ai end,
+			buyLevel = function(uid, paid) local h = heroes[uid]; if h then return buyLevel(uid, h, paid) end return false, "unknown" end,
+			escorts = escorts, bank = bank }
 	end
 
 	function gadget:Shutdown()
