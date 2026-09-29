@@ -8,7 +8,7 @@ local units = {}
 -- Titan Crucible: the Cortex hero altar (Experimental Gantry model x1.5)
 units.cort4gant = T4.foundry(T4.base("units/CorBuildings/LandFactories/corgant.lua", "corgant"), {
 	name = "cort4gant",
-	value = 4,
+	value = 8, -- v15: the altar costs 2x (metal, energy, build time); health and build power stay
 	scale = 1.5,
 	workertime = 12,
 	buildoptions = { "cort4colossus", "cort4bastion", "cort4armageddon", "cort4hellwalker" },
