@@ -15,9 +15,6 @@ units.legt4gant = T4.foundry(T4.base("units/Legion/Labs/leggant.lua", "leggant")
 	buildoptions = { "legt4helios", "legt4starfall", "legt4longinus", "legt4tempest" },
 })
 
-local function nova(dmg, aoe, scale)
-	return T4.novaWeapon({ damage = dmg, aoe = aoe, ceg = FX.custom("newnuketac", scale), name = "Nuclear nova" })
-end
 
 -- Helios, the Sunbringer (heat-ray mech x1.8): twin heat rays, a Solar Aura that repairs the army,
 -- Solar Flare and Sunstrike - a beam of the sun that ends in a nuclear flare.
@@ -33,9 +30,7 @@ local helios = T4.derive(T4.base("units/Legion/T3/legeheatraymech.lua", "legehea
 	footprint = 11,
 	movementclass = "T4BOT11",
 })
-units.legt4helios = T4.hero(helios, 2.2, {
-	hero_nova = nova(22000, 620, 1.5),
-})
+units.legt4helios = T4.hero(helios, 2.2)
 
 -- Starfall, the Astronomer (ELRPC mech x1.6): plasma volleys from ~7000 elmos that burst into
 -- bomblets, and a Meteor Storm called from orbit anywhere in radar range.
@@ -53,17 +48,7 @@ local starfall = T4.derive(T4.base("units/Legion/T3/legelrpcmech.lua", "legelrpc
 	movementclass = "T4BOT11",
 	overrides = { radardistance = 4500 },
 })
-units.legt4starfall = T4.hero(starfall, 2.5, {
-	hero_bomblet = T4.shellWeapon({
-		damage = 1300, aoe = 130, ceg = FX.custom("genericshellexplosion-medium", 3), cegtag = "ministarfire",
-		name = "Cluster bomblet", rgb = "0.6 0.4 1", size = 4, soundhit = "xplomed2",
-	}),
-	hero_starmeteor = T4.shellWeapon({
-		damage = 11000, aoe = 380, ceg = FX.custom("starfire-explosion", 2), cegtag = FX.ref("starfire-small", 2.5),
-		name = "Plasma meteor", rgb = "0.7 0.5 1", size = 16, soundhit = "xplolrg2",
-	}),
-	hero_nova = nova(26000, 650, 1.5),
-})
+units.legt4starfall = T4.hero(starfall, 2.5)
 
 -- Longinus, the Spear (rail tank x1.8): the titan hunter. Titan Slayer, Magnetic Coils, and the
 -- Spear of Longinus - one rail shot through everything, nuclear at rank 3.
@@ -82,14 +67,7 @@ local longinus = T4.derive(T4.base("units/Legion/T3/legerailtank.lua", "legerail
 		t3_rail_accelerator = { noexplode = true, reloadtime = 4 },
 	},
 })
-units.legt4longinus = T4.hero(longinus, 2.2, {
-	hero_spear = T4.weaponFrom(longinus.weapondefs.t3_rail_accelerator, {
-		damage = 12000, range = 3400, thickness = 14, corethickness = 0.5, laserflaresize = 30,
-		name = "Spear of Longinus", noexplode = true, energypershot = 0,
-		ceg = FX.custom("genericshellexplosion-huge-lightning", 1.6),
-	}),
-	hero_nova = nova(24000, 600, 1.5),
-})
+units.legt4longinus = T4.hero(longinus, 2.2)
 
 -- Tempest, the Stormblade (shotgun mech x2): the melee blademaster. Critical Strike, Overdrive and
 -- Bladestorm.

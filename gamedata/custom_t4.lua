@@ -253,6 +253,10 @@ function T4.hero(ud, fx, extraWeapons)
 	for key, wd in pairs(tiers) do
 		ud.weapondefs[key] = wd
 	end
+	-- the ability kit's projectiles every hero shares (gamedata/custom_t4_abilities.lua)
+	for key, wd in pairs(VFS.Include("gamedata/custom_t4_abilities.lua")(T4)) do
+		ud.weapondefs[key] = ud.weapondefs[key] or wd
+	end
 	for key, wd in pairs(extraWeapons or {}) do
 		wd.customparams = wd.customparams or {}
 		wd.customparams.t4_hero_weapon = 1
