@@ -4035,8 +4035,9 @@ if gadgetHandler:IsSyncedCode() then
 							for _, o in ipairs(order) do
 								local h = o.h
 								local bought = h.bought or 0
-								-- v17: up to twice the levels earned in combat (at least 4), at a quarter of the price
-								if h.level < H.AI_BUY_MAX_LEVEL and bought < max(4, 2 * (h.level - 1 - bought)) then
+								-- v17: at a quarter of the price, every H.AI_BUY_COOLDOWN, up to H.AI_BUY_MAX_LEVEL - no cap by the
+								-- levels earned in combat any more (heroes that had not fought yet stuck at level 5)
+								if h.level < H.AI_BUY_MAX_LEVEL then
 									buyer = o
 									buyPrice = H.aiLevelPrice(h.def.name, h.level, h.def.cost)
 									need = max(need, buyPrice or 0)
