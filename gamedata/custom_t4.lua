@@ -214,8 +214,82 @@ local function heroConfig()
 	return heroH or nil
 end
 
+-- v17: every T4 hero costs the same and is sized by its role (the cheap ones were paper, the expensive ones
+-- tanks). T4.hero applies it before the visual step copies are made: cost, health, speed, and one damage
+-- multiplier over its real weapons so their sustained DPS (damage x salvo x projectiles / reload; not
+-- paralyzers, aiming dummies or melee kicks under 150 range) meets the target. Level 1 values.
+T4.HERO_COST = { metal = 100000, energy = 2000000, buildtime = 2500000 }
+T4.heroBalance = {
+	--                  health     dps      speed (elmos/s)
+	armt4atlas      = { hp = 420000, dps = 11000, speed = 36 }, -- front: assault anchor
+	armt4zeus       = { hp = 400000, dps = 10000, speed = 40 }, -- front: lightning + EMP (not counted)
+	cort4colossus   = { hp = 420000, dps = 11000, speed = 34 }, -- front: flagship
+	cort4bastion    = { hp = 520000, dps = 8500, speed = 28 },  -- front: walking fortress (was 1.07M HP at 13 speed)
+	cort4hellwalker = { hp = 400000, dps = 12000, speed = 50 }, -- front: flame brawler (800 range)
+	legt4tempest    = { hp = 380000, dps = 12000, speed = 58 }, -- front: melee assault (670 range)
+	armt4aegis      = { hp = 320000, dps = 8000, speed = 48 },  -- center: shield bearer (plus its deflector)
+	legt4helios     = { hp = 340000, dps = 11000, speed = 34 }, -- center: heat / support
+	legt4longinus   = { hp = 300000, dps = 11000, speed = 45 }, -- center: titan hunter
+	armt4olympus    = { hp = 220000, dps = 8000, speed = 30, alt = { shocker_high = true } }, -- back: artillery 3300+ (high/low arc: one fires)
+	cort4armageddon = { hp = 200000, dps = 9000, speed = 36 },  -- back: rocket artillery 2700+
+	legt4starfall   = { hp = 220000, dps = 6500, speed = 26 },  -- back: orbital artillery ~7000
+}
+
+-- sustained DPS of a unitdef's real weapons, and the weapondefs that count
+function T4.weaponDps(ud, alt)
+	local total, counted = 0, {}
+	for _, w in ipairs(ud.weapons or {}) do
+		local key = w.def and string.lower(w.def)
+		local wd = key and ud.weapondefs and ud.weapondefs[key]
+		local dmg = wd and wd.damage and wd.damage.default or 0
+		if wd and not (alt and alt[key]) and wd.weapontype ~= "Shield" and not wd.paralyzer and (wd.range or 0) >= 150 and dmg > 1 then
+			total = total + dmg * (wd.burst or 1) * (wd.projectiles or 1) / math.max(0.03, wd.reloadtime or 1)
+			counted[key] = wd
+		end
+	end
+	return total, counted
+end
+
+local function balanceHero(ud)
+	-- a unitdef table carries no name (it is the table key): the scaled model is Units/T4/<name>.s3o
+	local name = (ud.objectname or ""):match("([%w_]+)%.s3o$") or ud.name
+	local b = name and T4.heroBalance[name]
+	if not b then
+		return
+	end
+	local c = T4.HERO_COST
+	ud.metalcost, ud.energycost, ud.buildtime = c.metal, c.energy, c.buildtime
+	ud.mass = c.metal
+	local alt = {}
+	for key in pairs(b.alt or {}) do
+		alt[#alt + 1] = key
+	end
+	ud.customparams.t4_alt_weapons = #alt > 0 and table.concat(alt, " ") or nil -- the hero gadget's DPS skips them
+	ud.health = b.hp
+	ud.speed = b.speed
+	for fname, fd in pairs(ud.featuredefs or {}) do
+		if fd.metal then
+			fd.metal = math.floor(c.metal * (fname == "dead" and 0.55 or 0.22))
+		end
+	end
+	local dps, counted = T4.weaponDps(ud, b.alt)
+	if dps > 0 then
+		local k = b.dps / dps
+		-- the other arc of the same gun (b.alt) shoots with the same damage
+		for key in pairs(b.alt or {}) do
+			counted[key] = ud.weapondefs[key]
+		end
+		for _, wd in pairs(counted) do
+			for armor, v in pairs(wd.damage) do
+				wd.damage[armor] = v * k
+			end
+		end
+	end
+end
+
 function T4.hero(ud, fx, extraWeapons)
 	ud.maxthisunit = 1
+	balanceHero(ud)
 	local cp = ud.customparams
 	cp.t4_hero = 1
 	cp.t4_fx = fx

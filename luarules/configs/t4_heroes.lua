@@ -63,20 +63,23 @@ H.AI_RETURN_HP_NO_FOUNTAIN = 0.7 -- no altar left to heal at: rejoin sooner
 H.AI_ROLE_OFFSET = { front = 150, center = -100, back = -500 }
 H.AI_ESCORT = 10000         -- the smallest army group (metal) a hero marches with; below it guards the altar
 -- v15: an escort of army units taken from the skirmish AI walks with every AI hero and covers its retreat
-H.AI_ESCORT_MIN = 6          -- units
-H.AI_ESCORT_MAX = 15
-H.AI_ESCORT_COST = 0.6       -- metal of the escort, share of the hero's cost (capped by a third of the army group)
-H.AI_ESCORT_RADIUS = 1600    -- escorts are recruited this close to the hero
+H.AI_ESCORT_MIN = 12         -- units (v17: 6 -> 12)
+H.AI_ESCORT_MAX = 30         -- v17: 15 -> 30
+H.AI_ESCORT_COST = 1.5       -- metal of the escort, share of the hero's cost (capped by H.AI_ESCORT_GROUP of the army group)
+H.AI_ESCORT_GROUP = 0.5      -- v17: at most half of the army group escorts (was a third)
+H.AI_ESCORT_RADIUS = 2200    -- escorts are recruited this close to the hero
 H.AI_FRONT_LEAD = 300        -- a hero never walks further than this ahead of its escort
 
 -- v15: buying levels for metal (the Buy level button; the AI saves its overflow metal for it)
 H.BUY_BASE = 0.6            -- a level costs cost * (BUY_BASE + BUY_PER_LEVEL * level) ...
 H.BUY_PER_LEVEL = 0.05
 H.BUY_COOLDOWN = 20         -- seconds between two bought levels of one hero
-H.AI_BUY_MAX_LEVEL = 60     -- the AI buys levels up to this one (combat takes a hero further)
-H.AI_BUY_SAVE = 0.25        -- the AI puts aside at most this share of its metal income ...
-H.AI_BUY_FULL = 0.5         -- ... and only while its storage is fuller than this (metal that would overflow)
-H.AI_BUY_INCOME = 100       -- ... and its metal income is at least this
+H.AI_BUY_COOLDOWN = 8       -- v17: the AI buys more often
+H.AI_BUY_DISCOUNT = 0.75    -- v17: the AI pays a quarter of the price
+H.AI_BUY_MAX_LEVEL = 80     -- the AI buys levels up to this one (combat takes a hero further)
+H.AI_BUY_SAVE = 0.4         -- the AI puts aside at most this share of its metal income ...
+H.AI_BUY_FULL = 0.3         -- ... and only while its storage is fuller than this (metal that would overflow)
+H.AI_BUY_INCOME = 60        -- ... and its metal income is at least this
 
 -- level needed for a rank of a branch
 local function reqLinear(rank) return rank * 2 - 1 end
@@ -123,9 +126,6 @@ H.heroes = {}
 H.order = {}
 for _, path in ipairs({
 	"luarules/configs/t4_hero_defs_t4.lua",
-	"luarules/configs/t4_hero_defs_t2_arm.lua",
-	"luarules/configs/t4_hero_defs_t2_cor.lua",
-	"luarules/configs/t4_hero_defs_t2_leg.lua",
 }) do
 	local defs, order = part(path)
 	for name, def in pairs(defs or {}) do
@@ -283,6 +283,12 @@ function H.levelPrice(heroName, level, cost)
 	end
 	local combat = H.xpFor(level + 1) - H.xpFor(level)
 	return math.floor(cost * math.max(H.BUY_BASE + H.BUY_PER_LEVEL * level, combat) / 100 + 0.5) * 100
+end
+
+-- v17: what an AI team pays for that level
+function H.aiLevelPrice(heroName, level, cost)
+	local p = H.levelPrice(heroName, level, cost)
+	return p and math.floor(p * (1 - H.AI_BUY_DISCOUNT) / 100 + 0.5) * 100
 end
 
 return H

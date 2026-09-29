@@ -87,8 +87,8 @@ end
 -- kind -> { label, tracks = { id, ... }, track = { id = def }, perks = { ... } }
 -- Track ids are unique within a kind; the branch key of a track is w<weapon index>_<id>.
 H.weaponKinds = {
-	beam = { label = "Laser Beam", tracks = { "damage", "range", "pierce", "reload" }, track = {
-		damage = t("Focusing Lens", "damage", 0.10),
+	beam = { label = "Laser Beam", tracks = { "damage", "range", "pierce" }, track = {
+		damage = t("Focusing Lens", "damage", 0.06),
 		range = t("Long Emitter", "range", 0.05),
 		pierce = t("Burn-through", "pierce", 0.10, { len = 600 }),
 		reload = t("Capacitor Bank", "reload", 0.05),
@@ -98,7 +98,7 @@ H.weaponKinds = {
 		perk(30, "Prism Split", "chain", 0.08, "hero-wfx-arc", { jumps = 1, radius = 300 }),
 	} },
 	heatray = { label = "Heat Ray", tracks = { "damage", "range", "burn", "blast" }, track = {
-		damage = t("Thermal Core", "damage", 0.10),
+		damage = t("Thermal Core", "damage", 0.06),
 		range = t("Beam Collimator", "range", 0.05),
 		burn = t("Scorch", "burn", 0.12),
 		blast = t("Heat Bloom", "blast", 0.08, { radius = 140 }),
@@ -107,8 +107,8 @@ H.weaponKinds = {
 		perk(20, "Heat Haze", "blast", 0.05, "hero-wfx-heat", { radius = 160 }),
 		perk(30, "Solar Lance", "pierce", 0.08, "hero-wfx-sparks-gold", { len = 500 }),
 	} },
-	shotgun = { label = "Scatter Gun", tracks = { "damage", "pellets", "splash", "reload" }, track = {
-		damage = t("Heavy Shot", "damage", 0.10, { unit = "damage per pellet" }),
+	shotgun = { label = "Scatter Gun", tracks = { "damage", "pellets", "splash" }, track = {
+		damage = t("Heavy Shot", "damage", 0.06, { unit = "damage per pellet" }),
 		pellets = t("Extra Pellets", "pellets", nil, { per = 1 }),
 		splash = t("Blast Shells", "splash", 0.12),
 		reload = t("Pump Action", "reload", 0.05),
@@ -117,8 +117,8 @@ H.weaponKinds = {
 		perk(20, "Dragon's Breath", "burn", 0.06, "hero-wfx-scorch"),
 		perk(30, "Stagger Rounds", "discharge", 0.10, "hero-wfx-static"),
 	} },
-	cannon = { label = "Cannon", tracks = { "damage", "splash", "reload", "range" }, track = {
-		damage = t("Heavy Shells", "damage", 0.10),
+	cannon = { label = "Cannon", tracks = { "damage", "splash", "range" }, track = {
+		damage = t("Heavy Shells", "damage", 0.06),
 		splash = t("High Explosive", "splash", 0.12),
 		reload = t("Autoloader", "reload", 0.05),
 		range = t("Long Barrel", "range", 0.05),
@@ -127,8 +127,8 @@ H.weaponKinds = {
 		perk(20, "Incendiary Filler", "burn", 0.05, "hero-wfx-scorch"),
 		perk(30, "Sabot Core", "pierce", 0.08, "hero-wfx-sparks-gold", { len = 400 }),
 	} },
-	plasma = { label = "Plasma Gun", tracks = { "damage", "splash", "burn", "reload" }, track = {
-		damage = t("Plasma Density", "damage", 0.10),
+	plasma = { label = "Plasma Gun", tracks = { "damage", "splash", "burn" }, track = {
+		damage = t("Plasma Density", "damage", 0.06),
 		splash = t("Plasma Bloom", "splash", 0.12),
 		burn = t("Ionized Residue", "burn", 0.10),
 		reload = t("Magnetic Chamber", "reload", 0.05),
@@ -137,8 +137,8 @@ H.weaponKinds = {
 		perk(20, "Ion Storm", "discharge", 0.08, "hero-wfx-static"),
 		perk(30, "Star Core", "chain", 0.06, "hero-wfx-arc", { jumps = 2, radius = 320 }),
 	} },
-	artillery = { label = "Artillery", tracks = { "damage", "range", "splash", "reload" }, track = {
-		damage = t("Heavy Warheads", "damage", 0.10),
+	artillery = { label = "Artillery", tracks = { "damage", "range", "splash" }, track = {
+		damage = t("Heavy Warheads", "damage", 0.06),
 		range = t("Extended Charge", "range", 0.04),
 		splash = t("Airburst Fuse", "splash", 0.12),
 		reload = t("Loading Crane", "reload", 0.05),
@@ -148,7 +148,7 @@ H.weaponKinds = {
 		perk(30, "Seismic Charge", "discharge", 0.08, "hero-wfx-static"),
 	} },
 	mortar = { label = "Mortar", tracks = { "damage", "splash", "burn", "range" }, track = {
-		damage = t("Heavy Bombs", "damage", 0.10),
+		damage = t("Heavy Bombs", "damage", 0.06),
 		splash = t("Wide Blast", "splash", 0.12),
 		burn = t("Incendiary Filler", "burn", 0.10),
 		range = t("Propellant", "range", 0.05),
@@ -157,8 +157,8 @@ H.weaponKinds = {
 		perk(20, "Napalm Pool", "burn", 0.06, "hero-wfx-scorch"),
 		perk(30, "Concussion", "discharge", 0.08, "hero-wfx-static"),
 	} },
-	rockets = { label = "Rocket Salvo", tracks = { "damage", "salvo", "splash", "reload" }, track = {
-		damage = t("Warheads", "damage", 0.10, { unit = "damage per rocket" }),
+	rockets = { label = "Rocket Salvo", tracks = { "damage", "salvo", "splash" }, track = {
+		damage = t("Warheads", "damage", 0.06, { unit = "damage per rocket" }),
 		salvo = t("Extra Tubes", "salvo", 0.12),
 		splash = t("Fragmentation", "splash", 0.12),
 		reload = t("Rack Reloader", "reload", 0.05),
@@ -167,8 +167,8 @@ H.weaponKinds = {
 		perk(20, "Cluster Rockets", "blast", 0.05, "hero-wfx-shock", { radius = 160 }),
 		perk(30, "Shock Warheads", "discharge", 0.06, "hero-wfx-static"),
 	} },
-	missiles = { label = "Guided Missiles", tracks = { "damage", "range", "blast", "reload" }, track = {
-		damage = t("Shaped Charge", "damage", 0.10, { unit = "damage per missile" }),
+	missiles = { label = "Guided Missiles", tracks = { "damage", "range", "blast" }, track = {
+		damage = t("Shaped Charge", "damage", 0.06, { unit = "damage per missile" }),
 		range = t("Booster Stage", "range", 0.05),
 		blast = t("Proximity Fuse", "blast", 0.08, { radius = 160 }),
 		reload = t("Launch Rails", "reload", 0.05),
@@ -178,7 +178,7 @@ H.weaponKinds = {
 		perk(30, "Seeker Swarm", "chain", 0.06, "hero-wfx-arc", { jumps = 2, radius = 350 }),
 	} },
 	lightning = { label = "Lightning", tracks = { "damage", "range", "chain", "discharge" }, track = {
-		damage = t("Overcharge", "damage", 0.10),
+		damage = t("Overcharge", "damage", 0.06),
 		range = t("Arc Reach", "range", 0.05),
 		chain = t("Forked Lightning", "chain", 0.10, { jumps = 2, radius = 350 }),
 		discharge = t("Static Discharge", "discharge", 0.15),
@@ -188,7 +188,7 @@ H.weaponKinds = {
 		perk(30, "Storm Arc", "chain", 0.08, "hero-wfx-arc", { jumps = 3, radius = 400 }),
 	} },
 	flame = { label = "Flamethrower", tracks = { "damage", "range", "burn", "splash" }, track = {
-		damage = t("Hotter Fuel", "damage", 0.10),
+		damage = t("Hotter Fuel", "damage", 0.06),
 		range = t("Pressurized Tank", "range", 0.05),
 		burn = t("Napalm", "burn", 0.12),
 		splash = t("Wide Nozzle", "splash", 0.12),
@@ -197,8 +197,8 @@ H.weaponKinds = {
 		perk(20, "Firestorm", "blast", 0.04, "hero-wfx-heat", { radius = 140 }),
 		perk(30, "Hellfire Jet", "pierce", 0.06, "hero-wfx-scorch", { len = 300 }),
 	} },
-	rail = { label = "Railgun", tracks = { "damage", "range", "pierce", "reload" }, track = {
-		damage = t("Coil Strength", "damage", 0.10),
+	rail = { label = "Railgun", tracks = { "damage", "range", "pierce" }, track = {
+		damage = t("Coil Strength", "damage", 0.06),
 		range = t("Barrel Extension", "range", 0.05),
 		pierce = t("Penetrator", "pierce", 0.10, { len = 1200 }),
 		reload = t("Capacitor Cycling", "reload", 0.05),
@@ -207,8 +207,8 @@ H.weaponKinds = {
 		perk(20, "Ionized Slug", "discharge", 0.06, "hero-wfx-static"),
 		perk(30, "Magnetic Lance", "pierce", 0.06, "hero-wfx-sparks-blue", { len = 1200 }),
 	} },
-	sniper = { label = "Sniper Rifle", tracks = { "damage", "range", "crit", "reload" }, track = {
-		damage = t("Match Rounds", "damage", 0.10),
+	sniper = { label = "Sniper Rifle", tracks = { "damage", "range", "crit" }, track = {
+		damage = t("Match Rounds", "damage", 0.06),
 		range = t("Scope", "range", 0.05),
 		crit = t("Headshot", "crit", nil, { per = 0.03, mult = 3 }),
 		reload = t("Bolt Action", "reload", 0.05),
@@ -218,7 +218,7 @@ H.weaponKinds = {
 		perk(30, "Deadeye", "crit", nil, "hero-wfx-crit", { per = 0.10, mult = 3 }),
 	} },
 	emp = { label = "EMP Launcher", tracks = { "damage", "range", "splash", "chain" }, track = {
-		damage = t("Pulse Charge", "damage", 0.10),
+		damage = t("Pulse Charge", "damage", 0.06),
 		range = t("Long Relay", "range", 0.05),
 		splash = t("Wide Pulse", "splash", 0.12),
 		chain = t("EMP Arc", "chain", 0.10, { jumps = 2, radius = 350 }),
@@ -227,8 +227,8 @@ H.weaponKinds = {
 		perk(20, "Static Web", "chain", 0.05, "hero-wfx-arc", { jumps = 2, radius = 350 }),
 		perk(30, "Blackout", "blast", 0.05, "hero-wfx-emp", { radius = 220 }),
 	} },
-	flak = { label = "Flak", tracks = { "damage", "splash", "reload", "range" }, track = {
-		damage = t("Shrapnel Load", "damage", 0.10),
+	flak = { label = "Flak", tracks = { "damage", "splash", "range" }, track = {
+		damage = t("Shrapnel Load", "damage", 0.06),
 		splash = t("Burst Radius", "splash", 0.12),
 		reload = t("Rapid Feed", "reload", 0.05),
 		range = t("High Velocity", "range", 0.05),
