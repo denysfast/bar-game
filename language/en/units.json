@@ -1003,7 +1003,18 @@
 			"legt4helios": "Helios",
 			"legt4starfall": "Starfall",
 			"legt4longinus": "Longinus",
-			"legt4tempest": "Tempest"
+			"legt4tempest": "Tempest",
+			"legt2hall": "T2 Hero Hall: Legion Barracks",
+			"legt2warden": "Warden",
+			"legt2pyre": "Pyre",
+			"legt2longshot": "Longshot",
+			"legt2harrier": "Harrier",
+			"legt2scorch": "Scorch",
+			"legt2reaper": "Reaper",
+			"legt2gladius": "Gladius",
+			"legt2vulcan": "Vulcan",
+			"legt2swarm": "Swarm",
+			"legt2gorgon": "Gorgon"
 		},
 		"descriptions": {
 			"legsplab": "Constructs Seaplanes",
@@ -2000,7 +2011,18 @@
 			"legt4helios": "HERO Sunbringer: Solar Aura, Solar Flare; ultimate Sunstrike + nuclear flare",
 			"legt4starfall": "HERO Astronomer: Deep Sky Radar, Cluster Payload; ultimate Meteor Storm from orbit",
 			"legt4longinus": "HERO Titan hunter: Titan Slayer, Magnetic Coils; ultimate Spear of Longinus (nuclear impact)",
-			"legt4tempest": "HERO Stormblade: Critical Strike, Overdrive; ultimate Bladestorm"
+			"legt4tempest": "HERO Stormblade: Critical Strike, Overdrive; ultimate Bladestorm",
+			"legt2hall": "Hero hall: builds and revives the ten Legion T2 heroes (one of each). Heroes near it heal fast",
+			"legt2warden": "T2 HERO Iron Phalanx: riot cannon, Phalanx Plating, Shield Bash; ultimate Testudo",
+			"legt2pyre": "T2 HERO Incinerator: heavy heat ray, Heat Haze, Overheat; ultimate Meltdown",
+			"legt2longshot": "T2 HERO Arquebusier: railgun sniper, Headshot, Ghillie Field; ultimate Piercing Rail",
+			"legt2harrier": "T2 HERO Swift Blade: fast raider, Bloodletting, Adrenaline; ultimate Hoplite Pack",
+			"legt2scorch": "T2 HERO Belcher: napalm launcher, Incendiary Payload, Backdraft; ultimate Napalm Deluge",
+			"legt2reaper": "T2 HERO Rocket Legate: salvo rockets, Target Uplink, Brace; ultimate Rocket Carpet",
+			"legt2gladius": "T2 HERO Arena Champion: rotary plasma, War Cry, Scutum; ultimate Champion's Fury",
+			"legt2vulcan": "T2 HERO Fireforged: heat-ray tank, Molten Hull, Magma Ram; ultimate Phoenix Core",
+			"legt2swarm": "T2 HERO Hive Mother: drone carrier with an arc relay, Nanite Cloud, Seeker Swarm; ultimate Hive Ascendant",
+			"legt2gorgon": "T2 HERO Stone Gaze: homing siege rockets, Stone Gaze, Serpent Arcs; ultimate Petrify"
 		}
 	}
 }

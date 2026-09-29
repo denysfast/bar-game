@@ -13,7 +13,7 @@
 
 local FX = {}
 
-FX.scales = { 2.2, 2.5 }
+FX.scales = { 1.5, 2.2, 2.5 } -- v15: 1.5 for the T2 heroes (models x1.4-1.6)
 -- v14: visual tiers of upgraded hero weapons (T4.hero): the base scale x FX.tierMult[tier]
 FX.tierMult = { 1, 1.3, 1.65, 2.0 }
 FX.tierScales = { 2.9, 3.3, 3.6, 4.1, 4.4, 5.0 }
