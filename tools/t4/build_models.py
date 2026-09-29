@@ -50,6 +50,18 @@ MODELS = [
     ("cort2tiger",      "correap",         1.5),
     ("cort2banisher",   "corban",          1.4),
     ("cort2tremor",     "cortrem",         1.4),
+    # T2 heroes, Legion (units/Legion/T2Heroes/legt2heroes.lua)
+    ("legt2hall",       "legalab",         1.3),
+    ("legt2warden",     "legshot",         1.5),
+    ("legt2pyre",       "leginc",          1.4),
+    ("legt2longshot",   "legsrail",        1.5),
+    ("legt2harrier",    "legstr",          1.6),
+    ("legt2scorch",     "legbart",         1.5),
+    ("legt2reaper",     "leghrk",          1.5),
+    ("legt2gladius",    "legaskirmtank",   1.5),
+    ("legt2vulcan",     "legaheattank",    1.4),
+    ("legt2swarm",      "legvcarry",       1.5),
+    ("legt2gorgon",     "legmed",          1.4),
 ]
 
 here = os.path.dirname(os.path.abspath(__file__))
