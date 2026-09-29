@@ -2309,7 +2309,10 @@ if gadgetHandler:IsSyncedCode() then
 		if #ids > 0 then
 			toAI(h.team, "detach " .. table.concat(ids, ","))
 			e.lastOrder = nil
-			aiLog(f, h.team, "%s escort +%d -> %d units (%d metal)", h.def.name, #ids, e.n, cost)
+			-- (replacements of the fallen one by one are only counted, not logged)
+			if #ids >= 3 or #ids == e.n then
+				aiLog(f, h.team, "%s escort +%d -> %d units (%d metal)", h.def.name, #ids, e.n, cost)
+			end
 			stat(h.team, "escorted", #ids)
 		end
 	end
