@@ -221,7 +221,7 @@ local heroes = {
 		a2 = {
 			name = "Seeker Swarm", kind = "active_missiles", cmd = 36416, action = "hero_seekers", fx = "hero-missile-launch",
 			desc = "Launches homing seekers at the enemies around",
-			radius = 900, count = { 6, 9, 12 }, dmg = { 350, 500, 650 }, cooldown = { 28, 25, 22 },
+			radius = 1300, count = { 6, 9, 12 }, dmg = { 350, 500, 650 }, cooldown = { 28, 25, 22 },
 			text = { "6 seekers x 350, cd 28s", "9 x 500, cd 25s", "12 x 650, cd 22s" },
 		},
 		ult = {

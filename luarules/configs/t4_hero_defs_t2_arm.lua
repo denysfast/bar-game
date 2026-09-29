@@ -142,7 +142,7 @@ local heroes = {
 		a1 = {
 			name = "Venom Volley", kind = "active_missiles", cmd = 36210, action = "hero_widow_volley", fx = "hero-missile-launch",
 			desc = "Launches homing missiles at up to N enemies around",
-			radius = 900, count = { 4, 6, 9 }, dmg = { 400, 600, 850 }, cooldown = { 25, 22, 19 },
+			radius = 1300, count = { 4, 6, 9 }, dmg = { 400, 600, 850 }, cooldown = { 25, 22, 19 },
 			text = { "4 missiles x 400, cd 25s", "6 x 600, cd 22s", "9 x 850, cd 19s" },
 		},
 		a2 = {
