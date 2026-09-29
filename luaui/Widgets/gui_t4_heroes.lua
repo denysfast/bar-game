@@ -717,7 +717,7 @@ local function drawPicker(uid, yBottom)
 				rowW = rowW - bw - pad
 			end
 		end
-		itemRow({ item = worn }, x1 + pad, by1, rowW, rh, true, nil, "", "Worn: " .. (it.short or ""))
+		itemRow({ item = worn }, x1 + pad, by1, rowW, rh, true, nil, "", it.short)
 		if own then
 			smallButton("Unequip", btnX2 - bw, by1 + rh * 0.18, btnX2, by1 + rh * 0.82, GOLD, true, function() sendUnequip(uid, slot) end,
 				"Back to the team stash (right click on the slot does the same)")
