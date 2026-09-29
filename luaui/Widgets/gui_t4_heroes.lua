@@ -445,7 +445,8 @@ local function stat(label, value, x, y, size, c)
 	text(value, x + size * 6.4, y, size, c or WHITE)
 end
 
--- v15: "Buy level (<price> M)" next to the experience bar - one level for metal, one per H.BUY_COOLDOWN s
+-- v15: "Buy level (<price> M)" under Upgrades (the row next to the experience bar has no room for readable
+-- text) - one level for metal, one per H.BUY_COOLDOWN s
 local function drawBuyLevel(uid, name, lvl, x1, y1, x2, y2, f)
 	if lvl >= H.MAX_LEVEL then
 		return
@@ -458,9 +459,9 @@ local function drawBuyLevel(uid, name, lvl, x1, y1, x2, y2, f)
 	local ok = price > 0 and cur >= price and wait == 0
 	local hov = hovered(x1, y1, x2, y2)
 	rect(x1, y1, x2, y2, ok and (hov and { 0.22, 0.16, 0.05, 0.95 } or { 0.14, 0.1, 0.03, 0.95 }) or { 0.2, 0.05, 0.04, 0.9 })
-	frame(x1, y1, x2, y2, ok and (hov and { 1, 0.9, 0.5, 1 } or GOLD) or { 0.6, 0.18, 0.15, 1 }, 1)
+	frame(x1, y1, x2, y2, ok and (hov and { 1, 0.9, 0.5, 1 } or GOLD) or { 0.6, 0.18, 0.15, 1 }, 2)
 	local label = wait > 0 and string.format("Buy level  (%d s)", wait) or string.format("Buy level (%s M)", fmtNum(price))
-	text(label, (x1 + x2) / 2, y1 + (y2 - y1) * 0.22, (y2 - y1) * 0.72, ok and GOLD or RED, "co")
+	text(label, (x1 + x2) / 2, (y1 + y2) / 2 - (y2 - y1) * 0.16, (y2 - y1) * 0.42, ok and GOLD or RED, "co")
 	local tip = string.format("Buy level %d for %s metal (%s in storage%s).\n"
 		.. "The price grows with the level and the hero's cost: %d%% + %d%% per level of its cost, and never\n"
 		.. "less than the metal of damage that level takes in combat. One level per %d seconds.",
@@ -534,9 +535,6 @@ local function drawConsole(uid)
 	bar(px1, by2 - bh * 2 - 3, px2, by2 - bh - 3, lvl >= H.MAX_LEVEL and 1 or xp, { 0.55, 0.35, 1, 1 })
 	addBox(px1, by2 - bh * 2 - 3, px2, by2 - bh - 3, nil, lvl >= H.MAX_LEVEL and "Maximum level"
 		or string.format("Experience: %s / %s metal of damage to reach level %d", fmtNum(xpAbs), fmtNum(xpNeed), lvl + 1))
-	if own then
-		drawBuyLevel(uid, name, lvl, px2 + pad * 2, by2 - bh * 2 - 3, px2 + pad * 2 + floor(H0 * 0.78), by2 - bh - 3, f)
-	end
 
 	-- name, level, stats
 	local sx = px2 + pad * 2
@@ -662,6 +660,8 @@ local function drawConsole(uid)
 		frame(ax1, ry1, ax2, ry2, hovered(ax1, ry1, ax2, ry2) and { 1, 0.9, 0.5, 1 } or (auto and GREEN or GREY), 2)
 		text(auto and "Auto" or "Manual", (ax1 + ax2) / 2, (ry1 + ry2) / 2 - cs * 0.1, cs * 0.22, auto and GREEN or GREY, "co")
 		addBox(ax1, ry1, ax2, ry2, function() toggleAutocast(uid) end, "Autocast: the hero uses its abilities and items by itself when they help")
+		-- third row: buy a level (v15)
+		drawBuyLevel(uid, name, lvl, cx1, ry1 - cg - floor(cs * 0.5), x2 - pad, ry1 - cg, f)
 	end
 	return y2
 end
