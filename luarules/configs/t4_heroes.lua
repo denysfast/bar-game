@@ -74,26 +74,26 @@ local function reqUlt(rank) return ULT_REQ[rank] or math.huge end
 H.req = { linear = reqLinear, servo = reqServo, weapon = reqWeapon, ability = reqAbility, ult = reqUlt }
 
 -- metal every rank costs on top of the talent point (paid from the team's storage when learned)
-H.ABILITY_METAL = { 15000, 30000, 50000 }
-H.ULT_METAL = { 40000, 70000, 100000 }
-H.STAT_METAL = 1500          -- stat and weapon ranks: STAT_METAL * rank
+-- v15: x3 of v14
+H.ABILITY_METAL = { 45000, 90000, 150000 }
+H.ULT_METAL = { 120000, 210000, 300000 }
+H.STAT_METAL = 4500          -- stat and weapon ranks: STAT_METAL * rank
 
 H.branchOrder = { "plating", "servos", "a1", "a2", "ult" }
 H.abilityKeys = { "a1", "a2", "ult" }
 H.hotkeys = { a1 = "Q", a2 = "W", ult = "R" }
 
--- the common branches; `per` is one rank, the text is shown with the rank count
+-- the common branches (v15: in units): a rank adds a fixed amount computed from the hero's base stats -
+-- `pct` of the base value, rounded (H.commonAmount) - shown as e.g. "+3200 HP, +16 HP/s"
 -- (v14: Arsenal is gone - every weapon has its own tree, see H.weaponKinds)
 H.common = {
 	plating = {
 		name = "Plating", icon = "stat_plating", maxRank = 15, req = "linear",
-		desc = "+8% max health and +0.02% health regeneration per second per rank",
-		per = { hp = 0.08, regen = 0.0002 },
+		pct = { hp = 0.06, regen = 0.0003 },  -- of the base health; regen in HP per second
 	},
 	servos = {
 		name = "Servos", icon = "stat_servos", maxRank = 10, req = "servo",
-		desc = "+5% speed, +5% sight per rank",
-		per = { speed = 0.05, sight = 0.05 },
+		pct = { speed = 0.04, sight = 0.05 }, -- of the base speed (elmos/s) and sight
 	},
 }
 
@@ -121,7 +121,55 @@ for _, path in ipairs({
 	end
 end
 
--- weapon branch keys: w<index>_<track>, e.g. w2_pierce
+-- base stats of a hero unitdef (LuaRules and LuaUI; UnitDefNames needed)
+local heroBaseCache = {}
+function H.heroBase(heroName)
+	if heroBaseCache[heroName] then
+		return heroBaseCache[heroName]
+	end
+	local ud = UnitDefNames and UnitDefNames[heroName]
+	if not ud then
+		return nil
+	end
+	local b = { health = ud.health, speed = ud.speed, sight = ud.losRadius or ud.sightDistance or 0 }
+	heroBaseCache[heroName] = b
+	return b
+end
+
+-- the fixed amounts one rank of a common branch adds: { hp =, regen = } or { speed =, sight = }
+function H.commonAmount(heroName, key)
+	local c = H.common[key]
+	local base = H.heroBase(heroName)
+	if not c or not base then
+		return {}
+	end
+	local out = {}
+	if c.pct.hp then
+		out.hp = H.nice(base.health * c.pct.hp)
+	end
+	if c.pct.regen then
+		out.regen = H.nice(base.health * c.pct.regen)
+	end
+	if c.pct.speed then
+		out.speed = H.nice(base.speed * c.pct.speed)
+	end
+	if c.pct.sight then
+		out.sight = H.nice(base.sight * c.pct.sight)
+	end
+	return out
+end
+
+-- the effect of `ranks` ranks of a common branch in words
+function H.commonText(heroName, key, ranks)
+	local a = H.commonAmount(heroName, key)
+	local f = H.fmtAmount
+	if key == "plating" then
+		return "+" .. f((a.hp or 0) * ranks) .. " HP, +" .. f((a.regen or 0) * ranks) .. " HP/s regeneration"
+	end
+	return "+" .. f((a.speed or 0) * ranks) .. " speed, +" .. f((a.sight or 0) * ranks) .. " sight"
+end
+
+-- weapon branch keys: w<index>_<track id>, e.g. w2_pierce (track ids are unique within a weapon kind)
 function H.weaponBranch(heroName, key)
 	local hero = H.heroes[heroName]
 	local wi, track = key:match("^w(%d+)_(%a+)$")
@@ -129,13 +177,18 @@ function H.weaponBranch(heroName, key)
 		return nil
 	end
 	local w = hero.weapons and hero.weapons[tonumber(wi)]
-	local t = H.tracks[track]
-	if not w or not t then
+	local t = w and H.weaponTrack(w.kind, track)
+	if not t then
 		return nil
+	end
+	local base = H.weaponBase(heroName, tonumber(wi))
+	local desc = w.name
+	if base then
+		desc = desc .. " - " .. H.trackText(t, H.trackAmount(t, base), base) .. " per rank"
 	end
 	return {
 		name = t.name, icon = t.icon, maxRank = H.WEAPON_RANKS, req = "weapon", weapon = tonumber(wi), track = track,
-		desc = w.name .. " - " .. string.format(t.fmt, t.abs and t.per or math.floor(t.per * 100 + 0.5)) .. " per rank",
+		kind = w.kind, desc = desc,
 	}
 end
 
@@ -171,14 +224,9 @@ function H.metalCost(heroName, key, rank)
 	return H.STAT_METAL * rank
 end
 
+-- v14 compatibility: 1..4 stars from the rank sum (the console shows them); v15 grows in H.weaponStep steps
 function H.weaponTier(rankSum)
-	local tier = 1
-	for i, start in ipairs(H.weaponTiers) do
-		if rankSum >= start then
-			tier = i
-		end
-	end
-	return tier
+	return 1 + math.floor(H.weaponStep(rankSum) * 3 / #H.weaponSteps)
 end
 
 

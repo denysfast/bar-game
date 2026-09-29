@@ -7,7 +7,7 @@ local heroes = {
 	armt4atlas = {
 		title = "Atlas, the Bulwark", role = "Assault / support", aiRole = "front",
 		fx = 2.5,
-		weapons = { { keys = { "armbantha_fire" }, name = "Pulse Cannon", kind = "cannon" }, { keys = { "tehlazerofdewm" }, name = "Doom Laser", kind = "beam" }, { keys = { "bantha_rocket" }, name = "Starburst Rockets", kind = "rockets" } },
+		weapons = { { keys = { "armbantha_fire" }, name = "Pulse Cannon", kind = "plasma" }, { keys = { "tehlazerofdewm" }, name = "Doom Laser", kind = "beam" }, { keys = { "bantha_rocket" }, name = "Starburst Rockets", kind = "missiles" } },
 		a1 = {
 			name = "Repair Field", kind = "aura_heal", passive = true,
 			desc = "Allies (and structures) around Atlas regain health every second",
@@ -91,7 +91,7 @@ local heroes = {
 	armt4zeus = {
 		title = "Zeus Prime, the Stormlord", role = "EMP / lightning", aiRole = "front",
 		fx = 2.2,
-		weapons = { { keys = { "thunder" }, name = "Thunder Coil", kind = "lightning" }, { keys = { "empmissile" }, name = "EMP Missiles", kind = "emp" }, { keys = { "emp" }, name = "EMP Beams", kind = "beam" } },
+		weapons = { { keys = { "thunder" }, name = "Thunder Coil", kind = "lightning" }, { keys = { "empmissile" }, name = "EMP Missiles", kind = "emp" }, { keys = { "emp" }, name = "EMP Beams", kind = "emp" } },
 		a1 = {
 			name = "Chain Lightning", kind = "chain", passive = true,
 			desc = "Every lightning strike jumps to more enemies",
@@ -118,7 +118,7 @@ local heroes = {
 	cort4colossus = {
 		title = "Colossus, the Warlord", role = "Flagship", aiRole = "front",
 		fx = 2.2,
-		weapons = { { keys = { "corkorg_fire" }, name = "Plasma Scatter Gun", kind = "shotgun" }, { keys = { "corkorg_laser" }, name = "Heat Eye", kind = "beam" }, { keys = { "corkorg_rocket" }, name = "Warlord Rockets", kind = "rockets" } },
+		weapons = { { keys = { "corkorg_fire" }, name = "Plasma Scatter Gun", kind = "shotgun" }, { keys = { "corkorg_laser" }, name = "Heat Eye", kind = "heatray" }, { keys = { "corkorg_rocket" }, name = "Warlord Rockets", kind = "missiles" } },
 		a1 = {
 			name = "War Stomp", kind = "active_stomp", cmd = 36111, action = "hero_stomp",
 			desc = "Slams the ground: damages and stuns everything around",
@@ -198,7 +198,7 @@ local heroes = {
 	cort4hellwalker = {
 		title = "Hellwalker, the Inferno", role = "Flame assault", aiRole = "front",
 		fx = 2.5,
-		weapons = { { keys = { "newdmaw" }, name = "Hellfire Maw", kind = "flame" }, { keys = { "karg_shoulder" }, name = "Shoulder Missiles", kind = "rockets" } },
+		weapons = { { keys = { "newdmaw" }, name = "Hellfire Maw", kind = "flame" }, { keys = { "karg_shoulder" }, name = "Shoulder Missiles", kind = "missiles" } },
 		a1 = {
 			name = "Immolation", kind = "aura_burn", passive = true,
 			desc = "Burns every enemy around, every second",
@@ -224,7 +224,7 @@ local heroes = {
 	legt4helios = {
 		title = "Helios, the Sunbringer", role = "Heat / support", aiRole = "center",
 		fx = 2.2,
-		weapons = { { keys = { "heatray1" }, name = "Heat Ray", kind = "beam" }, { keys = { "ultraheavyriotcannon" }, name = "Riot Cannon", kind = "cannon" }, { keys = { "legflak_gun" }, name = "Flak Battery", kind = "cannon" } },
+		weapons = { { keys = { "heatray1" }, name = "Heat Ray", kind = "heatray" }, { keys = { "ultraheavyriotcannon" }, name = "Riot Cannon", kind = "plasma" }, { keys = { "legflak_gun" }, name = "Flak Battery", kind = "flak" } },
 		a1 = {
 			name = "Solar Aura", kind = "aura_heal", passive = true,
 			desc = "Allies (and structures) around Helios regain health every second",
@@ -299,7 +299,7 @@ local heroes = {
 	legt4tempest = {
 		title = "Tempest, the Stormblade", role = "Melee assault", aiRole = "front",
 		fx = 2.5,
-		weapons = { { keys = { "shotgun" }, name = "Storm Shotgun", kind = "shotgun" }, { keys = { "adv_rocket" }, name = "Rocket Pods", kind = "rockets" }, { keys = { "leg_t2_microflak_mobile" }, name = "Micro Flak", kind = "cannon" } },
+		weapons = { { keys = { "shotgun" }, name = "Storm Shotgun", kind = "shotgun" }, { keys = { "adv_rocket" }, name = "Rocket Pods", kind = "rockets" }, { keys = { "leg_t2_microflak_mobile" }, name = "Micro Flak", kind = "flak" } },
 		a1 = {
 			name = "Critical Strike", kind = "crit", passive = true,
 			desc = "A chance to deal multiplied damage",
