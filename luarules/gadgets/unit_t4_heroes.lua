@@ -2133,9 +2133,12 @@ if gadgetHandler:IsSyncedCode() then
 	end
 
 	-- enemy metal around vs allied metal around: enemy heroes at their grown strength, static defence x1.5,
-	-- unarmed things x0.1, only what the team can see. Returns the ratio, the enemy centre and the enemy heroes.
+	-- unarmed things x0.1, only what the team can see (and what shot the hero within 3 s: long-range guns fire
+	-- from outside the sight). Returns the ratio, the enemy centre and the enemy heroes.
 	local function danger(unitID, h, x, z)
 		local ally = spGetUnitAllyTeam(unitID)
+		local shooters = h.attackers or {}
+		local f = frameNow()
 		local enemy, friend, ex, ez = 0, 0, 0, 0
 		local foes
 		for _, uid in ipairs(spGetUnitsInCylinder(x, z, 1300)) do
@@ -2149,7 +2152,7 @@ if gadgetHandler:IsSyncedCode() then
 				elseif armedDefs[udid] then
 					friend = friend + c
 				end
-			elseif not spGetUnitIsDead(uid) and visibleTo(uid, ally) then
+			elseif not spGetUnitIsDead(uid) and (visibleTo(uid, ally) or f - (shooters[uid] or -999) < 90) then
 				local w = c
 				if hh then
 					w = heroPower(uid, hh)
@@ -2409,6 +2412,7 @@ if gadgetHandler:IsSyncedCode() then
 			return
 		end
 		h.retreating = true
+		h.retreatStart = f
 		h.retreatX, h.retreatZ = rx, rz
 		h.threatX, h.threatZ = ex, ez
 		h.focusHero = nil
@@ -2484,7 +2488,9 @@ if gadgetHandler:IsSyncedCode() then
 			if home < 700 * 700 and ratio < 0.5 and escorts[unitID] then
 				escortRelease(unitID, h.team, "hero is home", f)
 			end
-			if frac >= back then
+			-- back once healed, and not straight into what it ran from (a retreat for danger can start above
+			-- the return threshold)
+			if frac >= back and f - (h.retreatStart or 0) > 8 * GAME_SPEED and ratio < 1 then
 				h.retreating = false
 				spSetUnitRulesParam(unitID, "hero_retreat", 0, ALLIED)
 				aiLog(f, h.team, "%s back in the fight at %d%% hp", h.def.name, floor(frac * 100))
@@ -2531,6 +2537,11 @@ if gadgetHandler:IsSyncedCode() then
 		end
 		local tx, tz
 		local dx, dz = 0, 0
+		if not g.x and escortCost > 0 then
+			-- the escort is all that is left of the army: it is the group
+			local ecx, ecz = escortCentre(unitID)
+			g = { x = ecx, z = ecz, cost = 0, ex = g.ex, ez = g.ez }
+		end
 		-- an escort worth a quarter of the hero, at most 10k metal (the expensive heroes otherwise waited
 		-- at the altar for an army cell of 35-45k that the AI rarely gathers); the hero's own escort counts
 		if g.x and g.cost + escortCost >= min(h.def.cost * 0.25, H.AI_ESCORT) then
