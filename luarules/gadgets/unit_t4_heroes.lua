@@ -23,7 +23,9 @@ end
 --   hero_itemcdlen_<slot>, hero_barrier; team rules params (allies) hero_stash_n, hero_stash_<i>, hero_stash_ver.
 -- Unit rules params: hero_level (in LOS), hero_xp (0..1 to the next level), hero_points,
 --   hero_rank_<branch>, hero_ready_<branch> (frame the ability is ready), hero_on_<branch> (frame an
---   active effect ends; in LOS), hero_retreat (AI care). Team rules params (allies):
+--   active effect ends; in LOS), hero_retreat (AI care), hero_absorb (active_shield left), hero_cloaked,
+--   hero_summon_expire (on a summoned unit). Game rules param hero_ability_log = 1: "[ability]" infolog lines.
+--   Team rules params (allies):
 --   hero_dead_<name> (the level a revive brings back), hero_revive_<name> (revive metal cost).
 
 local H = VFS.Include("luarules/configs/t4_heroes.lua")
@@ -178,22 +180,10 @@ if gadgetHandler:IsSyncedCode() then
 	end
 
 	for _, def in pairs(heroDefs) do
-		-- every weapon any rank swaps is watched; the swap itself is looked up per unit
-		for _, key in ipairs({ "a1", "a2", "ult" }) do
-			local b = def.cfg[key]
-			if b and b.ranks then
-				for _, r in ipairs(b.ranks) do
-					for _, sw in ipairs({ r.swap, r.swap2 }) do
-						for _, wdid in ipairs(keyWdids(def, sw and sw.weapon or "")) do
-							swapWatch[wdid] = true
-						end
-					end
-				end
-			end
-			if b and (b.kind == "chain" or b.kind == "cluster") then
-				for _, wdid in ipairs(keyWdids(def, b.weapon)) do
-					explWatch[wdid] = true
-				end
+		-- the ability kit's projectiles (hero_* extras, not the tier copies): their explosions apply the damage
+		for _, wdid in pairs(def.extra) do
+			if not WeaponDefs[wdid].customParams.t4_tier then
+				explWatch[wdid] = true
 			end
 		end
 		-- visual tiers: every weapon of a tree is watched, its copies map back to it
@@ -319,11 +309,73 @@ if gadgetHandler:IsSyncedCode() then
 		return x + math.cos(a) * d, z + math.sin(a) * d
 	end
 
-	local function nukeAt(h, x, z)
-		local wdid = h.def.extra.hero_nova
-		if wdid then
-			local y = spGetGroundHeight(x, z)
-			Spring.SpawnExplosion(x, y + 5, z, 0, 0, 0, { weaponDef = wdid, owner = h.unitID, damageGround = true })
+	---------------------------------------------------------------- ability kit: shared state (v15)
+	-- a1/a2/ult are `kind`s of the kit (CUSTOM.md, "Ability kit"; casts and passives in the "abilities"
+	-- sections below) with per-rank values { r1, r2, r3 } (a plain number = every rank). Abilities never
+	-- touch the hero's weapons: their damage is their own, dealt by the gadget to enemies only (abilityHurt),
+	-- and grows with the hero's level by H.ABILITY_POWER_PER_LEVEL - not with items, crits or weapon ranks.
+
+	local ABILITY_KEYS = { "a1", "a2", "ult" }
+	local POWER_PER_LEVEL = H.ABILITY_POWER_PER_LEVEL or 0.015
+	local inAbility = false -- true while the gadget deals ability damage (the damage callins see it)
+	local auraArmor = {}   -- unitID -> share of damage taken removed (aura_armor)
+	local slowed = {}      -- unitID -> slow applied (aura_slow)
+	local summoned = {}    -- unitID -> { owner, expire } (active_summon)
+	local abProj = {}      -- projectileID -> frame: projectiles of the kit (no engine damage of their own)
+	-- defined with the casts below; the damage callins and the lifecycle call them
+	local abilityAttackMult, abilityVictim, abilityOnHit, abilityUnitDestroyed
+
+	-- a per-rank value
+	local function val(v, r)
+		if type(v) == "table" then
+			return v[r] or v[#v]
+		end
+		return v
+	end
+
+	-- ability damage, healing and absorb grow with the hero's level
+	local function abilityPower(h)
+		return 1 + POWER_PER_LEVEL * (((h and h.level) or 1) - 1)
+	end
+
+	-- the learned ability of a kind: b, rank, key
+	local function learnedOf(h, kind)
+		local cfg = h.def.cfg
+		for _, key in ipairs(ABILITY_KEYS) do
+			local b = cfg[key]
+			if b and b.kind == kind then
+				local r = rankOf(h, key)
+				if r > 0 then
+					return b, r, key
+				end
+			end
+		end
+	end
+
+	-- the stat passives, added to the mods sumMods builds: `stats` ranks are absolute (HP, HP/s, elmos/s,
+	-- elmos) and become shares of the hero's base, the unit the stat code works in
+	local function abilityMods(h, m)
+		local d = h.def
+		for _, key in ipairs(ABILITY_KEYS) do
+			local b = d.cfg[key]
+			local r = rankOf(h, key)
+			if b and r > 0 then
+				if b.kind == "stats" and b.ranks and b.ranks[r] then
+					local s = b.ranks[r]
+					m.hp = m.hp + (s.hp or 0) / max(1, d.health)
+					m.armor = m.armor + (s.armor or 0)
+					m.regen = m.regen + (s.regen or 0) / max(1, d.health)
+					m.speed = m.speed + (s.speed or 0) / max(1, d.speed)
+					m.sight = m.sight + (s.sight or 0) / max(1, d.sight)
+					if d.radar > 0 then
+						m.radar = m.radar + (s.radar or 0) / d.radar
+					end
+				elseif b.kind == "lifesteal" then
+					m.lifesteal = m.lifesteal + val(b.frac, r)
+				elseif b.kind == "thorns" then
+					m.thorns = m.thorns + val(b.frac, r)
+				end
+			end
 		end
 	end
 
@@ -576,13 +628,7 @@ if gadgetHandler:IsSyncedCode() then
 				m.sightAbs = m.sightAbs + (a.sight or 0) * r
 			end
 		end
-		for _, key in ipairs({ "a1", "a2", "ult" }) do
-			local b = cfg[key]
-			local r = rankOf(h, key)
-			if b and r > 0 and b.ranks and b.ranks[r] then
-				add(b.ranks[r], 1)
-			end
-		end
+		abilityMods(h, m) -- stat passives of the abilities (never weapon changes)
 		-- weapon trees
 		for wi, tree in pairs(h.def.trees) do
 			m.tree[wi] = weaponTree(h, wi, tree)
@@ -711,14 +757,6 @@ if gadgetHandler:IsSyncedCode() then
 
 		-- weapons: global mods x the weapon's own tree
 		applyWeapons(unitID, h, m, buff)
-
-		-- projectile swaps: weaponDefID -> { to, every, other }
-		h.swaps = {}
-		for _, sw in ipairs(m.swaps) do
-			for _, n in ipairs(def.keyNum[sw.weapon] or {}) do
-				h.swaps[def.weapons[n].wdid] = { to = def.extra[sw.to], every = sw.every or 1, other = sw.other and def.extra[sw.other], num = n, scatter = sw.scatter }
-			end
-		end
 
 		-- movement
 		local speedMult = buff.immobile and 0.02 or max(0.2, 1 + m.speed + (buff.speed or 0))
@@ -974,7 +1012,7 @@ if gadgetHandler:IsSyncedCode() then
 			end
 			Spring.InsertUnitCmdDesc(unitID, {
 				id = cmdID, type = ctype, name = b.name, action = b.action,
-				cursor = b.target and "Attack" or nil, tooltip = b.name .. ": " .. b.desc,
+				cursor = b.cursor or (b.target and "Attack") or nil, tooltip = b.name .. ": " .. b.desc,
 				disabled = rankOf(h, key) == 0,
 			})
 		end
@@ -1050,8 +1088,9 @@ if gadgetHandler:IsSyncedCode() then
 		guardMult[unitID] = nil
 		invuln[unitID] = nil
 		auraDamage[unitID] = nil
+		local summon = abilityUnitDestroyed(unitID) -- a summon gives no experience and drops nothing
 		local _, _, _, _, bp = spGetUnitHealth(unitID)
-		if bp and bp >= 1 then
+		if bp and bp >= 1 and not summon then
 			giveXPForDeath(unitID, unitDefID, attackerID)
 		end
 		local h = heroes[unitID]
@@ -1280,34 +1319,21 @@ if gadgetHandler:IsSyncedCode() then
 		if invuln[unitID] then
 			return 0, 0
 		end
-		-- hero warheads and novas never hurt their own side (a mini-nuke carpet over a melee hero)
-		if heroWeapon[weaponDefID] and attackerTeam and spAreTeamsAllied(attackerTeam, unitTeam) then
+		-- hero warheads, novas and abilities never hurt their own side (a meteor rain over a melee hero)
+		if (heroWeapon[weaponDefID] or inAbility) and attackerTeam and spAreTeamsAllied(attackerTeam, unitTeam) then
 			return 0, 0
 		end
-		local m = guardMult[unitID] or 1
+		-- a projectile of the ability kit: its damage is the ability's, applied when it explodes
+		if projectileID and abProj[projectileID] and not inAbility then
+			return 0, 0
+		end
+		local m = (guardMult[unitID] or 1) * (1 - (auraArmor[unitID] or 0))
 		local a = attackerID and heroes[attackerID]
-		if a then
+		if a and not inAbility then
 			m = m * a.dmgMult * (a.wdmg and a.wdmg[weaponDefID] or 1)
 			if not paralyzer then
 				m = m * weaponCrit(a, weaponDefID, unitID)
-			end
-			local cfg = a.def.cfg
-			local r = rankOf(a, "a1")
-			if r > 0 and not paralyzer then
-				local b = cfg.a1
-				if b.kind == "crit" and random() < b.chance[r] then
-					m = m * b.mult[r]
-					local f = frameNow()
-					if f - a.lastCrit > 8 then
-						a.lastCrit = f
-						local x, y, z = spGetUnitPosition(unitID)
-						if x then
-							ceg("hero-crit", x, y + 20, z)
-						end
-					end
-				elseif b.kind == "slayer" and (unitCost[unitDefID] or 0) >= b.minCost then
-					m = m * (1 + b.mult[r])
-				end
+				m = m * abilityAttackMult(a, unitID, unitDefID) -- crit / slayer passives
 			end
 			local crit = a.mods and a.mods.crit
 			if crit and not paralyzer and random() < crit[1] then
@@ -1321,7 +1347,7 @@ if gadgetHandler:IsSyncedCode() then
 					end
 				end
 			end
-		elseif attackerID and auraDamage[attackerID] then
+		elseif not a and attackerID and auraDamage[attackerID] then
 			m = m * (1 + auraDamage[attackerID])
 		end
 		if a then
@@ -1331,36 +1357,13 @@ if gadgetHandler:IsSyncedCode() then
 		if v then
 			m = m * (1 - v.armor) / (v.hpMult or 1)
 			local f = frameNow()
-			if v.bladestorm and v.bladestorm.expire > f then
-				m = m * (1 - v.bladestorm.armor)
-			end
 			if v.undyingUntil > f then
 				return 0, 0
 			end
-			if not paralyzer and v.def.cfg.ult.kind == "undying" then
-				local r = rankOf(v, "ult")
-				local hp = spGetUnitHealth(unitID)
-				if r > 0 and v.undyingReady <= f and hp and damage * m >= hp then
-					local b = v.def.cfg.ult
-					v.undyingReady = f + b.cooldown[r] * GAME_SPEED
-					v.undyingUntil = f + 3 * GAME_SPEED
-					spSetUnitRulesParam(unitID, "hero_ready_ult", v.undyingReady, ALLIED)
-					spSetUnitRulesParam(unitID, "hero_cd_ult", b.cooldown[r] * GAME_SPEED, ALLIED)
-					spSetUnitRulesParam(unitID, "hero_on_ult", v.undyingUntil, INLOS)
-					delayed[#delayed + 1] = { frame = f + 1, fn = function()
-						if heroes[unitID] then
-							local _, maxHp = spGetUnitHealth(unitID)
-							spSetUnitHealth(unitID, maxHp * b.heal[r])
-							local x, y, z = spGetUnitPosition(unitID)
-							ceg("hero-undying", x, y, z)
-							if b.nova[r] then
-								nukeAt(v, x, z)
-							end
-							toUI("undying", unitID, r)
-						end
-					end }
-					return 0, 0
-				end
+			-- bladestorm / buff armor, the absorb shield, undying
+			m = abilityVictim(unitID, v, damage, m, paralyzer, f)
+			if m <= 0 then
+				return 0, 0
 			end
 		end
 		m = itemDefense(unitID, v, damage, m, paralyzer) -- items: aura armor, last stand, shields, cheat death
@@ -1483,13 +1486,14 @@ if gadgetHandler:IsSyncedCode() then
 			value = value * 0.25
 		end
 		addXP(attackerID, h, value)
-		if inThorns then
+		if inThorns or inAbility then
 			return
 		end
 		if paralyzer then
 			weaponHit(h, attackerID, unitID, weaponDefID, damage, true)
 			return
 		end
+		abilityOnHit(attackerID, h, unitID) -- procs of the abilities, a hit ends a cloak
 		local mods = h.mods or {}
 		if (mods.lifesteal or 0) > 0 then
 			local hp, mhp = spGetUnitHealth(attackerID)
@@ -1597,7 +1601,7 @@ if gadgetHandler:IsSyncedCode() then
 		end
 	end
 
-	---------------------------------------------------------------- projectile swaps (nuclear rockets & co)
+	---------------------------------------------------------------- visual tiers of upgraded weapons
 
 	local upTime = {}
 	for wdid, wd in pairs(WeaponDefs) do
@@ -1714,437 +1718,1210 @@ if gadgetHandler:IsSyncedCode() then
 		end
 	end
 
+	-- v15: abilities never swap a weapon's projectiles; only the visual tier of an upgraded weapon does
 	function gadget:ProjectileCreated(proID, ownerID, weaponDefID)
 		if not swapWatch[weaponDefID] or not ownerID then
 			return
 		end
 		local h = heroes[ownerID]
-		if not h then
-			return
-		end
-		local sw = h.swaps and h.swaps[weaponDefID]
-		local to
-		if sw then
-			h.shots[weaponDefID] = (h.shots[weaponDefID] or 0) + 1
-			to = (h.shots[weaponDefID] % sw.every == 0) and sw.to or sw.other
-		end
-		if not to then
+		if h then
 			tierSwap(proID, ownerID, weaponDefID, h)
-			return
-		end
-		local px, py, pz = Spring.GetProjectilePosition(proID)
-		local vx, vy, vz = Spring.GetProjectileVelocity(proID)
-		if not px then
-			return
-		end
-		local _, target = Spring.GetProjectileTarget(proID)
-		if not target then
-			-- at creation the projectile has no target yet: take the weapon's
-			local tt, _, wt = Spring.GetUnitWeaponTarget(ownerID, sw.num)
-			if tt == 1 or tt == 2 then
-				target = wt
-			end
-		end
-		local grav = Spring.GetProjectileGravity and Spring.GetProjectileGravity(proID) or gravityPerFrame
-		Spring.DeleteProjectile(proID)
-		projParams.pos[1], projParams.pos[2], projParams.pos[3] = px, py, pz
-		-- a little spread, so a multi-rocket salvo does not fly as one
-		local sp = sqrt(vx * vx + vy * vy + vz * vz) * 0.08
-		projParams.speed[1], projParams.speed[2], projParams.speed[3] = vx + (random() - 0.5) * sp, vy, vz + (random() - 0.5) * sp
-		projParams.owner = ownerID
-		projParams.team = h.team
-		projParams.gravity = grav
-		projParams.ttl = 900
-		projParams.tracking = type(target) == "number" and target or nil
-		projParams.upTime = upTime[to] -- starbursts climb this many frames, then turn to the target
-		if sw.scatter and target then
-			-- a salvo carpets the area around the target instead of converging on one point
-			local tx, ty, tz
-			if type(target) == "number" then
-				tx, ty, tz = spGetUnitPosition(target)
-			else
-				tx, ty, tz = target[1], target[2], target[3]
-			end
-			if tx then
-				local ax, az = randomPointIn(tx, tz, sw.scatter)
-				target = { ax, spGetGroundHeight(ax, az), az }
-				projParams.tracking = nil
-			end
-		end
-		local newID = spSpawnProjectile(to, projParams)
-		projParams.tracking = nil
-		projParams.upTime = nil
-		if newID and target then
-			if type(target) == "number" then
-				Spring.SetProjectileTarget(newID, target, string.byte("u"))
-			elseif type(target) == "table" then
-				Spring.SetProjectileTarget(newID, target[1], target[2], target[3])
-			end
 		end
 	end
 
-	---------------------------------------------------------------- chain lightning / cluster payload
+	---------------------------------------------------------------- abilities: the kit (v15)
+	-- Casting, damage, projectiles and timed effects of the ability kit. Kinds and their parameters:
+	-- CUSTOM.md, "Ability kit" (and the header of luarules/configs/t4_hero_defs_t4.lua).
 
-	local lightningParams = { pos = { 0, 0, 0 }, ["end"] = { 0, 0, 0 }, ttl = 2, owner = -1, team = -1 }
+	local abilityReady, markActive, seenBy, healUnit, cast, dashes, tryCast, castRange, processEvents, refreshProtection, abilityFrame, abilityPassivesBegin, abilityBuffTick, abilityAuras, abilityShield, abilityPassivesEnd
+	do
+		function abilityReady(h, key)
+			return rankOf(h, key) > 0 and (h.ready[key] or 0) <= frameNow()
+		end
 
-	function gadget:Explosion(weaponDefID, px, py, pz, attackerID, projectileID)
-		if not explWatch[weaponDefID] or not attackerID then
-			return false
+		local function startCooldown(unitID, h, key, b, r)
+			local cd = val(b.cooldown, r) or 30
+			cd = cd * max(0.4, 1 - (h.mods and h.mods.cdr or 0))
+			h.ready[key] = frameNow() + floor(cd * GAME_SPEED)
+			spSetUnitRulesParam(unitID, "hero_ready_" .. key, h.ready[key], ALLIED)
+			spSetUnitRulesParam(unitID, "hero_cd_" .. key, floor(cd * GAME_SPEED), ALLIED)
 		end
-		weaponDefID = tierBase[weaponDefID] or weaponDefID
-		local h = heroes[attackerID]
-		if not h then
-			return false
+
+		function markActive(unitID, key, seconds)
+			spSetUnitRulesParam(unitID, "hero_on_" .. key, frameNow() + floor(seconds * GAME_SPEED), INLOS)
+			spSetUnitRulesParam(unitID, "hero_dur_" .. key, floor(seconds * GAME_SPEED), INLOS)
 		end
-		local cfg = h.def.cfg
-		for _, key in ipairs({ "a1", "a2" }) do
-			local b = cfg[key]
-			local r = rankOf(h, key)
-			if r > 0 and b.kind == "chain" and h.def.extra.hero_chain then
-				local ally = spGetUnitAllyTeam(attackerID)
-				local targets = enemiesIn(px, pz, b.radius, ally)
-				local n = 0
-				for _, uid in ipairs(targets) do
-					local x, y, z = spGetUnitPosition(uid)
-					if x and ((x - px) ^ 2 + (z - pz) ^ 2) > 900 then
-						lightningParams.pos[1], lightningParams.pos[2], lightningParams.pos[3] = px, py + 10, pz
-						lightningParams["end"][1], lightningParams["end"][2], lightningParams["end"][3] = x, y + 20, z
-						lightningParams.owner = attackerID
-						lightningParams.team = h.team
-						spSpawnProjectile(h.def.extra.hero_chain, lightningParams)
-						n = n + 1
-						if n >= b.jumps[r] then
-							break
-						end
+
+		-- "[ability] ..." lines in the infolog while the game rules param hero_ability_log is 1 (bench scenes)
+		local function alog(fmt, ...)
+			if Spring.GetGameRulesParam("hero_ability_log") == 1 then
+				Spring.Echo("[ability] " .. string.format(fmt, ...))
+			end
+		end
+
+		function seenBy(uid, ally)
+			local los = spGetUnitLosState(uid, ally, true)
+			return los and los ~= 0
+		end
+
+		-- who casts: kept by effects that outlive the hero (a barrage keeps falling after it dies)
+		local function caster(unitID, h, key)
+			local b = h.def.cfg[key]
+			return { owner = unitID, ally = spGetUnitAllyTeam(unitID), team = h.team, name = h.def.name, key = key,
+				power = abilityPower(h), extra = h.def.extra, novaWeapon = b and b.novaWeapon }
+		end
+
+		local function ownerOf(c)
+			return spValidUnitID(c.owner) and not spGetUnitIsDead(c.owner) and c.owner or nil
+		end
+
+		-- ability damage to one unit: no hero multipliers, never to allies (UnitPreDamaged drops it)
+		local function abilityHurt(uid, dmg, ownerID, paraTime)
+			if not dmg or dmg <= 0 or not spValidUnitID(uid) or spGetUnitIsDead(uid) then
+				return
+			end
+			local prev = inAbility
+			inAbility = true
+			spAddUnitDamage(uid, dmg, paraTime or 0, (ownerID and spValidUnitID(ownerID)) and ownerID or nil)
+			inAbility = prev
+		end
+
+		local function abilityStun(uid, seconds, ownerID)
+			local _, maxHp = spGetUnitHealth(uid)
+			if maxHp and seconds and seconds > 0 then
+				abilityHurt(uid, maxHp * 3, ownerID, seconds)
+			end
+		end
+
+		-- damage (and stun / EMP) to every enemy of the caster within radius; returns the units hit
+		local function abilityBlast(c, x, z, radius, dmg, stunSeconds, emp)
+			local hit = enemiesIn(x, z, radius, c.ally)
+			local owner = ownerOf(c)
+			for _, uid in ipairs(hit) do
+				abilityHurt(uid, dmg, owner)
+				if emp and emp > 0 then
+					abilityHurt(uid, emp, owner, 3)
+				end
+				if stunSeconds and stunSeconds > 0 then
+					abilityStun(uid, stunSeconds, owner)
+				end
+			end
+			return hit
+		end
+
+		-- healing in effective HP (a hero's health is divided by its toughness, see applyStats)
+		function healUnit(uid, amount)
+			local hp, maxHp, _, _, bp = spGetUnitHealth(uid)
+			if not hp or not bp or bp < 1 or hp >= maxHp then
+				return 0
+			end
+			local v = heroes[uid]
+			local add = min(maxHp - hp, amount / (v and v.hpMult or 1))
+			spSetUnitHealth(uid, hp + add)
+			return add
+		end
+
+		local function healAllies(c, x, z, radius, amount, fx)
+			local n, total = 0, 0
+			for _, uid in ipairs(alliesIn(x, z, radius, c.ally)) do
+				local add = healUnit(uid, amount)
+				if add > 0 then
+					n = n + 1
+					total = total + add
+					if fx and n <= 12 then
+						local ux, uy, uz = spGetUnitPosition(uid)
+						ceg(fx, ux, uy, uz)
 					end
 				end
-			elseif r > 0 and b.kind == "cluster" and h.def.extra[b.to] then
-				for i = 1, b.count[r] do
-					local ang = random() * 6.283
-					local sp = 2 + random() * 3.5
-					projParams.pos[1], projParams.pos[2], projParams.pos[3] = px, py + 20, pz
-					projParams.speed[1], projParams.speed[2], projParams.speed[3] = math.cos(ang) * sp, 5 + random() * 4, math.sin(ang) * sp
-					projParams.owner = attackerID
-					projParams.team = h.team
-					projParams.gravity = gravityPerFrame
-					spSpawnProjectile(h.def.extra[b.to], projParams)
+			end
+			return n, total
+		end
+
+		-- nova[] of an ability: a number is the finale's damage; true is novaDmg, or three times the
+		-- ability's own damage (dmg / tick / flat)
+		local function novaOf(b, r)
+			local v = val(b.nova, r)
+			if v == true then
+				return val(b.novaDmg, r) or 3 * (val(b.dmg, r) or val(b.tick, r) or val(b.flat, r) or 3000)
+			end
+			return type(v) == "number" and v or 0
+		end
+
+		local abParams = { pos = { 0, 0, 0 }, speed = { 0, 0, 0 }, owner = -1, team = -1, gravity = 0, ttl = 900 }
+		local abBeam = { pos = { 0, 0, 0 }, ["end"] = { 0, 0, 0 }, ttl = 8, owner = -1, team = -1 }
+		local shots = {} -- projectileID -> shot { c, dmg, aoe, stun, emp, fx, expire }: applied when it explodes
+
+		-- the weapondef an ability spawns: its `weapon`, a hero_* extra of the hero named after the projectile,
+		-- or the kit's own hero_ab_* (every hero has those, gamedata/custom_t4_abilities.lua)
+		local WEAPON_FALLBACK = {
+			missile = { "hero_missile", "hero_heavyrocket" }, shell = { "hero_shell", "hero_heavyshell" },
+			meteor = { "hero_meteor" }, bolt = { "hero_stormbolt" }, nuke = { "hero_nuke", "hero_nova" },
+			spear = { "hero_spear" }, chain = { "hero_chain" },
+		}
+		local function abilityWeapon(h, b, proj)
+			local e = h.def.extra
+			if b.weapon and e[b.weapon] then
+				return e[b.weapon]
+			end
+			for _, name in ipairs(WEAPON_FALLBACK[proj] or {}) do
+				if e[name] then
+					return e[name]
 				end
 			end
-		end
-		return false
-	end
-
-	---------------------------------------------------------------- abilities
-
-	local function abilityReady(h, key)
-		return rankOf(h, key) > 0 and (h.ready[key] or 0) <= frameNow()
-	end
-
-	local function startCooldown(unitID, h, key, b, r)
-		local cd = type(b.cooldown) == "table" and b.cooldown[r] or b.cooldown or 30
-		cd = cd * max(0.4, 1 - (h.mods and h.mods.cdr or 0))
-		h.ready[key] = frameNow() + floor(cd * GAME_SPEED)
-		spSetUnitRulesParam(unitID, "hero_ready_" .. key, h.ready[key], ALLIED)
-		spSetUnitRulesParam(unitID, "hero_cd_" .. key, floor(cd * GAME_SPEED), ALLIED)
-	end
-
-	local function markActive(unitID, key, seconds)
-		spSetUnitRulesParam(unitID, "hero_on_" .. key, frameNow() + floor(seconds * GAME_SPEED), INLOS)
-		spSetUnitRulesParam(unitID, "hero_dur_" .. key, floor(seconds * GAME_SPEED), INLOS)
-	end
-
-	local cast = {}
-
-	cast.active_guard = function(unitID, h, key, b, r)
-		events[#events + 1] = { kind = "guard", owner = unitID, expire = frameNow() + b.duration * GAME_SPEED, radius = b.radius, mult = 1 - b.reduce[r] }
-		markActive(unitID, key, b.duration)
-		local x, y, z = heroPos(unitID)
-		ceg("hero-guard-cast", x, y, z)
-		return true
-	end
-
-	cast.active_dome = function(unitID, h, key, b, r)
-		events[#events + 1] = { kind = "dome", owner = unitID, expire = frameNow() + b.duration[r] * GAME_SPEED, radius = b.radius }
-		markActive(unitID, key, b.duration[r])
-		local x, y, z = heroPos(unitID)
-		ceg("hero-dome-cast", x, y, z)
-		return true
-	end
-
-	cast.active_buff = function(unitID, h, key, b, r)
-		local dur = type(b.duration) == "table" and b.duration[r] or b.duration
-		h.buff = { expire = frameNow() + floor(dur * GAME_SPEED), fx = b.buff, key = key, trailDmg = b.trailDmg and b.trailDmg[r] }
-		applyStats(unitID, h)
-		markActive(unitID, key, dur)
-		local x, y, z = heroPos(unitID)
-		ceg(b.fx or "hero-barrage", x, y, z)
-		return true
-	end
-
-	cast.active_pulse = function(unitID, h, key, b, r)
-		local num = h.def.shieldNum
-		if not num then
-			return false
-		end
-		local _, power = Spring.GetUnitShieldState(unitID, num)
-		power = power or 0
-		local used = power * 0.5
-		Spring.SetUnitShieldState(unitID, num, true, power - used)
-		local x, y, z = heroPos(unitID)
-		damageArea(x, z, b.radius[r], spGetUnitAllyTeam(unitID), used * b.ratio[r], unitID, b.stun[r])
-		ceg("hero-pulse", x, y, z)
-		ceg("custom:genericshellexplosion-huge-lightning--x4", x, y + 30, z)
-		return true
-	end
-
-	cast.active_stomp = function(unitID, h, key, b, r)
-		local x, y, z = heroPos(unitID)
-		damageArea(x, z, b.radius[r], spGetUnitAllyTeam(unitID), b.dmg[r], unitID, b.stun[r])
-		ceg("hero-stomp", x, y, z)
-		ceg("custom:crusherkrog--x5", x, y, z)
-		return true
-	end
-
-	cast.active_flare = function(unitID, h, key, b, r)
-		local x, y, z = heroPos(unitID)
-		local ally = spGetUnitAllyTeam(unitID)
-		damageArea(x, z, b.radius[r], ally, b.dmg[r], unitID)
-		for _, uid in ipairs(alliesIn(x, z, b.radius[r], ally)) do
-			local hp, maxHp = spGetUnitHealth(uid)
-			if hp and maxHp then
-				spSetUnitHealth(uid, min(maxHp, hp + maxHp * b.heal))
+			local kit = e["hero_ab_" .. (proj == "chain" and "bolt" or proj)]
+			if kit then
+				return kit
 			end
+			alog("%s: no weapondef for %s (%s), skipped", h.def.name, proj, tostring(b.weapon))
 		end
-		ceg("hero-flare", x, y, z)
-		ceg("custom:heatray-huge--x3", x, y + 10, z)
-		return true
-	end
 
-	cast.active_bladestorm = function(unitID, h, key, b, r)
-		h.bladestorm = { expire = frameNow() + b.duration * GAME_SPEED, armor = b.armor }
-		events[#events + 1] = { kind = "bladestorm", owner = unitID, expire = h.bladestorm.expire, radius = b.radius[r], dmg = b.dmg[r] }
-		markActive(unitID, key, b.duration)
-		return true
-	end
-
-	cast.active_storm = function(unitID, h, key, b, r, tx, tz)
-		local f = frameNow()
-		local ticks = floor(b.duration * GAME_SPEED / 6)
-		events[#events + 1] = { kind = "storm", owner = unitID, x = tx, z = tz, expire = f + b.duration * GAME_SPEED,
-			radius = b.radius, perTick = b.bolts[r] / ticks, acc = 0, dmg = b.dmg[r], emp = b.emp }
-		ceg("hero-target", tx, spGetGroundHeight(tx, tz), tz)
-		ceg("hero-storm-cloud", tx, spGetGroundHeight(tx, tz), tz)
-		markActive(unitID, key, b.duration)
-		return true
-	end
-
-	cast.active_meteors = function(unitID, h, key, b, r, tx, tz)
-		local f = frameNow()
-		local ticks = floor(b.duration * GAME_SPEED / 6)
-		events[#events + 1] = { kind = "meteors", owner = unitID, x = tx, z = tz, expire = f + b.duration * GAME_SPEED,
-			radius = b.radius, perTick = b.count[r] / ticks, acc = 0, wdid = h.def.extra[b.weapon], nova = b.nova[r] }
-		ceg("hero-target", tx, spGetGroundHeight(tx, tz), tz)
-		markActive(unitID, key, b.duration)
-		return true
-	end
-
-	cast.active_sunbeam = function(unitID, h, key, b, r, tx, tz)
-		events[#events + 1] = { kind = "sunbeam", owner = unitID, x = tx, z = tz, expire = frameNow() + b.duration * GAME_SPEED,
-			radius = b.radius, dmg = b.tick[r], nova = b.nova[r] }
-		ceg("hero-sunbeam-start", tx, spGetGroundHeight(tx, tz), tz)
-		markActive(unitID, key, b.duration)
-		return true
-	end
-
-	cast.active_spear = function(unitID, h, key, b, r, tx, tz, targetID)
-		if not targetID or not spValidUnitID(targetID) then
-			return false
-		end
-		local x, y, z = heroPos(unitID)
-		local ex, ey, ez = spGetUnitPosition(targetID)
-		local dx, dy, dz = ex - x, ey - y, ez - z
-		local d = sqrt(dx * dx + dy * dy + dz * dz)
-		if d > b.range[r] then
-			return false
-		end
-		local wdid = h.def.extra.hero_spear
-		if wdid then
-			local v = 60
-			projParams.pos[1], projParams.pos[2], projParams.pos[3] = x, y + 60, z
-			projParams.speed[1], projParams.speed[2], projParams.speed[3] = dx / d * v, (dy - 40) / d * v, dz / d * v
-			projParams.owner = unitID
-			projParams.team = h.team
-			projParams.gravity = 0
-			local pid = spSpawnProjectile(wdid, projParams)
+		-- a spawned ability projectile deals no engine damage of its own (UnitPreDamaged): the ability's numbers
+		-- apply when it explodes
+		local function spawnAb(wdid, c, px, py, pz, vx, vy, vz)
+			if not wdid then
+				return nil
+			end
+			abParams.pos[1], abParams.pos[2], abParams.pos[3] = px, py, pz
+			abParams.speed[1], abParams.speed[2], abParams.speed[3] = vx, vy, vz
+			abParams.owner = ownerOf(c) or -1
+			abParams.team = c.team
+			local pid = spSpawnProjectile(wdid, abParams)
 			if pid then
-				Spring.SetProjectileTarget(pid, targetID, string.byte("u"))
+				abProj[pid] = frameNow() + 900
 			end
+			return pid
 		end
-		local _, maxHp = spGetUnitHealth(targetID)
-		local impact = frameNow() + floor(d / 60) + 1
-		delayed[#delayed + 1] = { frame = impact, fn = function()
-			if spValidUnitID(targetID) and not spGetUnitIsDead(targetID) then
-				spAddUnitDamage(targetID, (maxHp or 0) * b.pct[r] + b.flat, 0, unitID)
-				local px, py, pz = spGetUnitPosition(targetID)
-				ceg("custom:genericshellexplosion-huge-lightning--x4", px, py + 20, pz)
-				if b.nova[r] and heroes[unitID] then
-					nukeAt(heroes[unitID], px, pz)
+
+		-- a lightning bolt drawn from a to b (hero_ab_bolt, or the ability's `weapon`: a LightningCannon shot)
+		local function boltVisual(c, wdid, x1, y1, z1, x2, y2, z2, ttl)
+			wdid = wdid or (c.extra and c.extra.hero_ab_bolt)
+			if not wdid then
+				return
+			end
+			abBeam.pos[1], abBeam.pos[2], abBeam.pos[3] = x1, y1, z1
+			abBeam["end"][1], abBeam["end"][2], abBeam["end"][3] = x2, y2, z2
+			abBeam.ttl = ttl or 8
+			abBeam.owner = ownerOf(c) or -1
+			abBeam.team = c.team
+			spSpawnProjectile(wdid, abBeam)
+		end
+
+		local function abilityImpact(s, x, z)
+			local y = spGetGroundHeight(x, z)
+			local hit = abilityBlast(s.c, x, z, s.aoe, s.dmg, s.stun, s.emp)
+			if s.fx then
+				ceg(s.fx, x, y, z)
+			end
+			s.hits = (s.hits or 0) + #hit
+			alog("%s %s impact dmg=%d aoe=%d hit=%d", s.c.name, s.c.key, s.dmg, s.aoe, #hit)
+		end
+
+		-- the nuclear (or EMP, or fire) finale of an ultimate: the hero's own hero_nova weapondef (T2 heroes) or
+		-- a nuke of the kit sized by the radius - only its effect and sound, the damage is the ability's
+		local FINALE_WEAPON = { ["hero-finale-emp"] = "hero_ab_finale_emp", ["hero-finale-fire"] = "hero_ab_finale_fire" }
+		local function abilityFinale(c, x, z, dmg, radius, stunSeconds, fx)
+			local y = spGetGroundHeight(x, z)
+			local e = c.extra or {}
+			-- an EMP / fire finale is its own effect; otherwise a nuke sized by the radius under hero-finale
+			local own = fx and e[FINALE_WEAPON[fx] or ""]
+			local wdid = own or e[c.novaWeapon or "hero_nova"] or (radius >= 520 and e.hero_ab_nova) or (radius >= 300 and e.hero_ab_novamed) or e.hero_ab_novasmall
+			if wdid then
+				Spring.SpawnExplosion(x, y + 5, z, 0, 0, 0, { weaponDef = wdid, owner = ownerOf(c) or -1, damageGround = false,
+					craterAreaOfEffect = 0, damageAreaOfEffect = 0 })
+			end
+			if not own then
+				ceg(fx or "hero-finale", x, y, z)
+			end
+			local hit = abilityBlast(c, x, z, radius, dmg, stunSeconds)
+			alog("%s %s finale dmg=%d radius=%d stun=%s hit=%d", c.name, c.key, dmg, radius, tostring(stunSeconds), #hit)
+		end
+
+		local exploded = {} -- ability projectiles that exploded this frame (their engine damage follows the callin)
+
+		function gadget:Explosion(weaponDefID, px, py, pz, attackerID, projectileID)
+			if projectileID and abProj[projectileID] then
+				exploded[#exploded + 1] = projectileID
+				local s = shots[projectileID]
+				if s then
+					shots[projectileID] = nil
+					abilityImpact(s, px, pz)
 				end
 			end
-		end }
-		return true
-	end
-
-	-- cast an ability now; tx/tz/targetID for targeted ones. Returns true when it went off.
-	local function tryCast(unitID, h, key, tx, tz, targetID)
-		local b = h.def.cfg[key]
-		if not b or not cast[b.kind] or not abilityReady(h, key) then
 			return false
 		end
-		local r = rankOf(h, key)
-		if not cast[b.kind](unitID, h, key, b, r, tx, tz, targetID) then
-			return false
-		end
-		startCooldown(unitID, h, key, b, r)
-		toUI("cast", unitID, r, key == "a1" and 4 or (key == "a2" and 5 or 6)) -- index in H.branchOrder
-		return true
-	end
 
-	local function castRange(b, r)
-		if type(b.range) == "table" then
-			return b.range[r]
-		end
-		return b.range or 0
-	end
+		---------------------------------------------------------------- abilities: self buffs
 
-	---------------------------------------------------------------- timed effects
+		-- active_buff / active_cloak: h.buffs[key] = { expire, fx, r }; h.buff is their merge (applyStats reads
+		-- speed / damage / immobile of it). Only these keys exist - a buff never changes a weapon.
+		local BUFF_SUM = { speed = true, damage = true, armor = true, regen = true }
+		local BUFF_FLAG = { immobile = true, cloak = true }
 
-	local stormParams = { pos = { 0, 0, 0 }, ["end"] = { 0, 0, 0 }, ttl = 3, owner = -1, team = -1 }
-
-	local function processEvents(f)
-		local keep = {}
-		for _, e in ipairs(events) do
-			local h = heroes[e.owner]
-			if e.expire > f and (h or e.kind == "storm" or e.kind == "meteors" or e.kind == "sunbeam") then
-				keep[#keep + 1] = e
-				local ownerAlly = h and spGetUnitAllyTeam(e.owner) or e.ally
-				e.ally = ownerAlly
-				local teamID = h and h.team or e.team
-				e.team = teamID
-				if e.kind == "storm" then
-					e.acc = e.acc + e.perTick
-					while e.acc >= 1 do
-						e.acc = e.acc - 1
-						local targets = enemiesIn(e.x, e.z, e.radius, ownerAlly)
-						local x, z
-						if #targets > 0 and random() < 0.75 then
-							x, _, z = spGetUnitPosition(targets[random(#targets)])
-						end
-						if not x then
-							x, z = randomPointIn(e.x, e.z, e.radius)
-						end
-						local y = spGetGroundHeight(x, z)
-						stormParams.pos[1], stormParams.pos[2], stormParams.pos[3] = x + random(-200, 200), y + 1600, z + random(-200, 200)
-						stormParams["end"][1], stormParams["end"][2], stormParams["end"][3] = x, y + 5, z
-						stormParams.owner = h and e.owner or -1
-						stormParams.team = teamID
-						if h and h.def.extra.hero_stormbolt then
-							spSpawnProjectile(h.def.extra.hero_stormbolt, stormParams)
-						end
-						for _, uid in ipairs(enemiesIn(x, z, 140, ownerAlly)) do
-							spAddUnitDamage(uid, e.dmg, 0, h and e.owner or nil)
-							spAddUnitDamage(uid, e.emp, 3, h and e.owner or nil)
-						end
-						ceg("custom:lightning_stormbig--x2", x, y + 10, z)
-						ceg("hero-zap", x, y, z)
+		local function setCloak(unitID, h, on)
+			if on == (h.cloaked or false) then
+				return
+			end
+			h.cloaked = on
+			-- the engine cloak needs a canCloak unitdef (unit_cloak.lua vetoes the rest): the enemies' line of
+			-- sight to the hero is switched off instead (a radar blip stays, like a cloaked unit's)
+			local myAlly = spGetUnitAllyTeam(unitID)
+			for _, at in ipairs(Spring.GetAllyTeamList()) do
+				if at ~= myAlly then
+					if on then
+						Spring.SetUnitLosState(unitID, at, { los = false, prevLos = false })
+						Spring.SetUnitLosMask(unitID, at, { los = true, prevLos = true })
+					else
+						Spring.SetUnitLosMask(unitID, at, 0)
 					end
-					if f % 30 < 6 then
-						ceg("hero-storm-cloud", e.x, spGetGroundHeight(e.x, e.z), e.z)
-					end
-				elseif e.kind == "meteors" then
-					e.acc = e.acc + e.perTick
-					while e.acc >= 1 do
-						e.acc = e.acc - 1
-						local targets = enemiesIn(e.x, e.z, e.radius, ownerAlly)
-						local x, z
-						if #targets > 0 and random() < 0.6 then
-							x, _, z = spGetUnitPosition(targets[random(#targets)])
-						end
-						if not x then
-							x, z = randomPointIn(e.x, e.z, e.radius)
-						end
-						local y = spGetGroundHeight(x, z)
-						-- falls from 2400 above at an angle, lands in ~2 s
-						local fall = 60
-						local vy = -2400 / fall
-						projParams.pos[1], projParams.pos[2], projParams.pos[3] = x - 700, y + 2400, z - 300
-						projParams.speed[1], projParams.speed[2], projParams.speed[3] = 700 / fall, vy, 300 / fall
-						projParams.owner = h and e.owner or -1
-						projParams.team = teamID
-						projParams.gravity = 0
-						if e.wdid then
-							spSpawnProjectile(e.wdid, projParams)
-						end
-					end
-				elseif e.kind == "sunbeam" then
-					local y = spGetGroundHeight(e.x, e.z)
-					ceg("hero-sunbeam", e.x, y, e.z)
-					for _, uid in ipairs(enemiesIn(e.x, e.z, e.radius, ownerAlly)) do
-						spAddUnitDamage(uid, e.dmg, 0, h and e.owner or nil)
-					end
-				elseif e.kind == "bladestorm" and h then
-					local x, y, z = heroPos(e.owner)
-					damageArea(x, z, e.radius, ownerAlly, e.dmg, e.owner)
-					ceg("hero-bladestorm", x, y, z)
 				end
-			elseif e.kind == "meteors" or e.kind == "sunbeam" then
-				-- the finale
-				if e.nova and heroes[e.owner] then
-					local owner = heroes[e.owner]
-					delayed[#delayed + 1] = { frame = f + 70, fn = function()
-						if heroes[e.owner] then
-							nukeAt(owner, e.x, e.z)
+			end
+			if on then
+				local st = Spring.GetUnitStates(unitID)
+				h.cloakFire = st and st.firestate or 2
+				h.cloakFrom = frameNow()
+				Spring.GiveOrderToUnit(unitID, CMD.FIRE_STATE, { 0 }, 0) -- holds fire: a shot would reveal it
+			else
+				Spring.GiveOrderToUnit(unitID, CMD.FIRE_STATE, { h.cloakFire or 2 }, 0)
+			end
+			spSetUnitRulesParam(unitID, "hero_cloaked", on and 1 or 0, ALLIED)
+			local x, y, z = heroPos(unitID)
+			ceg("hero-cloak", x, y, z)
+		end
+
+		local function mergeBuffs(unitID, h, f)
+			local merged, expire, nextEnd = {}, 0, nil
+			for key, e in pairs(h.buffs or {}) do
+				if e.expire > f then
+					expire = max(expire, e.expire)
+					nextEnd = nextEnd and min(nextEnd, e.expire) or e.expire
+					for k, v in pairs(e.fx) do
+						v = val(v, e.r)
+						if BUFF_SUM[k] then
+							merged[k] = (merged[k] or 0) + v
+						elseif k == "shieldRegen" then
+							merged[k] = max(merged[k] or 1, v)
+						elseif BUFF_FLAG[k] and v then
+							merged[k] = true
 						end
+					end
+					if e.trailDmg then
+						merged.trailDmg = max(merged.trailDmg or 0, e.trailDmg)
+					end
+				else
+					h.buffs[key] = nil
+				end
+			end
+			if merged.armor then
+				merged.armor = min(0.8, merged.armor)
+			end
+			h.buff = expire > f and { expire = expire, fx = merged } or nil
+			h.buffNext = nextEnd
+			setCloak(unitID, h, merged.cloak or false)
+			applyStats(unitID, h)
+		end
+
+		local function addBuff(unitID, h, key, dur, fx, r, trailDmg)
+			h.buffs = h.buffs or {}
+			h.buffs[key] = { expire = frameNow() + floor(dur * GAME_SPEED), fx = fx or {}, r = r, trailDmg = trailDmg }
+			mergeBuffs(unitID, h, frameNow())
+		end
+
+		local function endBuffs(unitID, h, flag)
+			local changed = false
+			for key, e in pairs(h.buffs or {}) do
+				if e.fx[flag] then
+					h.buffs[key] = nil
+					changed = true
+					spSetUnitRulesParam(unitID, "hero_on_" .. key, frameNow(), INLOS)
+				end
+			end
+			if changed then
+				mergeBuffs(unitID, h, frameNow())
+			end
+		end
+
+		---------------------------------------------------------------- abilities: passives on hits
+
+		local function critFx(a, victimID)
+			local f = frameNow()
+			if f - a.lastCrit > 8 then
+				a.lastCrit = f
+				local x, y, z = spGetUnitPosition(victimID)
+				if x then
+					ceg("hero-crit", x, y + 20, z)
+				end
+			end
+		end
+
+		-- crit / slayer of a hero's own hits (UnitPreDamaged)
+		abilityAttackMult = function(a, victimID, victimDefID)
+			local m = 1
+			local b, r = learnedOf(a, "crit")
+			if b and random() < val(b.chance, r) then
+				m = m * val(b.mult, r)
+				critFx(a, victimID)
+			end
+			b, r = learnedOf(a, "slayer")
+			if b and (unitCost[victimDefID] or 0) >= (b.minCost or 10000) then
+				m = m * (1 + val(b.mult, r))
+			end
+			return m
+		end
+
+		-- damage taken by a hero: bladestorm / buff armor, the absorb shield, undying (returns the new mult)
+		abilityVictim = function(unitID, v, damage, m, paralyzer, f)
+			if v.bladestorm and v.bladestorm.expire > f then
+				m = m * (1 - v.bladestorm.armor)
+			end
+			local bf = v.buff and v.buff.expire > f and v.buff.fx
+			if bf and bf.armor then
+				m = m * (1 - bf.armor)
+			end
+			if paralyzer then
+				return m
+			end
+			local ab = v.absorb
+			if ab and ab.expire > f and ab.left > 0 then
+				local eff = damage * m * (v.hpMult or 1)
+				local take = min(ab.left, eff)
+				ab.left = ab.left - take
+				m = eff > 0 and m * (eff - take) / eff or m
+				if f - (ab.fxFrame or 0) > 12 then
+					ab.fxFrame = f
+					local x, y, z = spGetUnitPosition(unitID)
+					ceg("hero-shield-hit", x, y, z)
+				end
+				spSetUnitRulesParam(unitID, "hero_absorb", floor(ab.left), ALLIED)
+			end
+			local b, r, key = learnedOf(v, "undying")
+			if b and v.undyingReady <= f then
+				local hp = spGetUnitHealth(unitID)
+				if hp and damage * m >= hp then
+					local cd = val(b.cooldown, r) * max(0.4, 1 - (v.mods and v.mods.cdr or 0))
+					v.undyingReady = f + floor(cd * GAME_SPEED)
+					v.undyingUntil = f + 3 * GAME_SPEED
+					spSetUnitRulesParam(unitID, "hero_ready_" .. key, v.undyingReady, ALLIED)
+					spSetUnitRulesParam(unitID, "hero_cd_" .. key, floor(cd * GAME_SPEED), ALLIED)
+					markActive(unitID, key, 3)
+					local c = caster(unitID, v, key)
+					local nova = novaOf(b, r) * c.power
+					delayed[#delayed + 1] = { frame = f + 1, fn = function()
+						if heroes[unitID] then
+							local _, maxHp = spGetUnitHealth(unitID)
+							spSetUnitHealth(unitID, maxHp * val(b.heal, r))
+							local x, y, z = spGetUnitPosition(unitID)
+							ceg("hero-undying", x, y, z)
+							if nova > 0 then
+								abilityFinale(c, x, z, nova, val(b.novaRadius, r) or 650, val(b.novaStun, r))
+							end
+							toUI("undying", unitID, r)
+							alog("%s %s undying heal=%.2f nova=%d", c.name, key, val(b.heal, r), nova)
+						end
+					end }
+					return 0
+				end
+			end
+			return m
+		end
+
+		-- chain lightning from a hit target to the next enemies (proc_chain)
+		local function chainFrom(c, wdid, fromID, dmg, jumps, radius)
+			local x, y, z = spGetUnitPosition(fromID)
+			if not x then
+				return
+			end
+			local done = { [fromID] = true }
+			local owner = ownerOf(c)
+			abilityHurt(fromID, dmg, owner)
+			ceg("hero-chain", x, y, z)
+			local n = 1
+			for _ = 1, jumps do
+				local best, bestD
+				for _, uid in ipairs(spGetUnitsInCylinder(x, z, radius)) do
+					if not done[uid] and isEnemyOf(uid, c.ally) and not spGetUnitIsDead(uid) then
+						local ux, _, uz = spGetUnitPosition(uid)
+						local d = (ux - x) ^ 2 + (uz - z) ^ 2
+						if not bestD or d < bestD then
+							best, bestD = uid, d
+						end
+					end
+				end
+				if not best then
+					break
+				end
+				done[best] = true
+				local nx, ny, nz = spGetUnitPosition(best)
+				boltVisual(c, wdid, x, y + 25, z, nx, ny + 25, nz, 6)
+				abilityHurt(best, dmg, owner)
+				ceg("hero-chain", nx, ny, nz)
+				x, y, z = nx, ny, nz
+				n = n + 1
+			end
+			alog("%s %s chain dmg=%d targets=%d", c.name, c.key, dmg, n)
+		end
+
+		local PROC_GAP = 10 -- frames between two rolls of a proc: a chance per shot, not per beam frame
+
+		-- a hero's weapon hit an enemy (UnitDamaged): procs, and a hit ends its cloak
+		abilityOnHit = function(attackerID, h, victimID)
+			local f = frameNow()
+			if h.cloaked and f - (h.cloakFrom or 0) > GAME_SPEED then -- shots fired before the cloak do not count
+				endBuffs(attackerID, h, "cloak")
+			end
+			local b, r, key = learnedOf(h, "proc_chain")
+			if b and (h.procChain or 0) <= f then
+				h.procChain = f + PROC_GAP
+				if random() < val(b.chance, r) then
+					local c = caster(attackerID, h, key)
+					chainFrom(c, abilityWeapon(h, b, "chain"), victimID, val(b.dmg, r) * c.power, val(b.jumps, r), val(b.radius, r) or 450)
+				end
+			end
+			b, r, key = learnedOf(h, "proc_blast")
+			if b and (h.procBlast or 0) <= f then
+				h.procBlast = f + PROC_GAP
+				if random() < val(b.chance, r) then
+					local c = caster(attackerID, h, key)
+					local x, y, z = spGetUnitPosition(victimID)
+					if x then
+						local rad = val(b.radius, r) or 200
+						local hit = abilityBlast(c, x, z, rad, val(b.dmg, r) * c.power)
+						ceg(b.fx or "hero-blast", x, y, z)
+						alog("%s %s blast dmg=%d radius=%d hit=%d", c.name, key, val(b.dmg, r) * c.power, rad, #hit)
+					end
+				end
+			end
+		end
+
+		---------------------------------------------------------------- abilities: casts
+
+		cast = {}
+		dashes = {} -- unitID -> dash in progress (moved every frame)
+
+		local function castFx(name, unitID)
+			local x, y, z = heroPos(unitID)
+			ceg(name, x, y, z)
+		end
+
+		cast.active_buff = function(unitID, h, key, b, r)
+			local dur = val(b.duration, r)
+			addBuff(unitID, h, key, dur, b.buff, r, b.trailDmg and val(b.trailDmg, r) * abilityPower(h))
+			markActive(unitID, key, dur)
+			castFx(b.fx or "hero-buff-power", unitID)
+			return true
+		end
+
+		cast.active_guard = function(unitID, h, key, b, r)
+			local dur = val(b.duration, r)
+			events[#events + 1] = { kind = "guard", owner = unitID, expire = frameNow() + floor(dur * GAME_SPEED),
+				radius = val(b.radius, r), mult = 1 - val(b.reduce, r), fx = b.tickFx or "hero-guard" }
+			markActive(unitID, key, dur)
+			castFx(b.fx or "hero-guard-cast", unitID)
+			return true
+		end
+
+		cast.active_dome = function(unitID, h, key, b, r)
+			local dur = val(b.duration, r)
+			events[#events + 1] = { kind = "dome", owner = unitID, expire = frameNow() + floor(dur * GAME_SPEED),
+				radius = val(b.radius, r), fx = b.tickFx or "hero-dome" }
+			markActive(unitID, key, dur)
+			castFx(b.fx or "hero-dome-cast", unitID)
+			return true
+		end
+
+		local function novaFx(b, r)
+			if (val(b.dmg, r) or 0) <= 0 and (val(b.heal, r) or 0) > 0 then
+				return "hero-nova-heal"
+			elseif (val(b.emp, r) or 0) > 0 or b.shieldRatio then
+				return "hero-nova-emp"
+			end
+			return "hero-nova-kinetic"
+		end
+
+		cast.active_nova = function(unitID, h, key, b, r)
+			local x, y, z = heroPos(unitID)
+			local c = caster(unitID, h, key)
+			local rad = val(b.radius, r)
+			local dmg = val(b.dmg, r) or 0
+			local num = h.def.shieldNum
+			if b.shieldRatio and num then
+				-- dumps half of the shield charge into the blast
+				local _, charge = Spring.GetUnitShieldState(unitID, num)
+				if charge and charge > 0 then
+					Spring.SetUnitShieldState(unitID, num, true, charge * 0.5)
+					dmg = dmg + charge * 0.5 * val(b.shieldRatio, r)
+				end
+			end
+			local hit = abilityBlast(c, x, z, rad, dmg * c.power, val(b.stun, r), (val(b.emp, r) or 0) * c.power)
+			local heal = (val(b.heal, r) or 0) * c.power
+			local healed = 0
+			if heal > 0 then
+				healed = healAllies(c, x, z, rad, heal, "hero-heal-spark")
+			end
+			ceg(b.fx or novaFx(b, r), x, y, z)
+			alog("%s %s nova dmg=%d radius=%d stun=%s hit=%d healed=%d", c.name, key, dmg * c.power, rad, tostring(val(b.stun, r)), #hit, healed)
+			return true
+		end
+
+		-- a point of the area: most shots go for an enemy in it
+		local function pickPoint(c, cx, cz, radius, bias)
+			if random() < bias then
+				local list = enemiesIn(cx, cz, radius, c.ally)
+				if #list > 0 then
+					local x, _, z = spGetUnitPosition(list[random(#list)])
+					if x then
+						return x + (random() - 0.5) * 60, z + (random() - 0.5) * 60
+					end
+				end
+			end
+			return randomPointIn(cx, cz, radius)
+		end
+
+		-- from the sky: height, horizontal offset of the start, frames to land
+		local SKY = {
+			meteor = { h = 2400, ox = -700, oz = -300, t = 60 },
+			star = { h = 2800, ox = 500, oz = -650, t = 75 },
+			shell = { h = 3600, ox = 90, oz = 60, t = 38 },
+			missile = { h = 3000, ox = 0, oz = 0, t = 70 },
+			nuke = { h = 4200, ox = 0, oz = 0, t = 95 },
+		}
+		local DEFAULT_AOE = { meteor = 220, star = 280, shell = 220, missile = 160, nuke = 380, bolt = 150 }
+		local IMPACT_FX = { bolt = "hero-impact-bolt" }
+
+		local function skyShot(c, wdid, proj, x, z, shot)
+			local s = SKY[proj] or SKY.meteor
+			local y = spGetGroundHeight(x, z)
+			local pid = spawnAb(wdid, c, x + s.ox, y + s.h, z + s.oz, -s.ox / s.t, -s.h / s.t, -s.oz / s.t)
+			if pid then
+				shots[pid] = shot
+				if proj == "missile" or proj == "nuke" then
+					Spring.SetProjectileTarget(pid, x, y, z)
+				end
+			end
+		end
+
+		-- launched from the hero, arcing over onto a point or a unit; returns the frames it needs
+		local function heroShot(c, wdid, fromID, tx, tz, targetID, shot)
+			local x, y, z = spGetUnitPosition(fromID)
+			if not x or not wdid then
+				return 60
+			end
+			local ty = spGetGroundHeight(tx, tz)
+			local dx, dz = tx - x, tz - z
+			local d = max(1, sqrt(dx * dx + dz * dz))
+			local pid = spawnAb(wdid, c, x + (random() - 0.5) * 70, y + 90, z + (random() - 0.5) * 70,
+				dx / d * 4 + (random() - 0.5) * 4, 10 + random() * 4, dz / d * 4 + (random() - 0.5) * 4)
+			if pid then
+				if targetID then
+					Spring.SetProjectileTarget(pid, targetID, string.byte("u"))
+				else
+					Spring.SetProjectileTarget(pid, tx, ty, tz)
+				end
+				shots[pid] = shot
+			end
+			local speed = WeaponDefs[wdid].projectilespeed or 25
+			return floor(d / max(5, speed * 0.75)) + 35
+		end
+
+		cast.active_barrage = function(unitID, h, key, b, r, tx, tz)
+			if not tx then
+				return false
+			end
+			local c = caster(unitID, h, key)
+			local proj = b.projectile or "meteor"
+			local wdid = abilityWeapon(h, b, proj)
+			local count = val(b.count, r)
+			local dur = val(b.duration, r) or 4
+			local radius = val(b.radius, r) or 500
+			local from = b.from or ((proj == "missile" or proj == "nuke") and "hero" or "sky")
+			local f = frameNow()
+			local shot = { c = c, dmg = (val(b.dmg, r) or 0) * c.power, aoe = val(b.aoe, r) or DEFAULT_AOE[proj] or 200,
+				stun = val(b.stun, r), emp = (val(b.emp, r) or 0) * c.power, fx = b.impactFx or IMPACT_FX[proj],
+				expire = f + floor(dur * GAME_SPEED) + 900 }
+			local last = f
+			for i = 1, count do
+				local at = f + 1 + floor((i - 1) * dur * GAME_SPEED / max(1, count))
+				local travel = proj == "bolt" and 0 or (from == "sky" and (SKY[proj] or SKY.meteor).t or 90)
+				last = max(last, at + travel)
+				delayed[#delayed + 1] = { frame = at, fn = function()
+					local x, z = pickPoint(c, tx, tz, radius, b.bias or 0.6)
+					x = max(16, min(Game.mapSizeX - 16, x))
+					z = max(16, min(Game.mapSizeZ - 16, z))
+					if proj == "bolt" then
+						local y = spGetGroundHeight(x, z)
+						boltVisual(c, wdid, x + random(-220, 220), y + 1700, z + random(-220, 220), x, y + 5, z, 8)
+						abilityImpact(shot, x, z)
+					elseif from == "sky" then
+						skyShot(c, wdid, proj, x, z, shot)
+					elseif spValidUnitID(unitID) and not spGetUnitIsDead(unitID) then
+						heroShot(c, wdid, unitID, x, z, nil, shot)
+					end
+				end }
+			end
+			if from == "hero" then
+				local x, _, z = heroPos(unitID)
+				if x then
+					local d = sqrt((tx - x) ^ 2 + (tz - z) ^ 2)
+					last = last + floor(d / 18)
+				end
+				castFx("hero-missile-launch", unitID)
+			end
+			local nova = novaOf(b, r) * c.power
+			if nova > 0 then
+				delayed[#delayed + 1] = { frame = last + 12, fn = function()
+					abilityFinale(c, tx, tz, nova, val(b.novaRadius, r) or max(450, radius * 0.85), val(b.novaStun, r), b.novaFx)
+				end }
+			end
+			ceg(b.targetFx or "hero-target", tx, spGetGroundHeight(tx, tz), tz)
+			markActive(unitID, key, dur)
+			alog("%s %s barrage %s x%d dmg=%d aoe=%d radius=%d nova=%d", c.name, key, proj, count, shot.dmg, shot.aoe, radius, nova)
+			return true
+		end
+
+		cast.active_beam = function(unitID, h, key, b, r, tx, tz)
+			if not tx then
+				return false
+			end
+			local c = caster(unitID, h, key)
+			local dur = val(b.duration, r) or 6
+			local nova = novaOf(b, r) * c.power
+			events[#events + 1] = { kind = "beam", owner = unitID, free = true, c = c, x = tx, z = tz,
+				expire = frameNow() + floor(dur * GAME_SPEED), radius = val(b.radius, r), tick = val(b.tick, r) * c.power,
+				drift = val(b.drift, r) or 0, fx = b.fx or "hero-sunbeam", hits = 0,
+				finale = nova > 0 and { dmg = nova, radius = val(b.novaRadius, r) or 600, stun = val(b.novaStun, r), fx = b.novaFx } or nil }
+			ceg(b.startFx or "hero-sunbeam-start", tx, spGetGroundHeight(tx, tz), tz)
+			markActive(unitID, key, dur)
+			alog("%s %s beam tick=%d radius=%d duration=%d", c.name, key, val(b.tick, r) * c.power, val(b.radius, r), dur)
+			return true
+		end
+
+		cast.active_spear = function(unitID, h, key, b, r, tx, tz, targetID)
+			if not targetID or not spValidUnitID(targetID) or spGetUnitIsDead(targetID) then
+				return false
+			end
+			local c = caster(unitID, h, key)
+			if spGetUnitAllyTeam(targetID) == c.ally then
+				return false
+			end
+			local x, y, z = heroPos(unitID)
+			local ex, ey, ez = spGetUnitPosition(targetID)
+			local dx, dy, dz = ex - x, ey - y, ez - z
+			local d = max(1, sqrt(dx * dx + dy * dy + dz * dz))
+			if d > val(b.range, r) * 1.05 then
+				return false
+			end
+			local wdid = abilityWeapon(h, b, "spear")
+			local speed = wdid and WeaponDefs[wdid].projectilespeed or 120
+			if wdid then
+				spawnAb(wdid, c, x, y + 60, z, dx / d * speed, (dy - 40) / d * speed, dz / d * speed)
+			end
+			ceg("hero-pierce-big", x, y + 60, z)
+			local pct = val(b.pct, r) or 0
+			local flat = (val(b.flat, r) or 0) * c.power
+			local line = (val(b.line, r) or 0) * c.power
+			local nova = novaOf(b, r) * c.power
+			delayed[#delayed + 1] = { frame = frameNow() + floor(d / speed) + 1, fn = function()
+				-- everything on the line between the hero and the target
+				local hitLine = {}
+				local n = 0
+				local len = sqrt(dx * dx + dz * dz)
+				for s = 0, len, 100 do
+					local px, pz = x + dx / max(1, len) * s, z + dz / max(1, len) * s
+					for _, uid in ipairs(enemiesIn(px, pz, 110, c.ally)) do
+						if uid ~= targetID and not hitLine[uid] then
+							hitLine[uid] = true
+							n = n + 1
+							abilityHurt(uid, line, ownerOf(c))
+						end
+					end
+				end
+				local total = 0
+				if spValidUnitID(targetID) and not spGetUnitIsDead(targetID) then
+					local _, maxHp = spGetUnitHealth(targetID)
+					local vh = heroes[targetID]
+					total = (maxHp or 0) * (vh and vh.hpMult or 1) * pct + flat
+					abilityHurt(targetID, total, ownerOf(c))
+					ex, ey, ez = spGetUnitPosition(targetID)
+				end
+				ceg(b.impactFx or "hero-spear-hit", ex, ey, ez)
+				if nova > 0 then
+					abilityFinale(c, ex, ez, nova, val(b.novaRadius, r) or 600, val(b.novaStun, r), b.novaFx)
+				end
+				alog("%s %s spear target dmg=%d (%.0f%% + %d) line=%d x%d", c.name, key, total, pct * 100, flat, line, n)
+			end }
+			return true
+		end
+
+		cast.active_dash = function(unitID, h, key, b, r, tx, tz)
+			if not tx or dashes[unitID] then
+				return false
+			end
+			local x, y, z = heroPos(unitID)
+			local dx, dz = tx - x, tz - z
+			local d = sqrt(dx * dx + dz * dz)
+			if d < 60 then
+				return false
+			end
+			local range = val(b.range, r)
+			if d > range then
+				dx, dz, d = dx / d * range, dz / d * range, range
+			end
+			local steps = max(4, floor(d / (b.speed or 55)))
+			local c = caster(unitID, h, key)
+			dashes[unitID] = { c = c, x0 = x, z0 = z, dx = dx / steps, dz = dz / steps, step = 0, steps = steps,
+				dmg = (val(b.dmg, r) or 0) * c.power, radius = val(b.radius, r) or 200, stun = val(b.stun, r), hit = {}, n = 0,
+				burn = (val(b.burn, r) or 0) * c.power, burnTime = b.burnTime or 4, fireAt = 0, trail = b.trailFx or "hero-dash-trail" }
+			ceg(b.fx or "hero-dash", x, y, z)
+			markActive(unitID, key, steps / GAME_SPEED + 0.3)
+			return true
+		end
+
+		cast.active_bladestorm = function(unitID, h, key, b, r)
+			local dur = val(b.duration, r)
+			local c = caster(unitID, h, key)
+			h.bladestorm = { expire = frameNow() + floor(dur * GAME_SPEED), armor = val(b.armor, r) or 0 }
+			events[#events + 1] = { kind = "bladestorm", owner = unitID, expire = h.bladestorm.expire, c = c,
+				radius = val(b.radius, r), dmg = val(b.dmg, r) * c.power, fx = b.fx or "hero-bladestorm" }
+			markActive(unitID, key, dur)
+			alog("%s %s bladestorm dmg=%d per 0.2 s radius=%d", c.name, key, val(b.dmg, r) * c.power, val(b.radius, r))
+			return true
+		end
+
+		cast.active_summon = function(unitID, h, key, b, r)
+			local ud = UnitDefNames[b.unit or ""]
+			if not ud then
+				return false
+			end
+			local x, y, z = heroPos(unitID)
+			local n = val(b.count, r)
+			local dur = val(b.duration, r)
+			local expire = frameNow() + floor(dur * GAME_SPEED)
+			local made = 0
+			for i = 1, n do
+				local a = i / n * 6.283 + random() * 0.5
+				local sx = max(64, min(Game.mapSizeX - 64, x + math.cos(a) * (b.spread or 280)))
+				local sz = max(64, min(Game.mapSizeZ - 64, z + math.sin(a) * (b.spread or 280)))
+				local uid = Spring.CreateUnit(ud.id, sx, spGetGroundHeight(sx, sz), sz, random(0, 3), h.team)
+				if uid then
+					made = made + 1
+					summoned[uid] = { owner = unitID, expire = expire }
+					spSetUnitRulesParam(uid, "hero_summon_expire", expire, ALLIED)
+					Spring.GiveOrderToUnit(uid, CMD.GUARD, { unitID }, 0)
+					ceg(b.fx or "hero-summon", sx, spGetGroundHeight(sx, sz), sz)
+				end
+			end
+			markActive(unitID, key, dur)
+			alog("%s %s summon %s x%d for %d s", h.def.name, key, b.unit, made, dur)
+			return made > 0
+		end
+
+		cast.active_missiles = function(unitID, h, key, b, r)
+			local x, y, z = heroPos(unitID)
+			local c = caster(unitID, h, key)
+			local targets = {}
+			for _, uid in ipairs(enemiesIn(x, z, val(b.radius, r), c.ally)) do
+				if seenBy(uid, c.ally) then
+					targets[#targets + 1] = { uid = uid, value = costOf(uid) * (heroes[uid] and 3 or 1) }
+				end
+			end
+			if #targets == 0 then
+				return false
+			end
+			table.sort(targets, function(p, q) return p.value > q.value end)
+			local n = val(b.count, r)
+			local wdid = abilityWeapon(h, b, "missile")
+			local shot = { c = c, dmg = val(b.dmg, r) * c.power, aoe = val(b.aoe, r) or 150, stun = val(b.stun, r),
+				emp = (val(b.emp, r) or 0) * c.power, fx = b.impactFx, expire = frameNow() + 900 }
+			for i = 1, n do
+				local t = targets[(i - 1) % #targets + 1].uid
+				delayed[#delayed + 1] = { frame = frameNow() + 1 + (i - 1) * 2, fn = function()
+					if spValidUnitID(unitID) and not spGetUnitIsDead(unitID) and spValidUnitID(t) then
+						local tx, _, tz = spGetUnitPosition(t)
+						heroShot(c, wdid, unitID, tx, tz, t, shot)
+					end
+				end }
+			end
+			ceg(b.fx or "hero-missile-launch", x, y, z)
+			alog("%s %s missiles x%d dmg=%d aoe=%d targets=%d", c.name, key, n, shot.dmg, shot.aoe, #targets)
+			return true
+		end
+
+		cast.active_repair = function(unitID, h, key, b, r)
+			local x, y, z = heroPos(unitID)
+			local c = caster(unitID, h, key)
+			local heal = val(b.heal, r) * c.power
+			local n, total = healAllies(c, x, z, val(b.radius, r), heal, "hero-heal-spark")
+			ceg(b.fx or "hero-nova-heal", x, y, z)
+			alog("%s %s repair heal=%d radius=%d units=%d", c.name, key, heal, val(b.radius, r), n)
+			return true
+		end
+
+		cast.active_cloak = function(unitID, h, key, b, r)
+			local dur = val(b.duration, r)
+			addBuff(unitID, h, key, dur, { cloak = true, speed = b.speed }, r)
+			markActive(unitID, key, dur)
+			alog("%s %s cloak %d s cloaked=%s", h.def.name, key, dur, tostring(Spring.GetUnitIsCloaked(unitID)))
+			return true
+		end
+
+		cast.active_shield = function(unitID, h, key, b, r)
+			local dur = val(b.duration, r)
+			local amount = val(b.absorb, r) * abilityPower(h)
+			h.absorb = { left = amount, expire = frameNow() + floor(dur * GAME_SPEED), key = key }
+			spSetUnitRulesParam(unitID, "hero_absorb", floor(amount), ALLIED)
+			markActive(unitID, key, dur)
+			castFx(b.fx or "hero-shield", unitID)
+			alog("%s %s shield absorb=%d for %d s", h.def.name, key, amount, dur)
+			return true
+		end
+
+		-- cast an ability now; tx/tz/targetID for targeted ones. Returns true when it went off.
+		function tryCast(unitID, h, key, tx, tz, targetID)
+			local b = h.def.cfg[key]
+			if not b or not cast[b.kind] or not abilityReady(h, key) then
+				return false
+			end
+			local r = rankOf(h, key)
+			if not cast[b.kind](unitID, h, key, b, r, tx, tz, targetID) then
+				return false
+			end
+			startCooldown(unitID, h, key, b, r)
+			alog("%s %s cast %s rank %d", h.def.name, key, b.kind, r)
+			toUI("cast", unitID, r, key == "a1" and 4 or (key == "a2" and 5 or 6)) -- index in H.branchOrder
+			return true
+		end
+
+		function castRange(b, r)
+			if b.kind == "active_dash" then
+				return 1e6 -- a dash goes as far as it can toward the point
+			end
+			return val(b.range, r) or 0
+		end
+
+		---------------------------------------------------------------- abilities: timed effects
+
+		local function fireAt(c, x, z, dps, seconds)
+			events[#events + 1] = { kind = "fire", owner = c.owner, free = true, c = c, x = x, z = z, radius = 150,
+				dmg = dps * 0.2, expire = frameNow() + floor(seconds * GAME_SPEED) }
+			ceg("hero-firepatch", x, spGetGroundHeight(x, z), z)
+		end
+
+		-- every 6 frames: beams, bladestorms, fire on the ground, burning trails
+		function processEvents(f)
+			local keep = {}
+			for _, e in ipairs(events) do
+				local h = heroes[e.owner]
+				if e.expire > f and (h or e.free) then
+					keep[#keep + 1] = e
+					if e.kind == "beam" then
+						if e.drift > 0 then
+							-- the beam creeps toward the enemies around it
+							local sx, sz, sw = 0, 0, 0
+							for _, uid in ipairs(enemiesIn(e.x, e.z, e.radius * 2.5, e.c.ally)) do
+								local ux, _, uz = spGetUnitPosition(uid)
+								local w = costOf(uid) + 1
+								sx, sz, sw = sx + ux * w, sz + uz * w, sw + w
+							end
+							if sw > 0 then
+								local dx, dz = sx / sw - e.x, sz / sw - e.z
+								local d = sqrt(dx * dx + dz * dz)
+								local step = min(d, e.drift * 0.2)
+								if d > 1 then
+									e.x, e.z = e.x + dx / d * step, e.z + dz / d * step
+								end
+							end
+						end
+						ceg(e.fx, e.x, spGetGroundHeight(e.x, e.z), e.z)
+						e.hits = e.hits + #abilityBlast(e.c, e.x, e.z, e.radius, e.tick)
+					elseif e.kind == "bladestorm" and h then
+						local x, y, z = heroPos(e.owner)
+						abilityBlast(e.c, x, z, e.radius, e.dmg)
+						ceg(e.fx, x, y, z)
+					elseif e.kind == "fire" then
+						abilityBlast(e.c, e.x, e.z, e.radius, e.dmg)
+						if f % 30 < 6 then
+							ceg("hero-firepatch", e.x, spGetGroundHeight(e.x, e.z), e.z)
+						end
+					end
+				elseif e.finale then
+					local fin = e.finale
+					e.finale = nil
+					alog("%s %s beam done hits=%d", e.c.name, e.c.key, e.hits or 0)
+					delayed[#delayed + 1] = { frame = f + 20, fn = function()
+						abilityFinale(e.c, e.x, e.z, fin.dmg, fin.radius, fin.stun, fin.fx)
 					end }
 				end
 			end
-		end
-		events = keep
+			events = keep
 
-		-- burning trail of Hellcharge
-		for unitID, h in pairs(heroes) do
-			if h.buff and h.buff.expire > f and h.buff.trailDmg then
-				local x, y, z = heroPos(unitID)
-				if x then
-					damageArea(x, z, 160, spGetUnitAllyTeam(unitID), h.buff.trailDmg * 0.2, unitID)
-					ceg("hero-firepatch", x, y, z)
+			-- burning trails of self buffs (active_buff trailDmg)
+			for unitID, h in pairs(heroes) do
+				local bf = h.buff and h.buff.expire > f and h.buff.fx
+				if bf and bf.trailDmg then
+					local x, y, z = heroPos(unitID)
+					if x and (not h.trailX or (x - h.trailX) ^ 2 + (z - h.trailZ) ^ 2 > 140 * 140) then
+						h.trailX, h.trailZ = x, z
+						fireAt(caster(unitID, h, h.buffs and next(h.buffs) or "a2"), x, z, bf.trailDmg, 4)
+					end
 				end
 			end
 		end
-	end
 
-	-- guard / dome / command aura sets, every 0.5 s
-	local function refreshProtection(f)
-		for k in pairs(guardMult) do
-			guardMult[k] = nil
-		end
-		for k in pairs(invuln) do
-			invuln[k] = nil
-		end
-		for _, e in ipairs(events) do
-			if (e.kind == "guard" or e.kind == "dome") and e.expire > f and heroes[e.owner] then
-				local x, y, z = heroPos(e.owner)
-				if x then
-					local ally = spGetUnitAllyTeam(e.owner)
-					for _, uid in ipairs(alliesIn(x, z, e.radius, ally)) do
-						if e.kind == "dome" then
-							invuln[uid] = true
-						else
-							guardMult[uid] = min(guardMult[uid] or 1, e.mult)
+		-- guard / dome sets, every 0.5 s
+		function refreshProtection(f)
+			for k in pairs(guardMult) do
+				guardMult[k] = nil
+			end
+			for k in pairs(invuln) do
+				invuln[k] = nil
+			end
+			for _, e in ipairs(events) do
+				if (e.kind == "guard" or e.kind == "dome") and e.expire > f and heroes[e.owner] then
+					local x, y, z = heroPos(e.owner)
+					if x then
+						local ally = spGetUnitAllyTeam(e.owner)
+						for _, uid in ipairs(alliesIn(x, z, e.radius, ally)) do
+							if e.kind == "dome" then
+								invuln[uid] = true
+							else
+								guardMult[uid] = min(guardMult[uid] or 1, e.mult)
+							end
+						end
+						if f % 30 < 15 then
+							ceg(e.fx, x, y, z)
 						end
 					end
-					if f % 30 < 15 then
-						ceg(e.kind == "dome" and "hero-dome" or "hero-guard", x, y, z)
+				end
+			end
+		end
+
+		-- every frame: dashes; summons that run out; shots that never exploded
+		function abilityFrame(f)
+			for i = #exploded, 1, -1 do
+				abProj[exploded[i]] = nil
+				exploded[i] = nil
+			end
+			for unitID, d in pairs(dashes) do
+				if not spValidUnitID(unitID) or spGetUnitIsDead(unitID) then
+					dashes[unitID] = nil
+				else
+					d.step = d.step + 1
+					local nx = max(64, min(Game.mapSizeX - 64, d.x0 + d.dx * d.step))
+					local nz = max(64, min(Game.mapSizeZ - 64, d.z0 + d.dz * d.step))
+					Spring.SetUnitPosition(unitID, nx, nz)
+					local ny = spGetGroundHeight(nx, nz)
+					for _, uid in ipairs(enemiesIn(nx, nz, d.radius, d.c.ally)) do
+						if not d.hit[uid] then
+							d.hit[uid] = true
+							d.n = d.n + 1
+							abilityHurt(uid, d.dmg, unitID)
+							if d.stun and d.stun > 0 then
+								abilityStun(uid, d.stun, unitID)
+							end
+						end
+					end
+					if d.step % 2 == 0 then
+						ceg(d.trail, nx, ny, nz)
+					end
+					if d.burn > 0 and d.step >= d.fireAt then
+						d.fireAt = d.step + max(1, floor(140 / max(1, sqrt(d.dx * d.dx + d.dz * d.dz))))
+						fireAt(d.c, nx, nz, d.burn, d.burnTime)
+					end
+					if d.step >= d.steps then
+						dashes[unitID] = nil
+						ceg("hero-dash", nx, ny, nz)
+						alog("%s %s dash dmg=%d radius=%d hit=%d burn=%d", d.c.name, d.c.key, d.dmg, d.radius, d.n, d.burn)
+					end
+				end
+			end
+			if f % 15 == 4 then
+				for uid, s in pairs(summoned) do
+					if s.expire <= f then
+						summoned[uid] = nil
+						if spValidUnitID(uid) and not spGetUnitIsDead(uid) then
+							local x, y, z = spGetUnitPosition(uid)
+							ceg("hero-unsummon", x, y, z)
+							Spring.DestroyUnit(uid, false, true)
+						end
+					end
+				end
+			end
+			if f % 300 == 17 then
+				for pid, s in pairs(shots) do
+					if s.expire <= f then
+						shots[pid] = nil
+					end
+				end
+				for pid, e in pairs(abProj) do
+					if e <= f then
+						abProj[pid] = nil
+					end
+				end
+			end
+		end
+
+		abilityUnitDestroyed = function(unitID)
+			auraArmor[unitID] = nil
+			slowed[unitID] = nil
+			dashes[unitID] = nil
+			local s = summoned[unitID]
+			summoned[unitID] = nil
+			return s ~= nil
+		end
+
+		---------------------------------------------------------------- abilities: passives, every second
+
+		local AURA_FX = { aura_heal = "hero-aura-heal", aura_damage = "hero-aura-command", aura_armor = "hero-aura-armor", aura_slow = "hero-aura-slow" }
+		local slowWant = {}
+
+		function abilityPassivesBegin()
+			for k in pairs(auraArmor) do
+				auraArmor[k] = nil
+			end
+			for k in pairs(slowWant) do
+				slowWant[k] = nil
+			end
+		end
+
+		-- self buffs that ran out, buff regeneration, the absorb shield
+		function abilityBuffTick(unitID, h, f, x, y, z)
+			if h.buffNext and h.buffNext <= f then
+				mergeBuffs(unitID, h, f)
+			end
+			local bf = h.buff and h.buff.expire > f and h.buff.fx
+			if bf and bf.regen then
+				healUnit(unitID, bf.regen)
+			end
+			if bf and not bf.cloak and f % 60 < 30 then -- a cloaked hero shows nothing
+				ceg(bf.armor and "hero-buff-armor" or (bf.speed and "hero-buff-speed" or "hero-buff-power"), x, y, z)
+			end
+			local ab = h.absorb
+			if ab then
+				if ab.expire <= f or ab.left <= 0 then
+					h.absorb = nil
+					spSetUnitRulesParam(unitID, "hero_absorb", 0, ALLIED)
+					spSetUnitRulesParam(unitID, "hero_on_" .. ab.key, f, INLOS)
+				else
+					ceg("hero-shield-tick", x, y, z)
+				end
+			end
+		end
+
+		function abilityAuras(unitID, h, f, x, y, z, ally, healBest)
+			local p = abilityPower(h)
+			for _, key in ipairs(ABILITY_KEYS) do
+				local b = h.def.cfg[key]
+				local r = rankOf(h, key)
+				if b and r > 0 then
+					local k = b.kind
+					local rad = val(b.radius, r)
+					if AURA_FX[k] and f % 60 < 30 then
+						ceg(b.fx or AURA_FX[k], x, y, z)
+					end
+					if k == "aura_heal" then
+						local rate = val(b.rate, r) * p
+						for _, uid in ipairs(alliesIn(x, z, rad, ally)) do
+							local v = uid == unitID and rate * 0.5 or rate
+							if (healBest[uid] or 0) < v then
+								healBest[uid] = v
+							end
+						end
+					elseif k == "aura_damage" then
+						for _, uid in ipairs(alliesIn(x, z, rad, ally)) do
+							if uid ~= unitID then
+								auraDamage[uid] = max(auraDamage[uid] or 0, val(b.mult, r))
+							end
+						end
+					elseif k == "aura_armor" then
+						for _, uid in ipairs(alliesIn(x, z, rad, ally)) do
+							if uid ~= unitID then
+								auraArmor[uid] = max(auraArmor[uid] or 0, val(b.reduce, r))
+							end
+						end
+					elseif k == "aura_burn" then
+						local c = caster(unitID, h, key)
+						local hit = abilityBlast(c, x, z, rad, val(b.dps, r) * p)
+						for _ = 1, min(4, 1 + #hit) do
+							local px, pz = randomPointIn(x, z, rad * 0.9)
+							ceg(b.fx or "hero-firepatch", px, spGetGroundHeight(px, pz), pz)
+						end
+					elseif k == "aura_emp" and f % (floor((b.period or 2) * GAME_SPEED)) < GAME_SPEED then
+						local c = caster(unitID, h, key)
+						local hit = abilityBlast(c, x, z, rad, (val(b.dmg, r) or 0) * p, nil, (val(b.emp, r) or 0) * p)
+						for i = 1, min(6, #hit) do
+							local ux, uy, uz = spGetUnitPosition(hit[i])
+							ceg("hero-static", ux, uy, uz)
+						end
+					elseif k == "aura_slow" then
+						local s = val(b.slow, r)
+						local hit = enemiesIn(x, z, rad, ally)
+						for i, uid in ipairs(hit) do
+							slowWant[uid] = max(slowWant[uid] or 0, s)
+							if i <= 6 and f % 60 < 30 then
+								local ux, uy, uz = spGetUnitPosition(uid)
+								ceg("hero-slow", ux, uy, uz)
+							end
+						end
+					end
+				end
+			end
+		end
+
+		-- shield capacity (shield_cap) and shield recharge boosts (buff shieldRegen)
+		function abilityShield(unitID, h)
+			local num = h.def.shieldNum
+			if not num then
+				return
+			end
+			local _, charge = Spring.GetUnitShieldState(unitID, num)
+			if not charge then
+				return
+			end
+			local cap, regenMult = h.def.shieldPower, 1
+			for _, key in ipairs(ABILITY_KEYS) do
+				local b = h.def.cfg[key]
+				if b and b.kind == "shield_cap" then
+					local r = rankOf(h, key)
+					cap = h.def.shieldPower * (r > 0 and val(b.cap, r) or b.base or 1)
+					regenMult = r > 0 and val(b.regen, r) or 1
+				end
+			end
+			if h.buff and h.buff.fx.shieldRegen then
+				regenMult = regenMult * h.buff.fx.shieldRegen
+			end
+			local p = min(cap, charge + h.def.shieldRegen * (regenMult - 1))
+			if p ~= charge then
+				Spring.SetUnitShieldState(unitID, num, true, p)
+			end
+		end
+
+		-- speed of a unit under aura_slow (ground units; heroes keep their grown speed)
+		local function setSlow(uid, s)
+			local ud = UnitDefs[spGetUnitDefID(uid) or -1]
+			if not ud or ud.canFly or (ud.speed or 0) <= 0 then
+				return
+			end
+			local h = heroes[uid]
+			local base = h and (Spring.GetUnitRulesParam(uid, "hero_speed") or ud.speed) or ud.speed
+			local spd = base * (1 - s)
+			pcall(Spring.MoveCtrl.SetGroundMoveTypeData, uid, { maxSpeed = spd, maxWantedSpeed = spd })
+		end
+
+		function abilityPassivesEnd()
+			for uid, s in pairs(slowWant) do
+				if spValidUnitID(uid) and not spGetUnitIsDead(uid) then
+					setSlow(uid, s)
+					slowed[uid] = s
+				end
+			end
+			for uid in pairs(slowed) do
+				if not slowWant[uid] then
+					slowed[uid] = nil
+					if spValidUnitID(uid) and not spGetUnitIsDead(uid) then
+						if heroes[uid] then
+							applyStats(uid, heroes[uid])
+						else
+							setSlow(uid, 0)
+						end
 					end
 				end
 			end
@@ -2169,6 +2946,7 @@ if gadgetHandler:IsSyncedCode() then
 		for k in pairs(auraDamage) do
 			auraDamage[k] = nil
 		end
+		abilityPassivesBegin()
 		local healBest = {}
 		for unitID, h in pairs(heroes) do
 			local x, y, z = heroPos(unitID)
@@ -2176,11 +2954,8 @@ if gadgetHandler:IsSyncedCode() then
 				local ally = spGetUnitAllyTeam(unitID)
 				local cfg = h.def.cfg
 				local hp, maxHp = spGetUnitHealth(unitID)
-				-- buff expiry
-				if h.buff and h.buff.expire <= f then
-					h.buff = nil
-					applyStats(unitID, h)
-				end
+				-- self buffs that ran out, buff regeneration, the absorb shield
+				abilityBuffTick(unitID, h, f, x, y, z)
 				-- own regeneration: plating + the fountain at its foundry
 				local regen = h.regen or 0
 				if fountainNear(h.team, x, z) then
@@ -2192,190 +2967,202 @@ if gadgetHandler:IsSyncedCode() then
 				if regen > 0 and hp and hp < maxHp then
 					spSetUnitHealth(unitID, min(maxHp, hp + maxHp * regen))
 				end
-				for _, key in ipairs({ "a1", "a2" }) do
-					local b = cfg[key]
-					local r = rankOf(h, key)
-					if r > 0 then
-						if f % 60 < 30 and (b.kind == "aura_heal" or b.kind == "aura_damage") then
-							ceg(b.kind == "aura_heal" and "hero-aura-heal" or "hero-aura-command", x, y, z)
-						end
-						if b.kind == "aura_heal" then
-							for _, uid in ipairs(alliesIn(x, z, b.radius[r], ally)) do
-								if (healBest[uid] or 0) < b.rate[r] then
-									healBest[uid] = uid == unitID and b.rate[r] * 0.5 or b.rate[r]
-								end
-							end
-						elseif b.kind == "aura_damage" then
-							for _, uid in ipairs(alliesIn(x, z, b.radius, ally)) do
-								if uid ~= unitID then
-									auraDamage[uid] = max(auraDamage[uid] or 0, b.mult[r])
-								end
-							end
-						elseif b.kind == "aura_burn" then
-							local hit = damageArea(x, z, b.radius[r], ally, b.dps[r], unitID)
-							for i = 1, min(4, 1 + #hit) do
-								local px, pz = randomPointIn(x, z, b.radius[r] * 0.9)
-								ceg("hero-firepatch", px, spGetGroundHeight(px, pz), pz)
-							end
-						elseif b.kind == "aura_emp" and f % (b.period * GAME_SPEED) < GAME_SPEED then
-							local hit = enemiesIn(x, z, b.radius[r], ally)
-							for i, uid in ipairs(hit) do
-								spAddUnitDamage(uid, b.dmg[r], 0, unitID)
-								spAddUnitDamage(uid, b.emp[r], 2, unitID)
-								if i <= 6 then
-									local ux, uy, uz = spGetUnitPosition(uid)
-									ceg("hero-static", ux, uy, uz)
-								end
-							end
-						end
-					end
-				end
+				-- auras of the abilities
+				abilityAuras(unitID, h, f, x, y, z, ally, healBest)
 				-- item auras and the Crown of Storms: itemPassives
-				-- shield capacity (Aegis) and shield recharge boosts (Siege Protocol)
-				local num = h.def.shieldNum
-				if num then
-					local enabled, power = Spring.GetUnitShieldState(unitID, num)
-					if power then
-						local cap, regenMult = h.def.shieldPower, 1
-						local b = cfg.a1
-						if b.kind == "shield_cap" then
-							local r = rankOf(h, "a1")
-							cap = h.def.shieldPower * (r > 0 and b.cap[r] or b.base)
-							regenMult = r > 0 and b.regen[r] or 1
-						end
-						if h.buff and h.buff.fx.shieldRegen then
-							regenMult = regenMult * h.buff.fx.shieldRegen
-						end
-						local p = min(cap, power + h.def.shieldRegen * (regenMult - 1))
-						if p ~= power then
-							Spring.SetUnitShieldState(unitID, num, true, p)
-						end
-					end
-				end
+				-- shield capacity (shield_cap) and shield recharge boosts (buff shieldRegen)
+				abilityShield(unitID, h)
 			end
 		end
 		for uid, rate in pairs(healBest) do
-			local hp, maxHp, _, _, bp = spGetUnitHealth(uid)
-			if hp and bp and bp >= 1 and hp < maxHp then
-				spSetUnitHealth(uid, min(maxHp, hp + rate))
-			end
+			healUnit(uid, rate)
 		end
+		abilityPassivesEnd()
 	end
 
 	---------------------------------------------------------------- autocast (AI always, players with autocast on)
 
-	local function visibleTo(uid, ally)
-		local los = spGetUnitLosState(uid, ally, true)
-		return los and los ~= 0
-	end
+	local autocast
+	do
+		local visibleTo = seenBy
 
-	-- the enemy spot within range with the most metal around it
-	local function bestCluster(x, z, range, radius, ally)
-		local cands = {}
-		for _, uid in ipairs(spGetUnitsInCylinder(x, z, range)) do
-			if isEnemyOf(uid, ally) and visibleTo(uid, ally) then
-				cands[#cands + 1] = uid
-			end
-		end
-		local best, bx, bz = 0
-		local step = max(1, floor(#cands / 30))
-		for i = 1, #cands, step do
-			local cx, _, cz = spGetUnitPosition(cands[i])
-			if cx then
-				local sum = 0
-				for _, uid in ipairs(enemiesIn(cx, cz, radius, ally)) do
-					sum = sum + costOf(uid)
-				end
-				if sum > best then
-					best, bx, bz = sum, cx, cz
+		-- the enemy spot within range with the most metal around it
+		local function bestCluster(x, z, range, radius, ally)
+			local cands = {}
+			for _, uid in ipairs(spGetUnitsInCylinder(x, z, range)) do
+				if isEnemyOf(uid, ally) and visibleTo(uid, ally) then
+					cands[#cands + 1] = uid
 				end
 			end
-		end
-		return best, bx, bz
-	end
-
-	local function mostValuableEnemy(x, z, range, ally)
-		local best, bestID = 0
-		for _, uid in ipairs(spGetUnitsInCylinder(x, z, range)) do
-			if isEnemyOf(uid, ally) and visibleTo(uid, ally) then
-				local c = costOf(uid)
-				if heroes[uid] then
-					c = c * 3
-				end
-				if c > best then
-					best, bestID = c, uid
-				end
-			end
-		end
-		return bestID, best
-	end
-
-	local function enemyCostNear(x, z, r, ally)
-		local sum, n = 0, 0
-		for _, uid in ipairs(enemiesIn(x, z, r, ally)) do
-			sum = sum + costOf(uid)
-			n = n + 1
-		end
-		return sum, n
-	end
-
-	local AUTO_MIN = 2500 -- metal of enemies that justifies an area ability
-
-	local function autocast(unitID, h)
-		local x, y, z = heroPos(unitID)
-		if not x then
-			return
-		end
-		local ally = spGetUnitAllyTeam(unitID)
-		local hp, maxHp = spGetUnitHealth(unitID)
-		local hpFrac = hp and maxHp and hp / maxHp or 1
-		local cfg = h.def.cfg
-		for _, key in ipairs({ "ult", "a1", "a2" }) do
-			local b = cfg[key]
-			if b and cast[b.kind] and abilityReady(h, key) then
-				local r = rankOf(h, key)
-				local k = b.kind
-				if k == "active_guard" or k == "active_dome" then
-					local near = enemyCostNear(x, z, 1100, ally)
-					if near > h.def.cost * 0.4 or (hpFrac < 0.5 and near > 0) then
-						tryCast(unitID, h, key)
+			local best, bx, bz = 0
+			local step = max(1, floor(#cands / 30))
+			for i = 1, #cands, step do
+				local cx, _, cz = spGetUnitPosition(cands[i])
+				if cx then
+					local sum = 0
+					for _, uid in ipairs(enemiesIn(cx, cz, radius, ally)) do
+						sum = sum + costOf(uid) * (heroes[uid] and 2 or 1)
 					end
-				elseif k == "active_pulse" then
-					local _, power = Spring.GetUnitShieldState(unitID, h.def.shieldNum)
-					local near = enemyCostNear(x, z, b.radius[r], ally)
-					if power and power > h.def.shieldPower * 0.2 and near > AUTO_MIN then
-						tryCast(unitID, h, key)
-					end
-				elseif k == "active_stomp" or k == "active_flare" or k == "active_bladestorm" then
-					local rad = type(b.radius) == "table" and b.radius[r] or b.radius
-					if enemyCostNear(x, z, rad, ally) > AUTO_MIN then
-						tryCast(unitID, h, key)
-					end
-				elseif k == "active_buff" then
-					local reach = 0
-					for _, w in pairs(h.def.weapons) do
-						reach = max(reach, w.range)
-					end
-					if b.buff.speed and not b.buff.reload then
-						reach = reach * 1.6 -- a charge closes in
-					end
-					if Spring.GetUnitNearestEnemy(unitID, reach, true) then
-						tryCast(unitID, h, key)
-					end
-				elseif k == "active_storm" or k == "active_meteors" or k == "active_sunbeam" then
-					local score, tx, tz = bestCluster(x, z, castRange(b, r), b.radius, ally)
-					if tx and score > AUTO_MIN then
-						tryCast(unitID, h, key, tx, tz)
-					end
-				elseif k == "active_spear" then
-					local target, value = mostValuableEnemy(x, z, castRange(b, r), ally)
-					if target and value >= 3000 then
-						tryCast(unitID, h, key, nil, nil, target)
+					if sum > best then
+						best, bx, bz = sum, cx, cz
 					end
 				end
 			end
+			return best, bx, bz
+		end
+
+		local function mostValuableEnemy(x, z, range, ally)
+			local best, bestID = 0
+			for _, uid in ipairs(spGetUnitsInCylinder(x, z, range)) do
+				if isEnemyOf(uid, ally) and visibleTo(uid, ally) then
+					local c = costOf(uid)
+					if heroes[uid] then
+						c = c * 3
+					end
+					if c > best then
+						best, bestID = c, uid
+					end
+				end
+			end
+			return bestID, best
+		end
+
+		local function enemyCostNear(x, z, r, ally)
+			local sum, n = 0, 0
+			for _, uid in ipairs(enemiesIn(x, z, r, ally)) do
+				sum = sum + costOf(uid)
+				n = n + 1
+			end
+			return sum, n
+		end
+
+		-- missing health of allies around (effective HP)
+		local function alliedDamage(x, z, r, ally)
+			local sum = 0
+			for _, uid in ipairs(alliesIn(x, z, r, ally)) do
+				local hp, maxHp, _, _, bp = spGetUnitHealth(uid)
+				if hp and bp and bp >= 1 then
+					local v = heroes[uid]
+					sum = sum + (maxHp - hp) * (v and v.hpMult or 1)
+				end
+			end
+			return sum
+		end
+
+		local function weaponReach(h)
+			local reach = 0
+			for _, w in pairs(h.def.weapons) do
+				reach = max(reach, w.range)
+			end
+			return max(reach, 400)
+		end
+
+		local AUTO_MIN = 2500 -- metal of enemies that justifies an area ability
+		local AUTO_ULT = 4000 -- ... an area ultimate
+
+		function autocast(unitID, h)
+			local x, y, z = heroPos(unitID)
+			if not x then
+				return
+			end
+			local ally = spGetUnitAllyTeam(unitID)
+			local hp, maxHp = spGetUnitHealth(unitID)
+			local hpFrac = hp and maxHp and hp / maxHp or 1
+			local f = frameNow()
+			local underFire = f - (h.lastHit or -1000) < 3 * GAME_SPEED
+			local escaping = h.retreating or (hpFrac < 0.4 and underFire)
+			local cfg = h.def.cfg
+			for _, key in ipairs({ "ult", "a1", "a2" }) do
+				local b = cfg[key]
+				if b and cast[b.kind] and abilityReady(h, key) and not dashes[unitID] then
+					local r = rankOf(h, key)
+					local k = b.kind
+					local worth = key == "ult" and AUTO_ULT or AUTO_MIN
+					if k == "active_guard" or k == "active_dome" then
+						local near = enemyCostNear(x, z, 1100, ally)
+						if near > max(AUTO_MIN, h.def.cost * 0.3) or (hpFrac < 0.5 and near > 0) then
+							tryCast(unitID, h, key)
+						end
+					elseif k == "active_nova" then
+						local rad = val(b.radius, r)
+						local near = enemyCostNear(x, z, rad, ally)
+						local heal = val(b.heal, r) or 0
+						if near > worth or (heal > 0 and (near > 0 or hpFrac < 0.6) and alliedDamage(x, z, rad, ally) > heal * 3) then
+							tryCast(unitID, h, key)
+						end
+					elseif k == "active_bladestorm" then
+						if enemyCostNear(x, z, val(b.radius, r), ally) > worth then
+							tryCast(unitID, h, key)
+						end
+					elseif k == "active_buff" then
+						local bf = b.buff or {}
+						local reach = weaponReach(h)
+						if bf.immobile then
+							-- anchors only with a fight in reach
+							if enemyCostNear(x, z, reach, ally) > AUTO_MIN then
+								tryCast(unitID, h, key)
+							end
+						elseif bf.speed and not bf.damage and not bf.armor then
+							if escaping or Spring.GetUnitNearestEnemy(unitID, reach * 1.5, true) then
+								tryCast(unitID, h, key)
+							end
+						elseif Spring.GetUnitNearestEnemy(unitID, reach, true) then
+							tryCast(unitID, h, key)
+						end
+					elseif k == "active_barrage" or k == "active_beam" then
+						local score, tx, tz = bestCluster(x, z, castRange(b, r), val(b.radius, r) or 500, ally)
+						if tx and score > worth then
+							tryCast(unitID, h, key, tx, tz)
+						end
+					elseif k == "active_spear" then
+						local target, value = mostValuableEnemy(x, z, castRange(b, r), ally)
+						if target and value >= 3000 then
+							tryCast(unitID, h, key, nil, nil, target)
+						end
+					elseif k == "active_dash" then
+						local range = val(b.range, r)
+						if escaping then
+							-- away from the nearest enemy
+							local e = Spring.GetUnitNearestEnemy(unitID, 1500, true)
+							local ex, _, ez = e and spGetUnitPosition(e)
+							if ex then
+								local dx, dz = x - ex, z - ez
+								local d = max(1, sqrt(dx * dx + dz * dz))
+								tryCast(unitID, h, key, x + dx / d * range, z + dz / d * range)
+							end
+						elseif hpFrac > 0.45 then
+							local score, tx, tz = bestCluster(x, z, range, max(300, (val(b.radius, r) or 200) * 2), ally)
+							if tx and score > AUTO_MIN and (tx - x) ^ 2 + (tz - z) ^ 2 > 250 * 250 then
+								tryCast(unitID, h, key, tx, tz)
+							end
+						end
+					elseif k == "active_summon" then
+						if enemyCostNear(x, z, max(1400, weaponReach(h)), ally) > AUTO_MIN then
+							tryCast(unitID, h, key)
+						end
+					elseif k == "active_missiles" then
+						if enemyCostNear(x, z, val(b.radius, r), ally) > AUTO_MIN * 0.5 then
+							tryCast(unitID, h, key)
+						end
+					elseif k == "active_repair" then
+						local heal = val(b.heal, r) * abilityPower(h)
+						if alliedDamage(x, z, val(b.radius, r), ally) > heal * 3 or hpFrac < 0.5 then
+							tryCast(unitID, h, key)
+						end
+					elseif k == "active_cloak" then
+						if escaping then
+							tryCast(unitID, h, key)
+						end
+					elseif k == "active_shield" then
+						if underFire and hpFrac < 0.9 and enemyCostNear(x, z, 1600, ally) > 0 then
+							tryCast(unitID, h, key)
+						end
+					end
+				end
+			end
 		end
 	end
+
 
 	---------------------------------------------------------------- AI heroes
 	-- The skirmish AI never sent its heroes into its attack groups (they idled at home), so the gadget
@@ -3125,6 +3912,7 @@ if gadgetHandler:IsSyncedCode() then
 			end
 			delayed = keep
 		end
+		abilityFrame(f)
 		if f % 15 == 11 then
 			expireGround(f)
 			pickups()
@@ -3321,6 +4109,10 @@ if gadgetHandler:IsSyncedCode() then
 					while h.level < min(level, H.MAX_LEVEL) do levelUp(uid, h) end publish(uid, h) end end,
 			addXP = function(uid, metal) local h = heroes[uid]; if h then addXP(uid, h, metal) end end,
 			cast = function(uid, key, tx, tz, target) local h = heroes[uid]; return h and tryCast(uid, h, key, tx, tz, target) end,
+			-- any ability table of the kit, no cooldown (items, tests): castAbility(uid, { kind = ..., ... }, rank, tx, tz, target)
+			castAbility = function(uid, b, r, tx, tz, target) local h = heroes[uid]
+				return h and cast[b.kind] and cast[b.kind](uid, h, b.key or "item", b, r or 1, tx, tz, target) or false end,
+			abilityPower = function(uid) return abilityPower(heroes[uid]) end,
 			dead = dead, setAI = function(teamID, ai) isAITeam[teamID] = ai end }
 	end
 

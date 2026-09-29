@@ -369,6 +369,11 @@ local function learnTip(uid, name, key)
 	local maxRank = H.maxRank(name, key)
 	local s = "\255\255\210\064" .. b.name .. "\255\255\255\255  (" .. rank .. "/" .. maxRank .. ")\n" .. (b.desc or "")
 	s = s .. rankLine(name, key, rank)
+	if (key == "a1" or key == "a2" or key == "ult") and b.kind then
+		-- ability damage / healing grow with the hero's level (the gadget's abilityPower)
+		local lvl = spGetUnitRulesParam(uid, "hero_level") or 1
+		s = s .. string.format("\n\255\200\160\255Ability power x%.2f at level %d", 1 + (H.ABILITY_POWER_PER_LEVEL or 0.015) * (lvl - 1), lvl)
+	end
 	if rank < maxRank then
 		local req = H.reqLevel(name, key, rank + 1)
 		local cost = H.metalCost(name, key, rank + 1)
@@ -1163,6 +1168,7 @@ end
 
 local AURA_COLORS = {
 	aura_heal = { 0.3, 1, 0.4 }, aura_damage = { 1, 0.5, 0.2 }, aura_burn = { 1, 0.35, 0.05 }, aura_emp = { 0.4, 0.7, 1 },
+	aura_armor = { 1, 0.8, 0.3 }, aura_slow = { 1, 0.6, 0.15 },
 }
 
 function widget:DrawWorldPreUnit()
@@ -1174,7 +1180,7 @@ function widget:DrawWorldPreUnit()
 			local cfg = H.heroes[name]
 			local x, y, z = spGetUnitPosition(uid)
 			if x and cfg then
-				for _, key in ipairs({ "a1", "a2" }) do
+				for _, key in ipairs(H.abilityKeys) do
 					local b = cfg[key]
 					local c = b and AURA_COLORS[b.kind]
 					local r = spGetUnitRulesParam(uid, "hero_rank_" .. key) or 0
@@ -1184,13 +1190,14 @@ function widget:DrawWorldPreUnit()
 						gl.DrawGroundCircle(x, y, z, radius, 64)
 					end
 				end
-				for _, key in ipairs({ "a2", "ult" }) do
+				for _, key in ipairs(H.abilityKeys) do
 					local b = cfg[key]
 					if b and (b.kind == "active_guard" or b.kind == "active_dome") and (spGetUnitRulesParam(uid, "hero_on_" .. key) or 0) > f then
 						local pulse = 0.55 + 0.25 * sin(f * 0.3)
+						local r = math.max(1, spGetUnitRulesParam(uid, "hero_rank_" .. key) or 1)
 						gl.Color(b.kind == "active_dome" and 0.5 or 1, b.kind == "active_dome" and 0.8 or 0.85, b.kind == "active_dome" and 1 or 0.3, pulse)
 						gl.LineWidth(4)
-						gl.DrawGroundCircle(x, y, z, b.radius, 72)
+						gl.DrawGroundCircle(x, y, z, type(b.radius) == "table" and (b.radius[r] or b.radius[#b.radius]) or b.radius, 72)
 						gl.LineWidth(2)
 					end
 				end
