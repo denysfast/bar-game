@@ -2,7 +2,8 @@
 -- which passes the shared table H. See CUSTOM.md, section "Heroes".
 --
 -- Unitdefs: units/Legion/T2Heroes/legt2heroes.lua. Every value is absolute (HP, HP/s, damage, elmos, seconds);
--- fractions only where the ability kit asks for them (armor, damage buffs, auras, crit/proc chances).
+-- fractions only where the kit keeps them: armor, temporary buffs (active_buff speed/damage/armor), auras,
+-- crit/proc chances, lifesteal/thorns shares.
 -- Commands 36401-36499.
 local H = ...
 
@@ -47,9 +48,9 @@ local heroes = {
 		},
 		a2 = {
 			name = "Overheat", kind = "active_buff", cmd = 36403, action = "hero_overheat", fx = "hero-buff-power",
-			desc = "Vents the reactor into the ray: more damage and self-repair for a few seconds",
-			buff = { damage = 0.35, regen = 120 }, duration = { 6, 7, 8 }, cooldown = { 30, 27, 24 },
-			text = { "6 s: +35% damage, +120 HP/s, cd 30s", "7 s, cd 27s", "8 s, cd 24s" },
+			desc = "Vents the reactor into the ray and the hull: more damage dealt, less taken, for a few seconds",
+			buff = { damage = 0.35, armor = 0.15 }, duration = { 6, 7, 8 }, cooldown = { 30, 27, 24 },
+			text = { "6 s: +35% damage, -15% damage taken, cd 30s", "7 s, cd 27s", "8 s, cd 24s" },
 		},
 		ult = {
 			name = "Meltdown", kind = "active_beam", cmd = 36404, action = "hero_meltdown", target = "map",
@@ -98,8 +99,8 @@ local heroes = {
 		a2 = {
 			name = "Adrenaline", kind = "active_buff", cmd = 36407, action = "hero_adrenaline", fx = "hero-buff-speed",
 			desc = "Sprints and strikes harder for a few seconds",
-			buff = { speed = 40, damage = 0.25 }, duration = { 5, 6, 7 }, cooldown = { 25, 22, 19 },
-			text = { "5 s: +40 speed, +25% damage, cd 25s", "6 s, cd 22s", "7 s, cd 19s" },
+			buff = { speed = 0.5, damage = 0.25 }, duration = { 5, 6, 7 }, cooldown = { 25, 22, 19 },
+			text = { "5 s: +50% speed, +25% damage, cd 25s", "6 s, cd 22s", "7 s, cd 19s" },
 		},
 		ult = {
 			name = "Hoplite Pack", kind = "active_summon", cmd = 36408, action = "hero_hoplitepack", fx = "hero-summon",
@@ -178,8 +179,8 @@ local heroes = {
 		ult = {
 			name = "Champion's Fury", kind = "active_buff", cmd = 36414, action = "hero_fury", fx = "hero-buff-power",
 			desc = "The crowd roars: more damage, armor and speed",
-			buff = { damage = 0.4, armor = 0.25, speed = 20 }, duration = { 8, 10, 12 }, cooldown = { 75, 65, 55 },
-			text = { "8 s: +40% damage, -25% damage taken, +20 speed", "10 s, cd 65s", "12 s, cd 55s" },
+			buff = { damage = 0.4, armor = 0.25, speed = 0.3 }, duration = { 8, 10, 12 }, cooldown = { 75, 65, 55 },
+			text = { "8 s: +40% damage, -25% damage taken, +30% speed, cd 75s", "10 s, cd 65s", "12 s, cd 55s" },
 		},
 	},
 
