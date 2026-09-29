@@ -2550,7 +2550,11 @@ if gadgetHandler:IsSyncedCode() then
 		end
 		-- an escort worth a quarter of the hero, at most 10k metal (the expensive heroes otherwise waited
 		-- at the altar for an army cell of 35-45k that the AI rarely gathers); the hero's own escort counts
-		if g.x and g.cost + escortCost >= min(h.def.cost * 0.25, H.AI_ESCORT) then
+		local need = min(h.def.cost * 0.25, H.AI_ESCORT)
+		if escortCost > 0 then
+			need = need * 0.5 -- hysteresis: a hero with an escort keeps marching with less (no take / give back loop)
+		end
+		if g.x and g.cost + escortCost >= need then
 			local off = H.AI_ROLE_OFFSET[h.def.cfg.aiRole or "center"] or 0
 			tx, tz = g.x, g.z
 			if g.ex then
@@ -2700,10 +2704,11 @@ if gadgetHandler:IsSyncedCode() then
 
 	-- The AI's hero bank: storage is small (the AI builds no metal storage), so the price of a rank or a
 	-- level (tens to hundreds of thousands) is put aside over time - only overflow metal (storage fuller
-	-- than AI_BUY_FULL), at most AI_BUY_SAVE of the income, and nothing while a dead hero waits for its
-	-- revive (then the bank flows back into the storage). The bank pays for unspent points first (the
-	-- same plan as learnAI), then for levels of the best hero: alive, not retreating, fighting roles and
-	-- lower levels first, one level per BUY_COOLDOWN, up to AI_BUY_MAX_LEVEL.
+	-- than AI_BUY_FULL), at most AI_BUY_SAVE of the income, only up to what the next purchase needs (the rest
+	-- flows back), and nothing while a dead hero waits for its revive (then the bank flows back into the
+	-- storage). The bank pays for unspent points first (the same plan as learnAI), then for a level of the
+	-- best hero: alive, not retreating, fighting roles and lower levels first, one level per BUY_COOLDOWN,
+	-- up to AI_BUY_MAX_LEVEL, and never more bought levels than levels earned in combat (at least 2).
 	function aiEconomy(f)
 		for teamID, ai in pairs(isAITeam) do
 			if ai then
@@ -2718,23 +2723,8 @@ if gadgetHandler:IsSyncedCode() then
 					local cur, stor, _, inc = Spring.GetTeamResources(teamID, "metal")
 					cur, stor, inc = cur or 0, stor or 0, inc or 0
 					local b = bank[teamID] or 0
-					if revive then
-						local back = min(b, max(0, stor - cur), max(3000, b * 0.1))
-						if back > 0 then
-							Spring.AddTeamResource(teamID, "metal", back)
-							b = b - back
-							if f - (reviveLog[teamID] or -9999) > 1800 then
-								reviveLog[teamID] = f
-								aiLog(f, teamID, "saving paused: %s waits for its revive, %d metal back to storage (bank %d)", revive, back, b)
-							end
-						end
-					elseif inc >= H.AI_BUY_INCOME and cur > stor * H.AI_BUY_FULL then
-						local take = min(inc * H.AI_BUY_SAVE, cur - stor * H.AI_BUY_FULL)
-						if take > 0 and Spring.UseTeamResource(teamID, "metal", take) then
-							b = b + take
-							stat(teamID, "saved", take)
-						end
-					end
+					local need = 0 -- metal the next purchase takes
+					local buyer, buyPrice
 					if not revive and #mine > 0 then
 						-- best hero first
 						local order = {}
@@ -2751,7 +2741,7 @@ if gadgetHandler:IsSyncedCode() then
 							order[#order + 1] = { uid = uid, h = h, score = score }
 						end
 						table.sort(order, function(a, c) return a.score > c.score end)
-						-- unspent points: ranks paid from the bank
+						-- unspent points: ranks paid from the bank; a rank that waits only for metal is saved for
 						local saving = false
 						for _, o in ipairs(order) do
 							local h = o.h
@@ -2764,11 +2754,12 @@ if gadgetHandler:IsSyncedCode() then
 									stat(teamID, "ranks", #h.picks - picks)
 								end
 								b = prepaid
-								-- still points and a rank waits only for metal: save for it, no levels meanwhile
 								if h.level - #h.picks > 0 then
 									for _, key in ipairs(h.def.keys) do
-										if learnState(h, key) == "metal" then
+										local st, cost = learnState(h, key)
+										if st == "metal" then
 											saving = true
+											need = max(need, cost or 0)
 											break
 										end
 									end
@@ -2776,19 +2767,48 @@ if gadgetHandler:IsSyncedCode() then
 								prepaid = 0
 							end
 						end
-						local top = order[1]
-						local h = top and top.h
-						if h and not saving and h.level < H.AI_BUY_MAX_LEVEL and f >= (h.buyReady or 0) then
-							local price = H.levelPrice(h.def.name, h.level, h.def.cost)
-							if price and b >= price then
-								b = b - price
-								local from = h.level
-								buyLevel(top.uid, h, true)
-								aiLog(f, teamID, "%s buys level %d -> %d for %d metal (bank left %d, income %d)", h.def.name, from, h.level, price, b, inc)
-								stat(teamID, "levels")
-								stat(teamID, "levelMetal", price)
+						if not saving then
+							for _, o in ipairs(order) do
+								local h = o.h
+								local bought = h.bought or 0
+								if h.level < H.AI_BUY_MAX_LEVEL and bought < max(2, h.level - 1 - bought) then
+									buyer = o
+									buyPrice = H.levelPrice(h.def.name, h.level, h.def.cost)
+									need = max(need, buyPrice or 0)
+									break
+								end
 							end
 						end
+					end
+					if not revive and need > 0 and b < need * 1.2 and inc >= H.AI_BUY_INCOME and cur > stor * H.AI_BUY_FULL then
+						local take = min(inc * H.AI_BUY_SAVE, cur - stor * H.AI_BUY_FULL, need * 1.2 - b)
+						if take > 0 and Spring.UseTeamResource(teamID, "metal", take) then
+							b = b + take
+							stat(teamID, "saved", take)
+						end
+					elseif b > need * 1.5 then
+						-- more than anything needs (a revive waits, levels capped, heroes gone): back to the storage
+						local back = min(b - need * 1.5, max(0, stor - cur), max(3000, b * 0.1))
+						if back > 0 then
+							Spring.AddTeamResource(teamID, "metal", back)
+							b = b - back
+							stat(teamID, "returned", back)
+							if f - (reviveLog[teamID] or -9999) > 1800 then
+								reviveLog[teamID] = f
+								aiLog(f, teamID, "bank %d > needed %d%s: %d metal back to storage", b + back, need,
+									revive and (" (" .. revive .. " waits for its revive)") or "", back)
+							end
+						end
+					end
+					local h = buyer and buyer.h
+					if h and buyPrice and b >= buyPrice and f >= (h.buyReady or 0) then
+						b = b - buyPrice
+						local from = h.level
+						buyLevel(buyer.uid, h, true)
+						aiLog(f, teamID, "%s buys level %d -> %d for %d metal (bank left %d, income %d, bought %d of %d levels)",
+							h.def.name, from, h.level, buyPrice, b, inc, h.bought or 0, h.level - 1)
+						stat(teamID, "levels")
+						stat(teamID, "levelMetal", buyPrice)
 					end
 					bank[teamID] = b
 					spSetTeamRulesParam(teamID, "hero_ai_bank", floor(b), ALLIED)
@@ -2813,8 +2833,8 @@ if gadgetHandler:IsSyncedCode() then
 				local s = aiStats[teamID] or {}
 				if #parts > 0 or next(s) then
 					local cur, stor, _, inc = Spring.GetTeamResources(teamID, "metal")
-					aiLog(f, teamID, "summary bank=%d metal=%d/%d income=%d saved=%d levels=%d (%d metal) ranks=%d escorted=%d released=%d retreats=%d covered=%d focus=%d hunts=%d avoids=%d holds=%d pullbacks=%d dodges=%d built=%d revives=%d | %s",
-						bank[teamID] or 0, cur or 0, stor or 0, inc or 0, s.saved or 0, s.levels or 0, s.levelMetal or 0, s.ranks or 0,
+					aiLog(f, teamID, "summary bank=%d metal=%d/%d income=%d saved=%d returned=%d levels=%d (%d metal) ranks=%d escorted=%d released=%d retreats=%d covered=%d focus=%d hunts=%d avoids=%d holds=%d pullbacks=%d dodges=%d built=%d revives=%d | %s",
+						bank[teamID] or 0, cur or 0, stor or 0, inc or 0, s.saved or 0, s.returned or 0, s.levels or 0, s.levelMetal or 0, s.ranks or 0,
 						s.escorted or 0, s.released or 0, s.retreats or 0, s.covered or 0, s.focus or 0, s.hunts or 0, s.avoids or 0,
 						s.holds or 0, s.pullbacks or 0, s.dodges or 0, s.built or 0, s.revives or 0, table.concat(parts, "; "))
 				end
