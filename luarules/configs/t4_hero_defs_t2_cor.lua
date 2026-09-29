@@ -219,7 +219,7 @@ local heroes = {
 			name = "Banishment", kind = "active_spear", cmd = 36315, action = "hero_banishment", target = "unit", fx = "hero-target",
 			desc = "A heavy missile through the whole line to the target; rank 3 ends in a blast",
 			weapon = "hero_spear", range = { 1400, 1600, 1800 }, pct = { 0.15, 0.22, 0.30 }, flat = 3000, line = 2000,
-			nova = { false, false, 4000 }, cooldown = { 80, 70, 60 },
+			nova = { false, false, true }, cooldown = { 80, 70, 60 },
 			text = { "15% of target max HP + 3000, cd 80 s", "22%, cd 70 s", "30%, cd 60 s, 4000 blast" },
 		},
 	},
