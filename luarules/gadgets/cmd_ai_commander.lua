@@ -77,6 +77,7 @@ if gadgetHandler:IsSyncedCode() then
 	end
 
 	local commandeered = {} -- unitID -> teamID
+	GG.AICommanderUnits = commandeered -- read by unit_t4_heroes.lua: hero escorts never take these
 	local issuing = false -- true while this gadget gives orders (AllowCommand lets them through)
 	local blockedCount = 0
 

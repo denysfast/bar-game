@@ -445,6 +445,30 @@ local function stat(label, value, x, y, size, c)
 	text(value, x + size * 6.4, y, size, c or WHITE)
 end
 
+-- v15: "Buy level (<price> M)" next to the experience bar - one level for metal, one per H.BUY_COOLDOWN s
+local function drawBuyLevel(uid, name, lvl, x1, y1, x2, y2, f)
+	if lvl >= H.MAX_LEVEL then
+		return
+	end
+	local price = spGetUnitRulesParam(uid, "hero_buy_price") or H.levelPrice(name, lvl) or 0
+	local ready = spGetUnitRulesParam(uid, "hero_buy_ready") or 0
+	local cur, storage = Spring.GetTeamResources(myTeam(), "metal")
+	cur, storage = cur or 0, storage or 0
+	local wait = ready > f and math.ceil((ready - f) / 30) or 0
+	local ok = price > 0 and cur >= price and wait == 0
+	local hov = hovered(x1, y1, x2, y2)
+	rect(x1, y1, x2, y2, ok and (hov and { 0.22, 0.16, 0.05, 0.95 } or { 0.14, 0.1, 0.03, 0.95 }) or { 0.2, 0.05, 0.04, 0.9 })
+	frame(x1, y1, x2, y2, ok and (hov and { 1, 0.9, 0.5, 1 } or GOLD) or { 0.6, 0.18, 0.15, 1 }, 1)
+	local label = wait > 0 and string.format("Buy level  (%d s)", wait) or string.format("Buy level (%s M)", fmtNum(price))
+	text(label, (x1 + x2) / 2, y1 + (y2 - y1) * 0.22, (y2 - y1) * 0.72, ok and GOLD or RED, "co")
+	local tip = string.format("Buy level %d for %s metal (%s in storage%s).\n"
+		.. "The price grows with the level and the hero's cost: %d%% + %d%% per level of its cost, and never\n"
+		.. "less than the metal of damage that level takes in combat. One level per %d seconds.",
+		lvl + 1, fmtNum(price), fmtNum(cur), storage < price and (", storage holds only " .. fmtNum(storage)) or "",
+		floor(H.BUY_BASE * 100 + 0.5), floor(H.BUY_PER_LEVEL * 100 + 0.5), H.BUY_COOLDOWN)
+	addBox(x1, y1, x2, y2, ok and function() Spring.SendLuaRulesMsg("t4hero:buylevel:" .. uid) end or nil, tip)
+end
+
 local function drawConsole(uid)
 	local name = heroDefIDs[spGetUnitDefID(uid) or -1]
 	if not name then
@@ -510,6 +534,9 @@ local function drawConsole(uid)
 	bar(px1, by2 - bh * 2 - 3, px2, by2 - bh - 3, lvl >= H.MAX_LEVEL and 1 or xp, { 0.55, 0.35, 1, 1 })
 	addBox(px1, by2 - bh * 2 - 3, px2, by2 - bh - 3, nil, lvl >= H.MAX_LEVEL and "Maximum level"
 		or string.format("Experience: %s / %s metal of damage to reach level %d", fmtNum(xpAbs), fmtNum(xpNeed), lvl + 1))
+	if own then
+		drawBuyLevel(uid, name, lvl, px2 + pad * 2, by2 - bh * 2 - 3, px2 + pad * 2 + floor(H0 * 0.78), by2 - bh - 3, f)
+	end
 
 	-- name, level, stats
 	local sx = px2 + pad * 2
@@ -889,6 +916,8 @@ function widget:T4HeroEvent(kind, uid, a, b)
 		float(uid, "HERO", GOLD, 0.04, 3, "state")
 	elseif kind == "undying" then
 		float(uid, "UNDYING!", { 1, 0.5, 0.15 }, 0.045, 3, "state")
+	elseif kind == "bought" then
+		float(uid, "LEVEL " .. a .. " BOUGHT", GOLD, 0.03, 2.5, "level")
 	elseif kind == "nometal" and mine then
 		float(uid, "Not enough metal: " .. fmtNum(a), RED, 0.026, 2.5, "warn")
 		Spring.PlaySoundFile("sounds/ui/cantdothat.wav", 0.6, "ui")
