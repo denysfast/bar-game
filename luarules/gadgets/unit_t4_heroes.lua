@@ -85,6 +85,7 @@ if gadgetHandler:IsSyncedCode() then
 		end
 		if ud.name == "armt4gant" or ud.name == "cort4gant" or ud.name == "legt4gant" then
 			foundryDefs[udid] = true
+		elseif ud.name:find("t2hall$") then foundryDefs[udid] = true
 		elseif ud.isFactory then
 			factoryDefs[udid] = true
 		end

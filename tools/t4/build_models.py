@@ -26,6 +26,18 @@ MODELS = [
     ("legt4starfall",   "legelrpcmech",    1.6),
     ("legt4longinus",   "legerailtank",    1.8),
     ("legt4tempest",    "legeshotgunmech", 2.0),
+    # Cortex T2 heroes (units/CorT2Heroes/cort2heroes.lua)
+    ("cort2hall",       "coralab",         1.3),
+    ("cort2sumo",       "corsumo",         1.4),
+    ("cort2can",        "corcan",          1.5),
+    ("cort2pyro",       "corpyro",         1.6),
+    ("cort2termite",    "cortermite",      1.5),
+    ("cort2arbiter",    "corhrk",          1.5),
+    ("cort2sheldon",    "cormort",         1.6),
+    ("cort2goliath",    "corgol",          1.4),
+    ("cort2tiger",      "correap",         1.5),
+    ("cort2banisher",   "corban",          1.4),
+    ("cort2tremor",     "cortrem",         1.4),
 ]
 
 here = os.path.dirname(os.path.abspath(__file__))
