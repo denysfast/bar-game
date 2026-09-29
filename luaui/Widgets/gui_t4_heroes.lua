@@ -987,6 +987,52 @@ end
 
 ---------------------------------------------------------------------------- upgrade window
 
+-- v15: the tooltip of a weapon track or a chassis branch - per rank and in total, in units
+local function branchTip(uid, name, key)
+	local b = H.branch(name, key)
+	local rank = spGetUnitRulesParam(uid, "hero_rank_" .. key) or 0
+	local maxRank = H.maxRank(name, key)
+	local s = "\255\255\210\064" .. b.name .. "\255\255\255\255  (" .. rank .. "/" .. maxRank .. ")"
+	if H.common[key] then
+		s = s .. "\n" .. H.commonText(name, key, 1) .. " per rank"
+		if rank > 0 then
+			s = s .. "\n\255\120\255\120Now: " .. H.commonText(name, key, rank)
+		end
+	else
+		local cfg = H.heroes[name]
+		local w = cfg.weapons[b.weapon]
+		local tr = H.weaponTrack(w.kind, b.track)
+		local base = H.weaponBase(name, b.weapon)
+		local amount = H.trackAmount(tr, base)
+		s = s .. "\n" .. w.name .. ": " .. H.trackText(tr, amount, base) .. " per rank"
+		if rank > 0 then
+			s = s .. "\n\255\120\255\120Now: " .. H.trackText(tr, amount * rank, base)
+		end
+	end
+	if rank < maxRank then
+		local req = H.reqLevel(name, key, rank + 1)
+		local cost = H.metalCost(name, key, rank + 1)
+		s = s .. string.format("\n\255\200\200\200Rank %d: level %d, 1 point, %s metal", rank + 1, req, fmtNum(cost))
+	end
+	return s
+end
+
+-- the tooltip of a weapon: kind, visual step, perks
+local function weaponTip(name, wi, rankSum)
+	local w = H.heroes[name].weapons[wi]
+	local k = H.weaponKinds[w.kind]
+	local base = H.weaponBase(name, wi)
+	local s = "\255\255\210\064" .. w.name .. "\255\255\255\255  (" .. k.label .. ")"
+	s = s .. string.format("\nRank sum %d: visual step %d/%d (bigger shots, flashes and blasts as it grows)", rankSum,
+		H.weaponStep(rankSum), #H.weaponSteps)
+	for _, p in ipairs(k.perks or {}) do
+		local on = rankSum >= p.at
+		s = s .. "\n" .. (on and "\255\120\255\120" or "\255\150\150\150") .. "Perk at " .. p.at .. ": " .. p.name .. " - "
+			.. H.trackText(p, H.trackAmount(p, base), base)
+	end
+	return s
+end
+
 local function drawUpgrades(uid, yBottom)
 	local name = heroDefIDs[spGetUnitDefID(uid) or -1]
 	if not name then
@@ -998,13 +1044,13 @@ local function drawUpgrades(uid, yBottom)
 	local pts = spGetUnitRulesParam(uid, "hero_points") or 0
 	local metal = Spring.GetTeamResources(myTeam(), "metal") or 0
 
-	local is = floor(vsy * 0.048 * uiScale)
+	local is = floor(vsy * 0.046 * uiScale)
 	local gap = floor(is * 0.35)
-	local rowH = is + gap * 1.9
+	local rowH = is + is * 1.05
 	local nW = #(cfg.weapons or {})
-	local rows = nW + 2
-	local W = floor(is * 18)
-	local Ht = floor(rowH * rows + is * 1.6)
+	local rows = nW + 1
+	local W = floor(is * 20)
+	local Ht = floor(rowH * rows + is * 2.3)
 	local x1 = floor((vsx - W) / 2)
 	local x2 = x1 + W
 	local y1 = yBottom + floor(vsy * 0.01)
@@ -1017,7 +1063,8 @@ local function drawUpgrades(uid, yBottom)
 	iconButton(nil, x2 - is * 0.95, y2 - is * 0.95, x2 - is * 0.35, y2 - is * 0.35, true, RED, function() showUpgrades = false end, "Close (U)")
 	text("x", x2 - is * 0.65, y2 - is * 0.84, is * 0.45, RED, "co")
 
-	local function learnButton(key, bx, by)
+	-- a learn button: icon, rank, the metal price of the next rank (red: not enough metal or level), the total
+	local function learnButton(key, bx, by, total, tip)
 		local b = H.branch(name, key)
 		local rank = spGetUnitRulesParam(uid, "hero_rank_" .. key) or 0
 		local maxRank = H.maxRank(name, key)
@@ -1025,42 +1072,91 @@ local function drawUpgrades(uid, yBottom)
 		local cost = H.metalCost(name, key, rank + 1)
 		local can = own and pts > 0 and rank < maxRank and lvl >= req and metal >= cost
 		local icon = b.icon and (ART .. b.icon .. ".png") or (ART .. "ab_" .. name .. "_" .. key .. ".png")
-		iconButton(icon, bx, by, bx + is, by + is, rank > 0 or can, can and GOLD or nil, function() learn(uid, key) end, learnTip(uid, name, key))
+		iconButton(icon, bx, by, bx + is, by + is, rank > 0 or can, can and GOLD or nil, function() learn(uid, key) end, tip or learnTip(uid, name, key))
 		if can then
 			local glow = 0.5 + 0.5 * sin(spGetGameFrame() * 0.25)
 			frame(bx - 4, by - 4, bx + is + 4, by + is + 4, { 1, 0.85, 0.2, 0.4 + 0.5 * glow }, 2)
 		end
-		local label = rank .. "/" .. maxRank
-		text(label, bx + is * 0.5, by - is * 0.36, is * 0.28, rank >= maxRank and GOLD or WHITE, "co")
+		text(rank .. "/" .. maxRank, bx + is * 0.5, by - is * 0.33, is * 0.26, rank >= maxRank and GOLD or WHITE, "co")
 		if rank < maxRank then
-			local c = (lvl < req and RED) or (metal < cost and RED) or GREY
-			text(lvl < req and ("lv " .. req) or fmtNum(cost), bx + is * 0.5, by - is * 0.64, is * 0.24, c, "co")
+			local c = (lvl < req or metal < cost) and RED or GREEN
+			text(lvl < req and ("lv " .. req) or fmtNum(cost), bx + is * 0.5, by - is * 0.6, is * 0.24, c, "co")
+		end
+		if total and total ~= "" then
+			text(total, bx + is * 0.5, by - is * 0.87, is * 0.22, ORANGE, "co")
 		end
 	end
 
-	local y = y2 - is * 1.3 - rowH + gap
+	local tx = x1 + is * 5.6
+	local tstep = is * 1.75
+	local y = y2 - is * 1.3 - is
 	for wi, w in ipairs(cfg.weapons or {}) do
-		local tier = spGetUnitRulesParam(uid, "hero_wtier_" .. wi) or 1
-		text(w.name, x1 + is * 0.4, y + is * 0.55, is * 0.36, WHITE)
-		text(H.weaponKinds[w.kind].label .. "  " .. string.rep("\255\255\210\064*", tier) .. string.rep("\255\090\090\090*", 4 - tier),
-			x1 + is * 0.4, y + is * 0.12, is * 0.28, GREY)
-		for ti, track in ipairs(H.weaponKinds[w.kind].tracks) do
-			learnButton("w" .. wi .. "_" .. track, x1 + is * 5.2 + (ti - 1) * is * 1.6, y)
+		local k = H.weaponKinds[w.kind]
+		local base = H.weaponBase(name, wi)
+		local rankSum = 0
+		for _, id in ipairs(k.tracks) do
+			rankSum = rankSum + (spGetUnitRulesParam(uid, "hero_rank_w" .. wi .. "_" .. id) or 0)
+		end
+		local step = H.weaponStep(rankSum)
+		-- weapon kind icon, name, kind, visual step pips, perks
+		local ix = x1 + is * 0.35
+		tex(ART .. k.icon .. ".png", ix, y, ix + is, y + is)
+		frame(ix - 2, y - 2, ix + is + 2, y + is + 2, { 0.45, 0.34, 0.16, 1 }, 2)
+		local nx = ix + is * 1.2
+		text(w.name, nx, y + is * 0.66, is * 0.32, WHITE)
+		text(k.label, nx, y + is * 0.33, is * 0.24, GREY)
+		local pw = is * 0.2
+		for p = 1, #H.weaponSteps do
+			local px = nx + (p - 1) * pw * 1.35
+			rect(px, y + is * 0.05, px + pw, y + is * 0.05 + pw * 0.7, p <= step and GOLD or { 0.22, 0.22, 0.22, 0.95 })
+		end
+		-- perks: a diamond each, lit once the rank sum reaches it; the next one named
+		local nextPerk
+		for pi, p in ipairs(k.perks or {}) do
+			local on = rankSum >= p.at
+			local cx, cy, r = nx + is * 0.1 + (pi - 1) * is * 0.3, y - is * 0.2, is * 0.09
+			gl.Color(on and 1 or 0.3, on and 0.55 or 0.3, on and 0.15 or 0.3, 1)
+			gl.Shape(GL.TRIANGLE_FAN, { { v = { cx, cy + r } }, { v = { cx + r, cy } }, { v = { cx, cy - r } }, { v = { cx - r, cy } } })
+			if not on and not nextPerk then
+				nextPerk = p
+			end
+		end
+		text(nextPerk and (nextPerk.name .. " at " .. nextPerk.at) or "all perks", nx + is * 0.95, y - is * 0.28, is * 0.2,
+			nextPerk and GREY or GOLD)
+		addBox(ix, y - is * 0.35, tx - is * 0.3, y + is, nil, weaponTip(name, wi, rankSum))
+		for ti, id in ipairs(k.tracks) do
+			local key = "w" .. wi .. "_" .. id
+			local tr = k.track[id]
+			local rank = spGetUnitRulesParam(uid, "hero_rank_" .. key) or 0
+			learnButton(key, tx + (ti - 1) * tstep, y, H.trackShort(tr, H.trackAmount(tr, base) * rank), branchTip(uid, name, key))
 		end
 		y = y - rowH
 	end
-	text("Chassis", x1 + is * 0.4, y + is * 0.35, is * 0.36, WHITE)
-	learnButton("plating", x1 + is * 5.2, y)
-	learnButton("servos", x1 + is * 6.8, y)
-	-- abilities on the right half, spanning the rows
-	local ax = x1 + is * 11
+	-- chassis: plating and servos in units
+	text("Chassis", x1 + is * 0.4, y + is * 0.55, is * 0.32, WHITE)
+	text("health, regeneration, speed, sight", x1 + is * 0.4, y + is * 0.22, is * 0.22, GREY)
+	for i, key in ipairs({ "plating", "servos" }) do
+		local rank = spGetUnitRulesParam(uid, "hero_rank_" .. key) or 0
+		local a = H.commonAmount(name, key)
+		local total = ""
+		if rank > 0 then
+			total = key == "plating" and ("+" .. fmtNum((a.hp or 0) * rank) .. " HP") or ("+" .. H.fmtAmount((a.speed or 0) * rank) .. " spd")
+		end
+		learnButton(key, tx + (i - 1) * tstep, y, total, branchTip(uid, name, key))
+	end
+	-- abilities on the right, spanning the rows
+	local ax = x1 + is * 13.1
 	text("Abilities", ax, y2 - is * 1.3, is * 0.36, WHITE)
 	for i, key in ipairs(H.abilityKeys) do
-		learnButton(key, ax + (i - 1) * is * 2.2, y2 - is * 1.55 - is - gap)
 		local b = cfg[key]
-		text(b.name, ax + (i - 1) * is * 2.2 + is * 0.5, y2 - is * 1.55 - is * 2.25 - gap, is * 0.22, key == "ult" and ORANGE or BLUE, "co")
+		if b then
+			learnButton(key, ax + (i - 1) * is * 2.2, y2 - is * 1.55 - is - gap)
+			text(b.name, ax + (i - 1) * is * 2.2 + is * 0.5, y2 - is * 1.55 - is * 2.35 - gap, is * 0.22, key == "ult" and ORANGE or BLUE, "co")
+		end
 	end
-	text("Abilities cost tens of thousands of metal per rank.\nWeapons and chassis: 1.5k metal x rank.", ax, y + is * 0.1, is * 0.25, GREY)
+	text(string.format("Metal per rank - weapons and chassis: %s x rank\nabilities: %s / %s / %s\nultimate: %s / %s / %s",
+		fmtNum(H.STAT_METAL), fmtNum(H.ABILITY_METAL[1]), fmtNum(H.ABILITY_METAL[2]), fmtNum(H.ABILITY_METAL[3]),
+		fmtNum(H.ULT_METAL[1]), fmtNum(H.ULT_METAL[2]), fmtNum(H.ULT_METAL[3])), ax, y + is * 0.6, is * 0.24, GREY)
 end
 
 ---------------------------------------------------------------------------- world overlay

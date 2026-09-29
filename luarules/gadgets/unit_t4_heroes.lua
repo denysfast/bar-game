@@ -116,6 +116,9 @@ if gadgetHandler:IsSyncedCode() then
 						key = key, wdid = w.weaponDef, range = wd.range, reload = wd.reload, type = wd.type,
 						accuracy = wd.accuracy, spray = wd.sprayAngle, burst = wd.salvoSize, projectiles = wd.projectiles,
 						aoe = wd.damageAreaOfEffect or 0, damage = wd.damages and wd.damages[0] or 0,
+						-- v15 aim fix: ballistic reach and missile flight time follow the range
+						velocity = wd.projectilespeed or 0, gravity = (wd.myGravity or 0) > 0 and wd.myGravity or -gravityPerFrame,
+						flight = wd.flightTime or 0, paralyzer = wd.paralyzer,
 					}
 					def.keyNum[key] = def.keyNum[key] or {}
 					def.keyNum[key][#def.keyNum[key] + 1] = n
@@ -126,23 +129,33 @@ if gadgetHandler:IsSyncedCode() then
 					def.extra[wd.name:sub(#prefix + 1)] = wdid
 				end
 			end
-			-- weapon trees (v14): tree index per weapon number, tier copies per weapon number
+			-- weapon trees (v15): tree index per weapon number, visual step copies (<key>_s<N>) per weapon number
 			def.trees = {}
 			def.treeOf = {}
 			def.tierWdid = {}
 			for wi, wcfg in ipairs(cfg.weapons or {}) do
-				local tree = { index = wi, kind = wcfg.kind, name = wcfg.name, nums = {} }
+				local tree = { index = wi, kind = wcfg.kind, name = wcfg.name, nums = {}, base = H.weaponBase(ud.name, wi) }
 				for _, key in ipairs(wcfg.keys) do
 					for _, n in ipairs(def.keyNum[key] or {}) do
 						tree.nums[#tree.nums + 1] = n
 						def.treeOf[n] = wi
 						def.tierWdid[n] = {}
-						for tier = 2, 4 do
-							def.tierWdid[n][tier] = def.extra[key .. "_t" .. tier]
+						for step = 1, #H.weaponSteps do
+							def.tierWdid[n][step] = def.extra[key .. "_s" .. step]
 						end
+						local w = def.weapons[n]
+						tree.base = tree.base or { damage = w.damage, range = w.range, reload = w.reload, aoe = w.aoe,
+							burst = w.burst, projectiles = w.projectiles, paralyzer = w.paralyzer, type = w.type }
 					end
 				end
-				def.trees[wi] = tree
+				if H.weaponKinds[wcfg.kind] and tree.base then
+					def.trees[wi] = tree
+				else
+					Spring.Echo("[t4heroes] " .. ud.name .. ": weapon " .. wi .. " has an unknown kind or key: " .. tostring(wcfg.kind))
+					for _, n in ipairs(tree.nums) do
+						def.treeOf[n] = nil
+					end
+				end
 			end
 			def.keys = H.allKeys(ud.name)
 			for _, key in ipairs({ "a1", "a2", "ult" }) do
@@ -194,6 +207,12 @@ if gadgetHandler:IsSyncedCode() then
 			end
 			if next(copies) then
 				swapWatch[base] = true
+			end
+		end
+		-- missiles with a fixed flight time get it stretched with the range (tierSwap)
+		for n, w in pairs(def.weapons) do
+			if def.treeOf[n] and w.flight > 0 then
+				swapWatch[w.wdid] = true
 			end
 		end
 	end
@@ -478,10 +497,56 @@ if gadgetHandler:IsSyncedCode() then
 	end
 
 
+	-- one weapon tree (v15): the absolute amounts of its tracks x ranks (H.trackAmount, from the weapon's base
+	-- stats) plus the perks its rank sum has unlocked; `step` is its visual step
+	local function newTree()
+		return { ranks = {}, rankSum = 0, damage = 0, range = 0, reload = 0, splash = 0, pellets = 0, salvo = 0,
+			pierce = 0, pierceLen = 0, burn = 0, discharge = 0, chain = 0, chainJumps = 0, chainRadius = 0,
+			blast = 0, blastRadius = 0, crit = 0, critMult = 1, perks = {}, fx = {}, step = 0, tier = 1 }
+	end
+	local function weaponTree(h, wi, tree)
+		local kind = H.weaponKinds[tree.kind]
+		local base = tree.base
+		local t = newTree()
+		local function addStat(tr, amount)
+			local st = tr.stat
+			t[st] = (t[st] or 0) + amount
+			if st == "pierce" then
+				t.pierceLen = max(t.pierceLen, tr.len or 600)
+			elseif st == "chain" then
+				t.chainJumps = max(t.chainJumps, tr.jumps or 1)
+				t.chainRadius = max(t.chainRadius, tr.radius or 300)
+			elseif st == "blast" then
+				t.blastRadius = max(t.blastRadius, tr.radius or 150)
+			elseif st == "crit" then
+				t.critMult = max(t.critMult, tr.mult or 2)
+			end
+		end
+		for _, id in ipairs(kind.tracks) do
+			local r = rankOf(h, "w" .. wi .. "_" .. id)
+			t.ranks[id] = r
+			t.rankSum = t.rankSum + r
+			if r > 0 then
+				addStat(kind.track[id], H.trackAmount(kind.track[id], base) * r)
+			end
+		end
+		for i, p in ipairs(kind.perks or {}) do
+			if t.rankSum >= p.at then
+				addStat(p, H.trackAmount(p, base))
+				t.perks[#t.perks + 1] = i
+				t.fx[#t.fx + 1] = p.fx
+			end
+		end
+		t.step = H.weaponStep(t.rankSum)
+		t.tier = H.weaponTier(t.rankSum)
+		return t
+	end
+
 	local function sumMods(h)
 		local cfg = h.def.cfg
 		local m = { damage = 0, hp = 0, armor = 0, regen = 0, speed = 0, range = 0, reload = 0, sight = 0,
 			radar = 0, accuracy = 0, lifesteal = 0, thorns = 0, cdr = 0, xp = 0, splash = 0, burn = 0,
+			hpAbs = 0, regenAbs = 0, speedAbs = 0, sightAbs = 0, -- v15 absolute: HP, HP/s, elmos/s, elmos
 			crit = nil, aura = nil, zap = nil,
 			weaponDamage = {}, weaponReload = {}, burst = {}, projectiles = {}, swaps = {}, tree = {} }
 		local function add(t, rankMult)
@@ -501,10 +566,14 @@ if gadgetHandler:IsSyncedCode() then
 				end
 			end
 		end
-		for key, b in pairs(H.common) do
+		for key in pairs(H.common) do
 			local r = rankOf(h, key)
 			if r > 0 then
-				add(b.per, r)
+				local a = H.commonAmount(h.def.name, key)
+				m.hpAbs = m.hpAbs + (a.hp or 0) * r
+				m.regenAbs = m.regenAbs + (a.regen or 0) * r
+				m.speedAbs = m.speedAbs + (a.speed or 0) * r
+				m.sightAbs = m.sightAbs + (a.sight or 0) * r
 			end
 		end
 		for _, key in ipairs({ "a1", "a2", "ult" }) do
@@ -515,22 +584,8 @@ if gadgetHandler:IsSyncedCode() then
 			end
 		end
 		-- weapon trees
-		for wi, tree in ipairs(h.def.trees) do
-			local t = { ranks = {}, rankSum = 0, damage = 0, range = 0, reload = 0, splash = 0, pierce = 0, pierceLen = 0, burn = 0, discharge = 0 }
-			for _, track in ipairs(H.weaponKinds[tree.kind].tracks) do
-				local r = rankOf(h, "w" .. wi .. "_" .. track)
-				local tr = H.tracks[track]
-				t.ranks[tr.stat] = r
-				t.rankSum = t.rankSum + r
-				if t[tr.stat] and not tr.abs then
-					t[tr.stat] = t[tr.stat] + tr.per * r
-				end
-				if tr.len and r > 0 then
-					t.pierceLen = tr.len
-				end
-			end
-			t.tier = H.weaponTier(t.rankSum)
-			m.tree[wi] = t
+		for wi, tree in pairs(h.def.trees) do
+			m.tree[wi] = weaponTree(h, wi, tree)
 		end
 		-- items
 		addItemMods(h, m)
@@ -538,7 +593,98 @@ if gadgetHandler:IsSyncedCode() then
 	end
 
 	local spSetUnitWeaponDamages = Spring.SetUnitWeaponDamages
-	local EMPTY_TREE = { ranks = {}, rankSum = 0, damage = 0, range = 0, reload = 0, splash = 0, pierce = 0, pierceLen = 0, burn = 0, discharge = 0, tier = 1 }
+	local EMPTY_TREE = newTree()
+	local REACH_MARGIN = 1.15 -- a ballistic weapon's flat reach v^2/g is kept this much above its range
+
+	-- v15 weapon trees: absolute amounts per weapon (a tree of several weapondefs scales them by each one's own
+	-- base value), aim fix for long ranges (#3), proc fractions for the hit effects
+	local function applyWeapons(unitID, h, m, buff)
+		local def = h.def
+		local reloadMult = max(0.2, (1 - m.reload) * (1 - (buff.reload or 0)))
+		local accMult = max(0.1, 1 - m.accuracy)
+		local maxRange = 0
+		local dps = 0
+		h.wdmg = {}
+		h.wfx = {}
+		-- range bonus of the trees: weapons outside every tree without damage (trajectory checkers) follow the largest
+		local treeRange = 0
+		for wi, t in pairs(m.tree) do
+			local b = def.trees[wi].base
+			if b.range > 0 then
+				treeRange = max(treeRange, t.range / b.range)
+			end
+		end
+		for n, w in pairs(def.weapons) do
+			local wi = def.treeOf[n]
+			local t = wi and m.tree[wi] or EMPTY_TREE
+			local b = wi and def.trees[wi].base or w
+			local function frac(v, bv)
+				return (bv and bv > 0) and v / bv or 0
+			end
+			-- reload: absolute seconds of the tree (never below a quarter), then the global fractions
+			local reload = max(w.reload * 0.25, w.reload * (1 - frac(t.reload, b.reload)))
+			reload = max(w.reload * 0.15, reload * reloadMult * (1 - (m.weaponReload[w.key] or 0)))
+			spSetUnitWeaponState(unitID, n, "reloadTime", reload)
+			-- range: absolute elmos of the tree + the global fractions
+			local treeFrac = wi and frac(t.range, b.range) or (w.damage <= 0 and treeRange or 0)
+			local r = w.range * (1 + m.range + (buff.range or 0) + treeFrac)
+			-- a ballistic shell of speed v reaches v^2/g on flat ground: past that the engine cannot aim at all
+			-- (#3) - the shell gets faster with the range. Set before the range, the engine derives its range
+			-- factor from both.
+			if w.type == "Cannon" and w.velocity > 0 and w.gravity > 0 then
+				local v = max(w.velocity, sqrt(r * REACH_MARGIN * w.gravity))
+				spSetUnitWeaponState(unitID, n, "projectileSpeed", v)
+			end
+			spSetUnitWeaponState(unitID, n, "range", r)
+			if r > maxRange and w.damage > 0 then
+				maxRange = r
+			end
+			if accMult < 1 then
+				spSetUnitWeaponState(unitID, n, "accuracy", w.accuracy * accMult)
+				spSetUnitWeaponState(unitID, n, "sprayAngle", w.spray * accMult)
+			end
+			local burst = w.burst + (m.burst[w.key] or 0) + t.salvo
+			if burst ~= w.burst then
+				spSetUnitWeaponState(unitID, n, "burst", burst)
+			end
+			local proj = (m.projectiles[w.key] or w.projectiles) + t.pellets
+			if proj ~= w.projectiles then
+				spSetUnitWeaponState(unitID, n, "projectiles", proj)
+			end
+			local aoe = w.aoe * (1 + m.splash)
+			if t.splash > 0 then
+				aoe = aoe + ((b.aoe or 0) > 0 and t.splash * w.aoe / b.aoe or t.splash)
+			end
+			if aoe ~= w.aoe and spSetUnitWeaponDamages then
+				spSetUnitWeaponDamages(unitID, n, "damageAreaOfEffect", aoe)
+			end
+			local mult = (1 + (m.weaponDamage[w.key] or 0)) * (1 + frac(t.damage, b.damage))
+			h.wdmg[w.wdid] = mult
+			if w.damage > 0 then
+				dps = dps + w.damage * mult * h.dmgMult * proj * burst / max(0.05, reload)
+			end
+			for _, cw in pairs(def.tierWdid[n] or {}) do
+				h.wdmg[cw] = mult
+			end
+			-- hit effects: the per-shot amounts as shares of the current shot damage; the extra damage is dealt as
+			-- the hero's (AddUnitDamage), UnitPreDamaged multiplies it by dmgMult once more
+			local shot = max(1, (b.damage or 0) * mult * h.dmgMult * h.dmgMult)
+			h.wfx[w.wdid] = { n = n, tier = t.tier, step = t.step, aoe = aoe, baseAoe = w.aoe,
+				pierce = t.pierce / shot, pierceLen = t.pierceLen, burn = t.burn / shot + m.burn, discharge = t.discharge / shot,
+				chain = t.chain / shot, chainJumps = t.chainJumps, chainRadius = t.chainRadius,
+				blast = t.blast / shot, blastRadius = t.blastRadius, crit = t.crit, critMult = t.critMult,
+				para = w.paralyzer, perkFx = t.fx, ttlMult = w.flight > 0 and r > w.range * 1.01 and r / w.range or nil }
+		end
+		for wi, t in pairs(m.tree) do
+			spSetUnitRulesParam(unitID, "hero_wtier_" .. wi, t.tier, INLOS)
+			spSetUnitRulesParam(unitID, "hero_wstep_" .. wi, t.step, INLOS)
+		end
+		if maxRange > 0 then
+			Spring.SetUnitMaxRange(unitID, maxRange)
+		end
+		spSetUnitRulesParam(unitID, "hero_dps", floor(dps), INLOS)
+		spSetUnitRulesParam(unitID, "hero_range", floor(maxRange), INLOS)
+	end
 
 	local function applyStats(unitID, h)
 		local def = h.def
@@ -549,73 +695,22 @@ if gadgetHandler:IsSyncedCode() then
 		h.mods = m
 		h.dmgMult = (1 + H.LEVEL_DAMAGE * (L - 1)) * (1 + m.damage + (buff.damage or 0))
 		h.armor = min(0.75, m.armor)
-		h.regen = m.regen
 
 		-- health growth is applied as damage taken / hpMult ("effective health"): the engine recomputes
 		-- maxHealth from the unitdef whenever a unit gains engine experience (modrules healthScale), so a
 		-- SetUnitMaxHealth would be lost after the next hit
-		h.hpMult = max(0.2, (1 + H.LEVEL_HP * (L - 1)) * (1 + m.hp))
+		-- v15: Plating adds absolute effective HP (m.hpAbs) on top of the level and item growth; its regeneration
+		-- (m.regenAbs, effective HP per second) becomes a share of the real max health per second
+		local baseHp = max(1, def.health)
+		h.hpMult = max(0.2, (1 + H.LEVEL_HP * (L - 1)) * (1 + m.hp) + m.hpAbs / baseHp)
+		h.regen = m.regen + m.regenAbs / (baseHp * h.hpMult)
 		spSetUnitRulesParam(unitID, "hero_hpmult", h.hpMult, INLOS)
 		spSetUnitRulesParam(unitID, "hero_dmgmult", h.dmgMult, INLOS)
 		spSetUnitRulesParam(unitID, "hero_armor", h.armor, INLOS)
-		spSetUnitRulesParam(unitID, "hero_regen", m.regen, INLOS)
+		spSetUnitRulesParam(unitID, "hero_regen", h.regen, INLOS)
 
 		-- weapons: global mods x the weapon's own tree
-		local reloadMult = max(0.2, (1 - m.reload) * (1 - (buff.reload or 0)))
-		local accMult = max(0.1, 1 - m.accuracy)
-		local maxRange = 0
-		local dps = 0
-		h.wdmg = {}
-		h.wfx = {}
-		for n, w in pairs(def.weapons) do
-			local wi = def.treeOf[n]
-			local t = wi and m.tree[wi] or EMPTY_TREE
-			local wr = max(0.15, reloadMult * (1 - (m.weaponReload[w.key] or 0)) * (1 - t.reload))
-			spSetUnitWeaponState(unitID, n, "reloadTime", w.reload * wr)
-			local r = w.range * (1 + m.range + t.range + (buff.range or 0))
-			spSetUnitWeaponState(unitID, n, "range", r)
-			if r > maxRange and w.damage > 0 then
-				maxRange = r
-			end
-			if accMult < 1 then
-				spSetUnitWeaponState(unitID, n, "accuracy", w.accuracy * accMult)
-				spSetUnitWeaponState(unitID, n, "sprayAngle", w.spray * accMult)
-			end
-			local burst = w.burst + (m.burst[w.key] or 0)
-			local salvo = t.ranks.salvo or 0
-			if salvo > 0 then
-				burst = burst + math.ceil(max(w.burst, 3) * H.tracks.salvo.per * salvo)
-			end
-			if burst ~= w.burst then
-				spSetUnitWeaponState(unitID, n, "burst", burst)
-			end
-			local proj = (m.projectiles[w.key] or w.projectiles) + (t.ranks.pellets or 0) * H.tracks.pellets.per
-			if proj ~= w.projectiles then
-				spSetUnitWeaponState(unitID, n, "projectiles", proj)
-			end
-			local aoe = w.aoe * (1 + t.splash + m.splash)
-			if w.aoe > 0 and spSetUnitWeaponDamages then
-				spSetUnitWeaponDamages(unitID, n, "damageAreaOfEffect", aoe)
-			end
-			local mult = (1 + (m.weaponDamage[w.key] or 0)) * (1 + t.damage)
-			h.wdmg[w.wdid] = mult
-			if w.damage > 0 then
-				dps = dps + w.damage * mult * h.dmgMult * proj * burst / max(0.05, w.reload * wr)
-			end
-			for _, cw in pairs(def.tierWdid[n] or {}) do
-				h.wdmg[cw] = mult
-			end
-			h.wfx[w.wdid] = { n = n, tier = t.tier, aoe = aoe, baseAoe = w.aoe, pierce = t.pierce, pierceLen = t.pierceLen,
-				burn = t.burn + m.burn, discharge = t.discharge }
-		end
-		for wi, t in pairs(m.tree) do
-			spSetUnitRulesParam(unitID, "hero_wtier_" .. wi, t.tier, INLOS)
-		end
-		if maxRange > 0 then
-			Spring.SetUnitMaxRange(unitID, maxRange)
-		end
-		spSetUnitRulesParam(unitID, "hero_dps", floor(dps), INLOS)
-		spSetUnitRulesParam(unitID, "hero_range", floor(maxRange), INLOS)
+		applyWeapons(unitID, h, m, buff)
 
 		-- projectile swaps: weaponDefID -> { to, every, other }
 		h.swaps = {}
@@ -627,14 +722,14 @@ if gadgetHandler:IsSyncedCode() then
 
 		-- movement
 		local speedMult = buff.immobile and 0.02 or max(0.2, 1 + m.speed + (buff.speed or 0))
-		local spd = def.speed * speedMult -- elmos per second, like UnitDefs[].speed
+		local spd = (def.speed + (buff.immobile and 0 or m.speedAbs)) * speedMult -- elmos per second, like UnitDefs[].speed
 		Spring.MoveCtrl.SetGroundMoveTypeData(unitID, { maxSpeed = spd, maxWantedSpeed = spd })
 		spSetUnitRulesParam(unitID, "hero_speed", spd, INLOS)
 
 		-- sensors
-		if m.sight > 0 then
-			Spring.SetUnitSensorRadius(unitID, "los", def.sight * (1 + m.sight))
-			Spring.SetUnitSensorRadius(unitID, "airLos", max(def.airSight, def.sight) * (1 + m.sight))
+		if m.sight > 0 or m.sightAbs > 0 then
+			Spring.SetUnitSensorRadius(unitID, "los", (def.sight + m.sightAbs) * (1 + m.sight))
+			Spring.SetUnitSensorRadius(unitID, "airLos", (max(def.airSight, def.sight) + m.sightAbs) * (1 + m.sight))
 		end
 		if m.radar > 0 and def.radar > 0 then
 			Spring.SetUnitSensorRadius(unitID, "radar", def.radar * (1 + m.radar))
@@ -1164,6 +1259,23 @@ if gadgetHandler:IsSyncedCode() then
 
 	---------------------------------------------------------------- damage
 
+	-- weapon tree crits (Headshot): the damage multiplier of a hit
+	local function weaponCrit(a, weaponDefID, unitID)
+		local fx = a.wfx and a.wfx[tierBase[weaponDefID] or weaponDefID]
+		if fx and fx.crit > 0 and random() < fx.crit then
+			local f = frameNow()
+			if f - a.lastCrit > 8 then
+				a.lastCrit = f
+				local x, y, z = spGetUnitPosition(unitID)
+				if x then
+					ceg("hero-wfx-crit", x, y + 20, z)
+				end
+			end
+			return fx.critMult
+		end
+		return 1
+	end
+
 	function gadget:UnitPreDamaged(unitID, unitDefID, unitTeam, damage, paralyzer, weaponDefID, projectileID, attackerID, attackerDefID, attackerTeam)
 		if invuln[unitID] then
 			return 0, 0
@@ -1176,6 +1288,9 @@ if gadgetHandler:IsSyncedCode() then
 		local a = attackerID and heroes[attackerID]
 		if a then
 			m = m * a.dmgMult * (a.wdmg and a.wdmg[weaponDefID] or 1)
+			if not paralyzer then
+				m = m * weaponCrit(a, weaponDefID, unitID)
+			end
 			local cfg = a.def.cfg
 			local r = rankOf(a, "a1")
 			if r > 0 and not paralyzer then
@@ -1263,6 +1378,81 @@ if gadgetHandler:IsSyncedCode() then
 	local burning = {}     -- victim -> { owner, pool }
 	local discharge = {}   -- victim -> { owner, dmg }
 	local inThorns = false
+	local chainHits = {}   -- victim -> { owner, dmg, jumps, radius, para }
+	local blastHits = {}   -- victim -> { owner, dmg, radius, para }
+	local perkFxAt = {}    -- victim -> frame of its last perk hit effect
+	local LIGHTNING_VISUAL = WeaponDefNames.lightning_chain and WeaponDefNames.lightning_chain.id
+
+	-- v15 weapon tree effects of one hit: amounts collected per victim, dealt every 6 frames (weaponEffects).
+	-- A paralyzer weapon (EMP) arcs, blasts and pierces paralysis.
+	local function weaponHit(h, attackerID, unitID, weaponDefID, damage, para)
+		local fx = h.wfx and h.wfx[tierBase[weaponDefID] or weaponDefID]
+		if not fx or (para and not fx.para) then
+			return
+		end
+		if fx.pierce > 0 then
+			local key = attackerID .. ":" .. unitID
+			local p = pierceHits[key]
+			if not p then
+				local ax, _, az = spGetUnitPosition(attackerID)
+				local vx, _, vz = spGetUnitPosition(unitID)
+				if ax and vx then
+					local dx, dz = vx - ax, vz - az
+					local d = max(1, sqrt(dx * dx + dz * dz))
+					p = { owner = attackerID, victim = unitID, dmg = 0, dx = dx / d, dz = dz / d, len = fx.pierceLen, tier = fx.tier, para = para }
+					pierceHits[key] = p
+				end
+			end
+			if p then
+				p.dmg = p.dmg + damage * fx.pierce
+			end
+		end
+		if fx.burn > 0 and not para then
+			local b = burning[unitID]
+			if not b then
+				b = { owner = attackerID, pool = 0 }
+				burning[unitID] = b
+			end
+			b.pool = b.pool + damage * fx.burn
+		end
+		if fx.discharge > 0 then
+			local d = discharge[unitID]
+			if not d then
+				d = { owner = attackerID, dmg = 0 }
+				discharge[unitID] = d
+			end
+			d.dmg = d.dmg + damage * fx.discharge
+		end
+		if fx.chain > 0 then
+			local c = chainHits[unitID]
+			if not c then
+				c = { owner = attackerID, dmg = 0, jumps = fx.chainJumps, radius = fx.chainRadius, para = para }
+				chainHits[unitID] = c
+			end
+			c.dmg = c.dmg + damage * fx.chain
+		end
+		if fx.blast > 0 then
+			local b = blastHits[unitID]
+			if not b then
+				b = { owner = attackerID, dmg = 0, radius = fx.blastRadius, para = para, big = fx.step >= 5 }
+				blastHits[unitID] = b
+			end
+			b.dmg = b.dmg + damage * fx.blast
+		end
+		-- perk hit effects, at most one set per victim every half second
+		if #fx.perkFx > 0 then
+			local f = frameNow()
+			if f - (perkFxAt[unitID] or -100) >= 15 then
+				perkFxAt[unitID] = f
+				local x, y, z = spGetUnitPosition(unitID)
+				if x then
+					for _, name in ipairs(fx.perkFx) do
+						ceg(name, x, y + 15, z)
+					end
+				end
+			end
+		end
+	end
 
 	function gadget:UnitDamaged(unitID, unitDefID, unitTeam, damage, paralyzer, weaponDefID, projectileID, attackerID, attackerDefID, attackerTeam)
 		local victim = heroes[unitID]
@@ -1293,7 +1483,11 @@ if gadgetHandler:IsSyncedCode() then
 			value = value * 0.25
 		end
 		addXP(attackerID, h, value)
-		if paralyzer or inThorns then
+		if inThorns then
+			return
+		end
+		if paralyzer then
+			weaponHit(h, attackerID, unitID, weaponDefID, damage, true)
 			return
 		end
 		local mods = h.mods or {}
@@ -1304,44 +1498,10 @@ if gadgetHandler:IsSyncedCode() then
 			end
 		end
 		itemOnHit(attackerID, h, unitID) -- items: procs
-		local fx = h.wfx and h.wfx[tierBase[weaponDefID] or weaponDefID]
-		if not fx then
-			return
-		end
-		if fx.pierce > 0 then
-			local key = attackerID .. ":" .. unitID
-			local p = pierceHits[key]
-			if not p then
-				local ax, _, az = spGetUnitPosition(attackerID)
-				local vx, _, vz = spGetUnitPosition(unitID)
-				if ax and vx then
-					local dx, dz = vx - ax, vz - az
-					local d = max(1, sqrt(dx * dx + dz * dz))
-					p = { owner = attackerID, victim = unitID, dmg = 0, dx = dx / d, dz = dz / d, len = fx.pierceLen, tier = fx.tier }
-					pierceHits[key] = p
-				end
-			end
-			if p then
-				p.dmg = p.dmg + damage * fx.pierce
-			end
-		end
-		if fx.burn > 0 then
-			local b = burning[unitID]
-			if not b then
-				b = { owner = attackerID, pool = 0 }
-				burning[unitID] = b
-			end
-			b.pool = b.pool + damage * fx.burn
-		end
-		if fx.discharge > 0 then
-			local d = discharge[unitID]
-			if not d then
-				d = { owner = attackerID, dmg = 0 }
-				discharge[unitID] = d
-			end
-			d.dmg = d.dmg + damage * fx.discharge
-		end
+		weaponHit(h, attackerID, unitID, weaponDefID, damage, false)
 	end
+
+	local lightningArc = { pos = { 0, 0, 0 }, ["end"] = { 0, 0, 0 }, ttl = 3, owner = -1, team = -1 }
 
 	local function weaponEffects(f)
 		for key, p in pairs(pierceHits) do
@@ -1356,12 +1516,12 @@ if gadgetHandler:IsSyncedCode() then
 					for _, uid in ipairs(spGetUnitsInCylinder(px, pz, 110)) do
 						if uid ~= p.victim and not hit[uid] and isEnemyOf(uid, ally) then
 							hit[uid] = true
-							spAddUnitDamage(uid, p.dmg, 0, p.owner)
+							spAddUnitDamage(uid, p.dmg, p.para and 2 or 0, p.owner)
 						end
 					end
 				end
 				local ex, ez = vx + p.dx * p.len, vz + p.dz * p.len
-				ceg(p.tier >= 3 and "hero-pierce-big" or "hero-pierce", ex, spGetGroundHeight(ex, ez) + 30, ez)
+				ceg(p.tier >= 3 and "hero-wfx-pierce-big" or "hero-wfx-pierce", ex, spGetGroundHeight(ex, ez) + 30, ez)
 			end
 		end
 		for uid, b in pairs(burning) do
@@ -1373,7 +1533,7 @@ if gadgetHandler:IsSyncedCode() then
 				spAddUnitDamage(uid, dmg, 0, spValidUnitID(b.owner) and b.owner or nil)
 				if f % 12 < 6 then
 					local x, y, z = spGetUnitPosition(uid)
-					ceg("hero-afterburn", x, y + 10, z)
+					ceg("hero-wfx-afterburn", x, y + 10, z)
 				end
 			end
 		end
@@ -1382,7 +1542,57 @@ if gadgetHandler:IsSyncedCode() then
 			if spValidUnitID(uid) and not spGetUnitIsDead(uid) then
 				spAddUnitDamage(uid, d.dmg, 2, spValidUnitID(d.owner) and d.owner or nil)
 				local x, y, z = spGetUnitPosition(uid)
-				ceg("hero-static", x, y, z)
+				ceg("hero-wfx-static", x, y, z)
+			end
+		end
+		-- arcs: the nearest enemies around the victim, drawn with the stock lightning_chain visual
+		for uid, c in pairs(chainHits) do
+			chainHits[uid] = nil
+			local vx, vy, vz = spGetUnitPosition(uid)
+			local ally = spValidUnitID(c.owner) and spGetUnitAllyTeam(c.owner)
+			if vx and ally and c.dmg >= 1 then
+				local near = {}
+				for _, e in ipairs(spGetUnitsInCylinder(vx, vz, c.radius)) do
+					if e ~= uid and isEnemyOf(e, ally) and not spGetUnitIsDead(e) then
+						local ex, _, ez = spGetUnitPosition(e)
+						near[#near + 1] = { e, (ex - vx) ^ 2 + (ez - vz) ^ 2 }
+					end
+				end
+				table.sort(near, function(a, b) return a[2] < b[2] end)
+				local px, py, pz = vx, vy + 30, vz
+				for i = 1, min(c.jumps, #near) do
+					local e = near[i][1]
+					local ex, ey, ez = spGetUnitPosition(e)
+					spAddUnitDamage(e, c.dmg, c.para and 2 or 0, c.owner)
+					if LIGHTNING_VISUAL then
+						lightningArc.pos[1], lightningArc.pos[2], lightningArc.pos[3] = px, py, pz
+						lightningArc["end"][1], lightningArc["end"][2], lightningArc["end"][3] = ex, ey + 30, ez
+						lightningArc.owner = c.owner
+						lightningArc.team = spGetUnitTeam(c.owner) or -1
+						spSpawnProjectile(LIGHTNING_VISUAL, lightningArc)
+					end
+					ceg("hero-wfx-arc", ex, ey + 20, ez)
+					px, py, pz = ex, ey + 30, ez
+				end
+			end
+		end
+		-- secondary blasts around the victim
+		for uid, b in pairs(blastHits) do
+			blastHits[uid] = nil
+			local vx, vy, vz = spGetUnitPosition(uid)
+			local ally = spValidUnitID(b.owner) and spGetUnitAllyTeam(b.owner)
+			if vx and ally and b.dmg >= 1 then
+				for _, e in ipairs(spGetUnitsInCylinder(vx, vz, b.radius)) do
+					if e ~= uid and isEnemyOf(e, ally) and not spGetUnitIsDead(e) then
+						spAddUnitDamage(e, b.dmg, b.para and 2 or 0, b.owner)
+					end
+				end
+				ceg(b.para and "hero-wfx-emp" or (b.big and "hero-wfx-shock-big" or "hero-wfx-shock"), vx, spGetGroundHeight(vx, vz) + 5, vz)
+			end
+		end
+		for uid, fr in pairs(perkFxAt) do
+			if f - fr > 90 then
+				perkFxAt[uid] = nil
 			end
 		end
 	end
@@ -1406,6 +1616,12 @@ if gadgetHandler:IsSyncedCode() then
 		end
 	end
 	local spSetProjectileDamages = Spring.SetProjectileDamages
+	local weaponGravity = {} -- weaponDefID -> gravity per frame (negative) of a ballistic weapon with its own mygravity
+	for wdid, wd in pairs(WeaponDefs) do
+		if wd.type == "Cannon" and (wd.myGravity or 0) > 0 then
+			weaponGravity[wdid] = -wd.myGravity
+		end
+	end
 
 	-- the end point of a beam: its velocity is start -> end in Recoil; otherwise the weapon's target
 	local function beamEnd(proID, ownerID, num, px, py, pz)
@@ -1425,12 +1641,22 @@ if gadgetHandler:IsSyncedCode() then
 	end
 
 	-- an upgraded weapon draws its shot with the copy of its visual tier
+	-- v15: the step copy of the weapon's rank sum (8 small steps); a missile of a longer range flies longer
 	local function tierSwap(proID, ownerID, weaponDefID, h)
 		local fx = h.wfx and h.wfx[weaponDefID]
-		if not fx or fx.tier < 2 then
+		if not fx then
 			return
 		end
-		local to = h.def.tierWdid[fx.n] and h.def.tierWdid[fx.n][fx.tier]
+		if fx.ttlMult then
+			local ttl = Spring.GetProjectileTimeToLive(proID)
+			if ttl and ttl > 0 then
+				Spring.SetProjectileTimeToLive(proID, math.ceil(ttl * fx.ttlMult))
+			end
+		end
+		if fx.step < 1 then
+			return
+		end
+		local to = h.def.tierWdid[fx.n] and h.def.tierWdid[fx.n][fx.step]
 		if not to then
 			return
 		end
@@ -1460,7 +1686,9 @@ if gadgetHandler:IsSyncedCode() then
 				target = wt
 			end
 		end
-		local grav = Spring.GetProjectileGravity and Spring.GetProjectileGravity(proID) or gravityPerFrame
+		-- GetProjectileGravity reports the map gravity, not the weapon's own (mygravity): a copied artillery
+		-- shell flew ~60% too far and never hit (#3)
+		local grav = weaponGravity[weaponDefID] or (Spring.GetProjectileGravity and Spring.GetProjectileGravity(proID)) or gravityPerFrame
 		local ttl = Spring.GetProjectileTimeToLive and Spring.GetProjectileTimeToLive(proID) or 900
 		Spring.DeleteProjectile(proID)
 		projParams.pos[1], projParams.pos[2], projParams.pos[3] = px, py, pz
