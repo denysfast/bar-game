@@ -2789,7 +2789,7 @@ if gadgetHandler:IsSyncedCode() then
 					if h.team == teamID then
 						local hp, maxHp = spGetUnitHealth(uid)
 						local e = escorts[uid]
-						parts[#parts + 1] = string.format("%s L%d %d%% %s esc=%d", h.def.name, h.level, floor(100 * (hp or 0) / max(1, maxHp or 1)),
+						parts[#parts + 1] = string.format("%s L%d (%d ranks, %d bought) %d%% %s esc=%d", h.def.name, h.level, #h.picks, h.bought or 0, floor(100 * (hp or 0) / max(1, maxHp or 1)),
 							h.retreating and "retreat" or (h.focusHero and "hunt" or "march"), e and e.n or 0)
 					end
 				end
