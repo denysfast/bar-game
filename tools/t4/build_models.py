@@ -26,6 +26,18 @@ MODELS = [
     ("legt4starfall",   "legelrpcmech",    1.6),
     ("legt4longinus",   "legerailtank",    1.8),
     ("legt4tempest",    "legeshotgunmech", 2.0),
+    # Armada T2 heroes (units/ArmT2Heroes/armt2heroes.lua) and their hall
+    ("armt2hall",       "armalab",         1.3),
+    ("armt2boomer",     "armfboy",         1.5),
+    ("armt2deadeye",    "armsnipe",        1.6),
+    ("armt2outlaw",     "armmav",          1.5),
+    ("armt2hound",      "armfido",         1.6),
+    ("armt2tesla",      "armzeus",         1.5),
+    ("armt2widow",      "armsptk",         1.5),
+    ("armt2starlight",  "armmanni",        1.5),
+    ("armt2bulldog",    "armbull",         1.5),
+    ("armt2envoy",      "armmerl",         1.5),
+    ("armt2weaver",     "armspid",         1.6),
 ]
 
 here = os.path.dirname(os.path.abspath(__file__))
