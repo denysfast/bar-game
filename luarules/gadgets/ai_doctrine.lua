@@ -69,9 +69,10 @@ local MAPX, MAPZ = Game.mapSizeX, Game.mapSizeZ
 local ALLIED = { allied = true }
 
 -- tunables
-local START_FRAME = 3 * 60 * GAME_SPEED      -- no plans before minute 3 (the opening is the AI's own)
+local START_FRAME = 5 * 60 * GAME_SPEED      -- no plans before minute 5 (the opening is the AI's own)
 local MAX_ARMIES = 3                          -- per team, forming one included
-local PLAN_SHARE = 3                          -- of every 4 factory slots, this many build the plan
+local PLAN_SHARE = 1                          -- planned units before one stock pick (1 = every other slot: the stock AI keeps
+                                              -- its defence and constructors)
 local LAUNCH_SHARE = 0.85                     -- launch at this share of the planned metal (by tactic below) ...
 local LAUNCH_BY_TACTIC = { raid = 0.6, assault = 0.85, siege = 0.8, skirmish = 0.8, air = 0.7, defend = 0.5 }
 local LAUNCH_LATE = 0.6                       -- ... or this after LAUNCH_WAIT
@@ -883,9 +884,13 @@ local function settle(army, f)
 	if not t or (army.state ~= "forming" and army.state ~= "regroup") then
 		return
 	end
+	local miss = missing(army)
+	if next(miss) == nil then
+		return -- complete: nothing to settle
+	end
 	local facs = teamFactories(t)
 	local makeable = false
-	for udid in pairs(missing(army)) do
+	for udid in pairs(miss) do
 		if canBuildDef(facs, udid) then
 			makeable = true
 			break
@@ -956,7 +961,7 @@ local function driveArmy(army, f)
 		end
 		if ready then
 			launch(army, st, f)
-		elseif army.state == "regroup" and waited > 90 * GAME_SPEED then
+		elseif army.state == "regroup" and waited > 20 * GAME_SPEED then
 			-- veterans that cannot go again alone join the army forming at home (one bigger force)
 			local tm = teams[army.team]
 			for _, other in ipairs(tm and tm.armies or {}) do
