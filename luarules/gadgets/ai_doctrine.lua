@@ -1075,8 +1075,15 @@ function gadget:UnitCreated(unitID, unitDefID, teamID, builderID)
 	-- factory makes one stock pick (skip until a non-planned unit comes out)
 	local army = armyNeeding(t)
 	local need = army and missing(army)
-	if need and need[unitDefID] then
-		pending[unitID] = army
+	local wanted = need and need[unitDefID]
+	if wanted then
+		pending[unitID] = army -- the stock pick may be a planned unit too: it counts
+	end
+	if fs.skip then
+		fs.skip = false -- the one stock slot is used, whatever it built
+		return
+	end
+	if wanted then
 		fs.planned = fs.planned + 1
 		if fs.planned >= PLAN_SHARE then
 			fs.skip = true
@@ -1084,8 +1091,6 @@ function gadget:UnitCreated(unitID, unitDefID, teamID, builderID)
 			fs.next = ""
 			spSetUnitRulesParam(builderID, "doctrine_next", "", ALLIED)
 		end
-	elseif fs.skip then
-		fs.skip = false
 	end
 end
 
