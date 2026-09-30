@@ -126,10 +126,12 @@ for _, n in ipairs({ "armt4gant", "cort4gant", "legt4gant" }) do
 end
 
 local unitCost, unitSpeed, unitRange, unitRole, isStructure, isFactory, factoryBuilds = {}, {}, {}, {}, {}, {}, {}
+local unitSize = {} -- elmos between two of them in a formation line
 local ecoDefs = {}
 for udid, ud in pairs(UnitDefs) do
 	unitCost[udid] = ud.metalCost + ud.energyCost / 70
 	unitSpeed[udid] = ud.speed or 0
+	unitSize[udid] = max(70, (math.max(ud.xsize or 2, ud.zsize or 2)) * 8 * 1.6)
 	isStructure[udid] = ud.isImmobile or (ud.speed or 0) == 0
 	if ud.extractsMetal and ud.extractsMetal > 0 or (ud.energyMake or 0) > 5 or ud.customParams.energyconv_capacity or ud.isBuilder then
 		ecoDefs[udid] = true
@@ -771,6 +773,10 @@ local function formation(army, ax, az, dx, dz, fight, f)
 		table.sort(list)
 		local along = ROLE_OFFSET[role] or 0
 		local n = #list
+		local gap = 70
+		for _, uid in ipairs(list) do
+			gap = max(gap, unitSize[spGetUnitDefID(uid) or -1] or 70)
+		end
 		for i, uid in ipairs(list) do
 			local a = along
 			if role == "artillery" then
@@ -781,8 +787,8 @@ local function formation(army, ax, az, dx, dz, fight, f)
 			local perRow = max(6, floor(sqrt(n) * 2))
 			local row = floor((i - 1) / perRow)
 			local col = (i - 1) % perRow - (min(n, perRow) - 1) / 2
-			local sx = ax + dx * (a - row * 90) + px * col * 75
-			local sz = az + dz * (a - row * 90) + pz * col * 75
+			local sx = ax + dx * (a - row * gap * 1.2) + px * col * gap
+			local sz = az + dz * (a - row * gap * 1.2) + pz * col * gap
 			sx, sz = clampMap(sx, sz)
 			local ux, _, uz = spGetUnitPosition(uid)
 			if ux then
