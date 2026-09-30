@@ -974,8 +974,12 @@ local function driveArmy(army, f)
 			end
 		end
 		-- a gathering army does not stand under fire: it answers intruders near the rally point (a home
-		-- army further out), unless they are far stronger
+		-- army further out) and attacks on the base, unless they are far stronger
 		local es, ex, ez = enemyStrength(army.rallyX, army.rallyZ, t == "defend" and 2500 or 1300, army.ally)
+		local ht = teams[army.team] and teams[army.team].homeThreat
+		if ht and (es <= 0 or ht.s > es) then
+			es, ex, ez = ht.s, ht.x, ht.z
+		end
 		if es > 0 and es < st.strength * 2 then
 			if f - (army.guardOrder or 0) > 3 * GAME_SPEED then
 				army.guardOrder = f
@@ -1023,6 +1027,18 @@ local function driveArmy(army, f)
 		army.target, army.targetKind, army.targetFrame, army.targetScore = { tx, tz }, kind, f, score
 	end
 	local tx, tz = army.target[1], army.target[2]
+	-- the base under attack: armies within 6000 of home turn back (raiders and air strikes go on)
+	local ht = teams[army.team] and teams[army.team].homeThreat
+	if ht and t ~= "raid" and t ~= "air" and ht.s < st.strength * 2.5 then
+		local hx, hz = startPos(army.team)
+		if (st.x - hx) ^ 2 + (st.z - hz) ^ 2 < 6000 * 6000 then
+			if army.targetKind ~= "home defence" then
+				log("t=%d team=%d army#%d %s turns back: the base is attacked (%d metal of enemies)", floor(f / 1800), army.team, army.id, army.comp.id, ht.s)
+			end
+			tx, tz = ht.x, ht.z
+			army.target, army.targetKind, army.targetFrame = { tx, tz }, "home defence", f
+		end
+	end
 
 	-- losses and odds
 	local engageR = max(900, st.range * 1.2 + 350)
@@ -1295,10 +1311,21 @@ function gadget:GameFrame(f)
 			t.side = sideOf(teamID)
 		end
 		if t.side and f >= START_FRAME then
-			-- threatened: enemies near home
-			if f % 300 == 17 then
+			-- threatened: enemies at home (the start and every factory), every 5 s
+			if f % 150 == 17 then
 				local hx, hz = startPos(teamID)
-				t.threatened = enemyStrength(hx, hz, 2500, t.ally) > 3000
+				local best = { enemyStrength(hx, hz, 3200, t.ally) }
+				for uid in pairs(t.factories) do
+					local fx, _, fz = spGetUnitPosition(uid)
+					if fx then
+						local e = { enemyStrength(fx, fz, 1600, t.ally) }
+						if e[1] > best[1] then
+							best = e
+						end
+					end
+				end
+				t.threatened = best[1] > 3000
+				t.homeThreat = best[1] > 1500 and { s = best[1], x = best[2], z = best[3] } or nil
 			end
 			-- drop dead armies, start a new plan when nothing is forming
 			local keep, forming = {}, false
