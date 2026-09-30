@@ -663,7 +663,20 @@ local function armyStats(army)
 			spread = spread + sqrt((x - cx) ^ 2 + (z - cz) ^ 2)
 		end
 	end
-	return { x = cx, z = cz, cost = cost, strength = strength, slow = slow < 1e9 and slow or 60, n = n, range = maxRange, spread = spread / max(1, n) }
+	-- the main body: units within 900 of the anchor (the anchor waits for it, stragglers do not hold it)
+	local bx, bz, bc, bn = 0, 0, 0, 0
+	if army.anchorX then
+		for uid in pairs(army.units) do
+			local x, _, z = spGetUnitPosition(uid)
+			if x and (x - army.anchorX) ^ 2 + (z - army.anchorZ) ^ 2 < 900 * 900 then
+				local c = unitCost[spGetUnitDefID(uid)] or 1
+				bx, bz, bc, bn = bx + x * c, bz + z * c, bc + c, bn + 1
+			end
+		end
+	end
+	local body = bc > 0 and { x = bx / bc, z = bz / bc, share = bc / cost, n = bn } or nil
+	return { x = cx, z = cz, cost = cost, strength = strength, slow = slow < 1e9 and slow or 60, n = n, range = maxRange,
+		spread = spread / max(1, n), body = body }
 end
 
 -- the target of an army by its tactic, from what its ally team sees
@@ -686,7 +699,7 @@ local function chooseTarget(army, st, f)
 				score, k = (c.struct + c.def) / (1 + d / 2500), "base"
 			end
 		elseif t == "skirmish" then
-			if c.army > 0 and c.army < st.strength * 1.4 then
+			if c.army > 0 and c.army < st.strength * 1.4 and d < 5000 then
 				score, k = c.army / (1 + d / 2000), "army"
 			elseif c.eco > 0 then
 				score, k = c.eco * 0.3 / (1 + d / 2000), "eco"
@@ -816,6 +829,27 @@ local function retreat(army, st, f, why)
 		army.team, army.id, army.comp.id, why, st.n, st.strength, army.launchStrength, army.kills, army.losses)
 end
 
+-- a unit that has not moved 40 elmos in 30 s while far from its slot is stuck (cliffs, water, a wreck
+-- field): it goes back to the AI and leaves the army (so it does not hold the march)
+local function releaseStuck(army, f)
+	army.pos = army.pos or {}
+	for uid in pairs(army.units) do
+		local x, _, z = spGetUnitPosition(uid)
+		if x then
+			local p = army.pos[uid]
+			if not p or (p[1] - x) ^ 2 + (p[2] - z) ^ 2 > 40 * 40 then
+				army.pos[uid] = { x, z, f }
+			elseif f - p[3] > 30 * GAME_SPEED and army.anchorX and (x - army.anchorX) ^ 2 + (z - army.anchorZ) ^ 2 > 1100 * 1100 then
+				removeUnit(army, uid)
+				army.pos[uid] = nil
+				army.stuck = (army.stuck or 0) + 1
+				spSetUnitRulesParam(uid, "doctrine_army", 0)
+				toAI(army.team, "attach " .. uid)
+			end
+		end
+	end
+end
+
 local function driveArmy(army, f)
 	local st = armyStats(army)
 	if not st then
@@ -930,13 +964,20 @@ local function driveArmy(army, f)
 	end
 
 	army.spreadSum, army.spreadN = army.spreadSum + st.spread, army.spreadN + 1
-	-- march: the anchor walks toward the target at the pace of the slowest unit, never far ahead of the army
+	-- march: the anchor walks toward the target at the pace of the slowest unit, never far ahead of the main body
+	releaseStuck(army, f)
 	local dx, dz, dist = norm(tx - army.anchorX, tz - army.anchorZ)
-	local lag = sqrt((army.anchorX - st.x) ^ 2 + (army.anchorZ - st.z) ^ 2)
+	local body = st.body
+	local lag = body and sqrt((army.anchorX - body.x) ^ 2 + (army.anchorZ - body.z) ^ 2) or 9999
 	local step = st.slow * 1.0 * 0.9 -- one second at 90% of the slowest speed
-	if lag > 500 then
-		step = 0 -- wait for the army to catch up
+	if not body or body.share < 0.5 then
+		-- the army is not around its anchor (just launched, or strung out): the anchor comes back to it
+		army.anchorX, army.anchorZ = st.x, st.z
+		step = 0
+	elseif lag > 350 then
+		step = 0 -- wait for the main body to catch up
 	end
+	army.lag = lag
 	if t == "siege" and army.targetKind == "base" and dist < max(600, st.range * 0.85) then
 		step = 0 -- in range: bombard
 	end
@@ -950,10 +991,19 @@ end
 
 ---------------------------------------------------------------------------- lifecycle
 
+-- modoption ai_doctrine_teams = "0,2": only these teams plan (A/B tests against the stock AI in one game)
+local onlyTeams
+if modOptions.ai_doctrine_teams and modOptions.ai_doctrine_teams ~= "" then
+	onlyTeams = {}
+	for n in tostring(modOptions.ai_doctrine_teams):gmatch("%d+") do
+		onlyTeams[tonumber(n)] = true
+	end
+end
+
 local function isAITeam(teamID)
 	local _, _, _, isAI = Spring.GetTeamInfo(teamID, false)
 	local luaAI = Spring.GetTeamLuaAI(teamID)
-	return isAI and (luaAI == nil or luaAI == "")
+	return isAI and (luaAI == nil or luaAI == "") and (not onlyTeams or onlyTeams[teamID])
 end
 
 function gadget:Initialize()
@@ -1078,15 +1128,36 @@ function gadget:UnitGiven(unitID, unitDefID, newTeam, oldTeam)
 end
 
 local function summary(f)
+	-- every team's worth (A/B tests: the stock teams too)
+	for _, teamID in ipairs(Spring.GetTeamList()) do
+		if teamID ~= Spring.GetGaiaTeamID() then
+			local v = 0
+			for _, uid in ipairs(Spring.GetTeamUnits(teamID)) do
+				v = v + (unitCost[spGetUnitDefID(uid)] or 0)
+			end
+			local _, _, isDead, _, _, ally = Spring.GetTeamInfo(teamID, false)
+			log("t=%d worth team=%d ally=%d doctrine=%d dead=%d value=%d", floor(f / 1800), teamID, ally, teams[teamID] and 1 or 0, isDead and 1 or 0, v)
+		end
+	end
 	for teamID, t in pairs(teams) do
 		local parts = {}
 		for _, a in ipairs(t.armies) do
 			local st = a.last
-			parts[#parts + 1] = string.format("#%d %s T%d %s %s %du %dm kills=%d losses=%d eng=%d spread=%d", a.id, a.comp.id, a.tier, a.tactic, a.state,
-				st and st.n or 0, st and st.cost or 0, a.kills, a.losses, a.engagements, a.spreadN > 0 and a.spreadSum / a.spreadN or 0)
+			local toT = (st and a.target) and sqrt((a.target[1] - st.x) ^ 2 + (a.target[2] - st.z) ^ 2) or 0
+			parts[#parts + 1] = string.format("#%d %s T%d %s %s %du %dm kills=%d losses=%d eng=%d spread=%d target=%s:%d lag=%d stuck=%d", a.id, a.comp.id, a.tier, a.tactic, a.state,
+				st and st.n or 0, st and st.cost or 0, a.kills, a.losses, a.engagements, a.spreadN > 0 and a.spreadSum / a.spreadN or 0,
+				a.targetKind or "-", toT, a.lag or 0, a.stuck or 0)
 		end
 		local _, _, _, income = spGetTeamResources(teamID, "metal")
-		log("t=%d team=%d summary income=%d armies=%d | %s", floor(f / 1800), teamID, income or 0, #t.armies, table.concat(parts, "; "))
+		local value, armyValue = 0, 0
+		for _, uid in ipairs(Spring.GetTeamUnits(teamID)) do
+			local udid = spGetUnitDefID(uid)
+			value = value + (unitCost[udid] or 0)
+			if owns[uid] then
+				armyValue = armyValue + (unitCost[udid] or 0)
+			end
+		end
+		log("t=%d team=%d summary income=%d armies=%d value=%d planned=%d | %s", floor(f / 1800), teamID, income or 0, #t.armies, value, armyValue, table.concat(parts, "; "))
 	end
 end
 
