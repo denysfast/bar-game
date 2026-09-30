@@ -872,8 +872,36 @@ local function driveArmy(army, f)
 		local share = st.cost / max(1, army.planMetal)
 		local waited = f - army.since
 		local want = army.state == "regroup" and REFILL_SHARE or (LAUNCH_BY_TACTIC[t] or LAUNCH_SHARE)
-		if share >= want or (waited > LAUNCH_WAIT and share >= LAUNCH_LATE) or (army.state == "regroup" and waited > LAUNCH_WAIT * 1.5 and share >= 0.4) then
+		local ready = share >= want or (waited > LAUNCH_WAIT and share >= LAUNCH_LATE) or (army.state == "regroup" and waited > LAUNCH_WAIT * 1.5 and share >= 0.4)
+		-- a beaten army waits at least a minute, and nobody launches into a stronger enemy at the doorstep
+		if army.state == "regroup" and waited < 60 * GAME_SPEED then
+			ready = false
+		end
+		if ready then
+			local near = enemyStrength(army.rallyX, army.rallyZ, 2600, army.ally)
+			if near > st.strength * 1.3 and t ~= "defend" then
+				ready = false
+				army.heldBack = (army.heldBack or 0) + 1
+			end
+		end
+		if ready then
 			launch(army, st, f)
+		elseif army.state == "regroup" and waited > 90 * GAME_SPEED then
+			-- veterans that cannot go again alone join the army forming at home (one bigger force)
+			local tm = teams[army.team]
+			for _, other in ipairs(tm and tm.armies or {}) do
+				if other ~= army and other.state == "forming" then
+					for uid in pairs(army.units) do
+						removeUnit(army, uid)
+						addUnit(other, uid)
+						other.roleOver[spGetUnitDefID(uid)] = other.roleOver[spGetUnitDefID(uid)] or army.roleOver[spGetUnitDefID(uid)]
+					end
+					other.planMetal = other.planMetal + st.cost
+					log("t=%d team=%d army#%d %s merges into army#%d %s: %d units, %d metal", floor(f / 1800), army.team, army.id, army.comp.id,
+						other.id, other.comp.id, st.n, st.cost)
+					break
+				end
+			end
 		end
 		-- a gathering army does not stand under fire: it answers intruders near the rally point (a home
 		-- army further out), unless they are far stronger
