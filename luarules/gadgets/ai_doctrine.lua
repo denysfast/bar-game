@@ -566,14 +566,14 @@ local function missing(army)
 end
 
 local function armyNeeding(t)
-	-- the forming army first, then refilling ones
+	-- a beaten army refilling at the rally point first (its veterans are there), then the forming one
 	for _, a in ipairs(t.armies) do
-		if a.state == "forming" then
+		if a.state == "regroup" then
 			return a
 		end
 	end
 	for _, a in ipairs(t.armies) do
-		if a.state == "regroup" then
+		if a.state == "forming" then
 			return a
 		end
 	end
@@ -623,6 +623,7 @@ local function addUnit(army, uid)
 	army.n = army.n + 1
 	owns[uid] = army
 	army.made[#army.made + 1] = uid
+	spSetUnitRulesParam(uid, "doctrine_army", army.id) -- public: spectators and the bench camera see the armies
 end
 
 local function removeUnit(army, uid)
