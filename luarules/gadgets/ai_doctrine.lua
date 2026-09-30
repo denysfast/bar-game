@@ -91,6 +91,8 @@ local TIER_ODDS = {                           -- max tier available -> weights o
 	{ 0.1, 0.35, 0.55 },
 	{ 0.05, 0.2, 0.35, 0.4 },
 }
+local MAX_UNITS = { 36, 40, 32, 32 }          -- per tier: a cheap-unit composition does not become a 90-unit blob
+local ENGAGE_SHARE = 0.08                     -- enemies worth an engagement: this share of the army's strength
 local ROLE_OFFSET = { front = 220, skirm = 60, aa = -80, support = -180, air = 0 } -- along the march direction
 
 ---------------------------------------------------------------------------- static data
@@ -429,6 +431,12 @@ local function makePlan(t, comp, tier, facs, income)
 		return nil
 	end
 	local k = budget / weightCost
+	-- a cheap composition hits the unit cap before the budget
+	local wsum = 0
+	for _, e in ipairs(entries) do
+		wsum = wsum + e.w
+	end
+	k = min(k, MAX_UNITS[tier] / wsum)
 	local want, metal, count = {}, 0, 0
 	for _, e in ipairs(entries) do
 		local n = max(1, floor(e.w * k + 0.5))
@@ -506,6 +514,7 @@ local function newArmy(teamID, t, f)
 					want = plan.want, planMetal = plan.metal, planCount = plan.count, roleOver = plan.roleOver, hero = plan.hero,
 					units = {}, n = 0, made = {}, state = "forming", since = f, rallyX = rx, rallyZ = rz,
 					launchStrength = 0, kills = 0, losses = 0, engagements = 0, launches = 0,
+					spreadSum = 0, spreadN = 0,
 				}
 				t.armies[#t.armies + 1] = army
 				t.used[#t.used + 1] = pick.id
@@ -645,7 +654,15 @@ local function armyStats(army)
 	if cost <= 0 then
 		return nil
 	end
-	return { x = cx / cost, z = cz / cost, cost = cost, strength = strength, slow = slow < 1e9 and slow or 60, n = n, range = maxRange }
+	cx, cz = cx / cost, cz / cost
+	local spread = 0
+	for uid in pairs(army.units) do
+		local x, _, z = spGetUnitPosition(uid)
+		if x then
+			spread = spread + sqrt((x - cx) ^ 2 + (z - cz) ^ 2)
+		end
+	end
+	return { x = cx, z = cz, cost = cost, strength = strength, slow = slow < 1e9 and slow or 60, n = n, range = maxRange, spread = spread / max(1, n) }
 end
 
 -- the target of an army by its tactic, from what its ally team sees
@@ -689,13 +706,37 @@ local function chooseTarget(army, st, f)
 	end
 	if not bx then
 		if army.tactic == "defend" then
-			return army.rallyX, army.rallyZ, "hold"
+			return army.rallyX, army.rallyZ, "hold", 0
 		end
 		-- nothing known worth it: push toward the enemy start (scouting in force)
 		local ex, ez = enemyHome(army.team)
-		return ex, ez, "enemy start"
+		return ex, ez, "enemy start", 0
 	end
-	return bx, bz, kind
+	return bx, bz, kind, best
+end
+
+-- what the army's current target is still worth (the same score as chooseTarget, for its cell)
+local function currentTargetValue(army, f)
+	if not army.target then
+		return nil
+	end
+	local cells = enemyCells(army.ally, f)
+	local c = cells[floor(army.target[1] / CELL) .. ":" .. floor(army.target[2] / CELL)]
+	if not c then
+		return nil
+	end
+	local st = army.last
+	local d = st and sqrt((c.x - st.x) ^ 2 + (c.z - st.z) ^ 2) or 0
+	local t = army.tactic
+	if t == "raid" then
+		return c.eco > 0 and c.eco / (1 + d / 1500) or nil
+	elseif t == "siege" then
+		return c.struct > 0 and (c.struct + c.def) / (1 + d / 2500) or nil
+	elseif t == "skirmish" then
+		return c.army > 0 and c.army / (1 + d / 2000) or nil
+	end
+	local v = c.struct + c.eco + c.army * 0.8
+	return v > 0 and v / (1 + d / 2500) or nil
 end
 
 local function order(uid, cmd, x, z, opts)
@@ -783,7 +824,9 @@ local function driveArmy(army, f)
 	local t = army.tactic
 	if army.state == "forming" or army.state == "regroup" then
 		-- gather at the rally point; launch when (nearly) complete
-		formation(army, army.rallyX, army.rallyZ, norm(army.rallyX - startPos(army.team), army.rallyZ - select(2, startPos(army.team))), false, f)
+		local hx, hz = startPos(army.team)
+		local fdx, fdz = norm(army.rallyX - hx, army.rallyZ - hz)
+		formation(army, army.rallyX, army.rallyZ, fdx, fdz, false, f)
 		local share = st.cost / max(1, army.planMetal)
 		local waited = f - army.since
 		local want = army.state == "regroup" and REFILL_SHARE or LAUNCH_SHARE
@@ -821,12 +864,20 @@ local function driveArmy(army, f)
 
 	-- march / engage: retarget every 10 s or when the target is gone
 	if not army.target or f - (army.targetFrame or 0) > 10 * GAME_SPEED then
-		local tx, tz, kind = chooseTarget(army, st, f)
+		local tx, tz, kind, score = chooseTarget(army, st, f)
+		-- keep the current target while it is still worth going (within 1.5x of the best), so the army
+		-- does not swing between two far bases
+		if army.target and army.targetScore and score and army.targetFrame and army.targetFrame > 0 then
+			local cur = currentTargetValue(army, f)
+			if cur and cur * 1.5 >= score then
+				tx, tz, kind, score = army.target[1], army.target[2], army.targetKind, cur
+			end
+		end
 		if kind ~= army.targetKind or not army.target or (tx - army.target[1]) ^ 2 + (tz - army.target[2]) ^ 2 > 800 * 800 then
 			log("t=%d team=%d army#%d %s targets %s at %d,%d (%d away)", floor(f / 1800), army.team, army.id, army.comp.id, kind,
 				tx, tz, sqrt((tx - st.x) ^ 2 + (tz - st.z) ^ 2))
 		end
-		army.target, army.targetKind, army.targetFrame = { tx, tz }, kind, f
+		army.target, army.targetKind, army.targetFrame, army.targetScore = { tx, tz }, kind, f, score
 	end
 	local tx, tz = army.target[1], army.target[2]
 
@@ -846,7 +897,7 @@ local function driveArmy(army, f)
 		army.targetFrame = 0
 	end
 
-	if es > 0 then
+	if es > st.strength * ENGAGE_SHARE or (army.state == "engage" and es > 0) then
 		-- engage: the front and skirmishers fight toward the enemy, artillery from its slot, AA with the army
 		if army.state ~= "engage" then
 			army.state = "engage"
@@ -877,6 +928,7 @@ local function driveArmy(army, f)
 			army.comp.id, floor((f - (army.engageStart or f)) / GAME_SPEED), st.n, st.strength, army.launchStrength)
 	end
 
+	army.spreadSum, army.spreadN = army.spreadSum + st.spread, army.spreadN + 1
 	-- march: the anchor walks toward the target at the pace of the slowest unit, never far ahead of the army
 	local dx, dz, dist = norm(tx - army.anchorX, tz - army.anchorZ)
 	local lag = sqrt((army.anchorX - st.x) ^ 2 + (army.anchorZ - st.z) ^ 2)
@@ -1029,8 +1081,8 @@ local function summary(f)
 		local parts = {}
 		for _, a in ipairs(t.armies) do
 			local st = a.last
-			parts[#parts + 1] = string.format("#%d %s T%d %s %s %du %dm kills=%d losses=%d eng=%d", a.id, a.comp.id, a.tier, a.tactic, a.state,
-				st and st.n or 0, st and st.cost or 0, a.kills, a.losses, a.engagements)
+			parts[#parts + 1] = string.format("#%d %s T%d %s %s %du %dm kills=%d losses=%d eng=%d spread=%d", a.id, a.comp.id, a.tier, a.tactic, a.state,
+				st and st.n or 0, st and st.cost or 0, a.kills, a.losses, a.engagements, a.spreadN > 0 and a.spreadSum / a.spreadN or 0)
 		end
 		local _, _, _, income = spGetTeamResources(teamID, "metal")
 		log("t=%d team=%d summary income=%d armies=%d | %s", floor(f / 1800), teamID, income or 0, #t.armies, table.concat(parts, "; "))
@@ -1061,8 +1113,8 @@ function gadget:GameFrame(f)
 					end
 				else
 					a.state = "dead"
-					log("t=%d team=%d army#%d %s destroyed: launched %d times, %d engagements, kills %d metal, losses %d", floor(f / 1800),
-						teamID, a.id, a.comp.id, a.launches, a.engagements, a.kills, a.losses)
+					log("t=%d team=%d army#%d %s destroyed: launched %d times, %d engagements, kills %d metal, losses %d, march spread %d", floor(f / 1800),
+						teamID, a.id, a.comp.id, a.launches, a.engagements, a.kills, a.losses, a.spreadN > 0 and a.spreadSum / a.spreadN or 0)
 				end
 			end
 			t.armies = keep
