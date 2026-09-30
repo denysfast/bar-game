@@ -1217,6 +1217,12 @@ function gadget:Initialize()
 			if not best then
 				return nil
 			end
+			best.heroes = best.heroes or {}
+			if not best.heroes[heroID] then
+				best.heroes[heroID] = true
+				log("t=%d team=%d army#%d %s is joined by hero %s%s", floor(Spring.GetGameFrame() / 1800), teamID, best.id, best.comp.id, heroName,
+					best.hero == heroName and " (its own)" or "")
+			end
 			local tx, tz = best.target and best.target[1], best.target and best.target[2]
 			return { x = best.last.x, z = best.last.z, cost = best.last.cost, ex = tx, ez = tz }
 		end,
