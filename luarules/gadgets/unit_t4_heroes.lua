@@ -3549,10 +3549,11 @@ if gadgetHandler:IsSyncedCode() then
 			return
 		end
 		local taken = GG.AICommanderUnits or {}
+		local doctrine = GG.AIDoctrine and GG.AIDoctrine.owns or {} -- units of the AI's planned armies (ai_doctrine.lua)
 		local cands = {}
 		for _, uid in ipairs(spGetUnitsInCylinder(x, z, H.AI_ESCORT_RADIUS, h.team)) do
 			local udid = spGetUnitDefID(uid)
-			if armyDefs[udid] and not escortOf[uid] and not heroes[uid] and not taken[uid]
+			if armyDefs[udid] and not escortOf[uid] and not heroes[uid] and not taken[uid] and not doctrine[uid]
 				and not Spring.GetUnitTransporter(uid) then
 				local _, _, _, _, bp = spGetUnitHealth(uid)
 				local ux, _, uz = spGetUnitPosition(uid)
@@ -3798,6 +3799,11 @@ if gadgetHandler:IsSyncedCode() then
 		end
 		-- march with the army
 		local g = armyGroup(h.team, f)
+		-- the AI's planned armies (ai_doctrine.lua): a hero-led composition takes its hero, others the strongest army
+		local dg = GG.AIDoctrine and GG.AIDoctrine.heroArmy and GG.AIDoctrine.heroArmy(h.team, unitID, h.def.name)
+		if dg then
+			g = dg
+		end
 		local e = escorts[unitID]
 		local escortCost = 0
 		if e then

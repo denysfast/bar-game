@@ -95,6 +95,14 @@ IUnitTask@ AiMakeTask(CCircuitUnit@ unit)
 		}
 		return null;  // every hero is alive: the altar idles instead of the stock pick
 	}
+	// custom (ai_doctrine.lua): the planned army of the AI - the gadget names the next unit this factory builds
+	// in the factory's unit rules param "doctrine_next" ("" = the stock pick: builders, defence, BARb's own army)
+	const string planned = unit.GetRulesParam("doctrine_next", "");
+	if (planned != "") {
+		CCircuitDef@ d = ai.GetCircuitDef(planned);
+		if (d !is null && d.IsAvailable(ai.frame))
+			return aiFactoryMgr.Enqueue(TaskS::Recruit(Task::RecruitType::FIREPOWER, Task::Priority::HIGH, d, unit.GetPos(ai.frame), 64.f));
+	}
 	return aiFactoryMgr.DefaultMakeTask(unit);
 }
 
