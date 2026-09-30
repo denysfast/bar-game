@@ -72,7 +72,8 @@ local ALLIED = { allied = true }
 local START_FRAME = 3 * 60 * GAME_SPEED      -- no plans before minute 3 (the opening is the AI's own)
 local MAX_ARMIES = 3                          -- per team, forming one included
 local PLAN_SHARE = 3                          -- of every 4 factory slots, this many build the plan
-local LAUNCH_SHARE = 0.85                     -- launch at this share of the planned metal ...
+local LAUNCH_SHARE = 0.85                     -- launch at this share of the planned metal (by tactic below) ...
+local LAUNCH_BY_TACTIC = { raid = 0.6, assault = 0.85, siege = 0.8, skirmish = 0.8, air = 0.7, defend = 0.5 }
 local LAUNCH_LATE = 0.6                       -- ... or this after LAUNCH_WAIT
 local LAUNCH_WAIT = 4 * 60 * GAME_SPEED
 local RETREAT_STRENGTH = 0.35                 -- fall back below this share of the launch strength
@@ -870,18 +871,21 @@ local function driveArmy(army, f)
 		formation(army, army.rallyX, army.rallyZ, fdx, fdz, false, f)
 		local share = st.cost / max(1, army.planMetal)
 		local waited = f - army.since
-		local want = army.state == "regroup" and REFILL_SHARE or LAUNCH_SHARE
+		local want = army.state == "regroup" and REFILL_SHARE or (LAUNCH_BY_TACTIC[t] or LAUNCH_SHARE)
 		if share >= want or (waited > LAUNCH_WAIT and share >= LAUNCH_LATE) or (army.state == "regroup" and waited > LAUNCH_WAIT * 1.5 and share >= 0.4) then
 			launch(army, st, f)
 		end
-		-- a home army answers intruders even while forming
-		if t == "defend" then
-			local es, ex, ez = enemyStrength(army.rallyX, army.rallyZ, 2500, army.ally)
-			if es > 0 and es < st.strength * 2 then
+		-- a gathering army does not stand under fire: it answers intruders near the rally point (a home
+		-- army further out), unless they are far stronger
+		local es, ex, ez = enemyStrength(army.rallyX, army.rallyZ, t == "defend" and 2500 or 1300, army.ally)
+		if es > 0 and es < st.strength * 2 then
+			if f - (army.guardOrder or 0) > 3 * GAME_SPEED then
+				army.guardOrder = f
 				for uid in pairs(army.units) do
 					order(uid, CMD.FIGHT, ex, ez)
 				end
 			end
+			return true
 		end
 		return true
 	end
@@ -970,6 +974,19 @@ local function driveArmy(army, f)
 	end
 
 	army.spreadSum, army.spreadN = army.spreadSum + st.spread, army.spreadN + 1
+	-- an air strike group flies straight at its target (formation is for the ground)
+	if t == "air" then
+		if f - (army.airOrder or 0) > 5 * GAME_SPEED then
+			army.airOrder = f
+			for uid in pairs(army.units) do
+				order(uid, CMD.FIGHT, tx + random(-250, 250), tz + random(-250, 250))
+			end
+		end
+		if sqrt((tx - st.x) ^ 2 + (tz - st.z) ^ 2) < 400 then
+			army.targetFrame = 0
+		end
+		return true
+	end
 	-- march: the anchor walks toward the target at the pace of the slowest unit, never far ahead of the main body
 	releaseStuck(army, f)
 	local dx, dz, dist = norm(tx - army.anchorX, tz - army.anchorZ)
