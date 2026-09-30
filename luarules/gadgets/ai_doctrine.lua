@@ -582,9 +582,25 @@ local function armyNeeding(t)
 	end
 end
 
+-- what every gathering army still needs: udid -> { army, missing }, a refilling army before the forming one
+local function teamNeeds(t)
+	local out = {}
+	for _, state in ipairs({ "regroup", "forming" }) do
+		for _, a in ipairs(t.armies) do
+			if a.state == state then
+				for udid, m in pairs(missing(a)) do
+					if not out[udid] then
+						out[udid] = { army = a, m = m }
+					end
+				end
+			end
+		end
+	end
+	return out
+end
+
 local function updateProduction(teamID, t)
-	local army = armyNeeding(t)
-	local need = army and missing(army) or {}
+	local needs = teamNeeds(t)
 	for uid, tier in pairs(t.factories) do
 		local fs = facState[uid]
 		if not fs then
@@ -595,9 +611,9 @@ local function updateProduction(teamID, t)
 		if not fs.skip and tier < 4 then
 			local b = factoryBuilds[spGetUnitDefID(uid) or -1]
 			local best, bestShare
-			for udid, m in pairs(need) do
+			for udid, nd in pairs(needs) do
 				if b and b[udid] then
-					local share = m / max(1, army.want[udid])
+					local share = nd.m / max(1, nd.army.want[udid]) + (nd.army.state == "regroup" and 1 or 0)
 					if not bestShare or share > bestShare or (share == bestShare and udid < best) then
 						best, bestShare = udid, share
 					end
@@ -1118,11 +1134,10 @@ function gadget:UnitCreated(unitID, unitDefID, teamID, builderID)
 	end
 	-- a planned unit started: reserve it for the army that needs it; every PLAN_SHARE planned units the
 	-- factory makes one stock pick (skip until a non-planned unit comes out)
-	local army = armyNeeding(t)
-	local need = army and missing(army)
-	local wanted = need and need[unitDefID]
+	local nd = teamNeeds(t)[unitDefID]
+	local wanted = nd ~= nil
 	if wanted then
-		pending[unitID] = army -- the stock pick may be a planned unit too: it counts
+		pending[unitID] = nd.army -- the stock pick may be a planned unit too: it counts
 	end
 	if fs.skip then
 		fs.skip = false -- the one stock slot is used, whatever it built
