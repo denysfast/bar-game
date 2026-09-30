@@ -642,6 +642,7 @@ local function addUnit(army, uid)
 	army.n = army.n + 1
 	owns[uid] = army
 	army.made[#army.made + 1] = uid
+	army.grew = Spring.GetGameFrame()
 	spSetUnitRulesParam(uid, "doctrine_army", army.id) -- public: spectators and the bench camera see the armies
 end
 
@@ -873,7 +874,60 @@ local function releaseStuck(army, f)
 	end
 end
 
+-- a gathering army whose missing units no factory can make (BARb replaced or lost the factory) or that
+-- has not grown for STALL frames settles for what it has: the plan shrinks to it, or a handful of units
+-- goes back to the AI and the army is dropped (so a new plan can start)
+local STALL = 4 * 60 * GAME_SPEED
+local function settle(army, f)
+	local t = teams[army.team]
+	if not t or (army.state ~= "forming" and army.state ~= "regroup") then
+		return
+	end
+	local facs = teamFactories(t)
+	local makeable = false
+	for udid in pairs(missing(army)) do
+		if canBuildDef(facs, udid) then
+			makeable = true
+			break
+		end
+	end
+	local stalled = f - (army.grew or army.since) > STALL
+	if makeable and not stalled then
+		return
+	end
+	local have, n, metal = {}, 0, 0
+	for uid in pairs(army.units) do
+		local udid = spGetUnitDefID(uid)
+		if udid then
+			have[udid] = (have[udid] or 0) + 1
+			n = n + 1
+			metal = metal + (unitCost[udid] or 0)
+		end
+	end
+	if n < 3 then
+		for uid in pairs(army.units) do
+			removeUnit(army, uid)
+			spSetUnitRulesParam(uid, "doctrine_army", 0)
+			toAI(army.team, "attach " .. uid)
+		end
+		army.n = 0
+		army.state = "dead"
+		log("t=%d team=%d army#%d %s dropped (%s): its units go back to the AI", floor(f / 1800), army.team, army.id, army.comp.id,
+			makeable and "stalled" or "no factory for it")
+		return
+	end
+	army.want = have
+	army.planMetal = metal
+	army.grew = f
+	log("t=%d team=%d army#%d %s settles for %d units, %d metal (%s)", floor(f / 1800), army.team, army.id, army.comp.id, n, metal,
+		makeable and "stalled" or "no factory for the rest")
+end
+
 local function driveArmy(army, f)
+	settle(army, f)
+	if army.state == "dead" then
+		return false
+	end
 	local st = armyStats(army)
 	if not st then
 		return false
@@ -1249,12 +1303,12 @@ function gadget:GameFrame(f)
 			-- drop dead armies, start a new plan when nothing is forming
 			local keep, forming = {}, false
 			for _, a in ipairs(t.armies) do
-				if a.n > 0 or a.state == "forming" then
+				if a.state ~= "dead" and (a.n > 0 or a.state == "forming") then
 					keep[#keep + 1] = a
 					if a.state == "forming" then
 						forming = true
 					end
-				else
+				elseif a.state ~= "dead" then
 					a.state = "dead"
 					log("t=%d team=%d army#%d %s destroyed: launched %d times, %d engagements, kills %d metal, losses %d, march spread %d", floor(f / 1800),
 						teamID, a.id, a.comp.id, a.launches, a.engagements, a.kills, a.losses, a.spreadN > 0 and a.spreadSum / a.spreadN or 0)
