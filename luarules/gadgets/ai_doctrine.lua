@@ -743,9 +743,35 @@ local function chooseTarget(army, st, f)
 		if army.tactic == "defend" then
 			return army.rallyX, army.rallyZ, "hold", 0
 		end
-		-- nothing known worth it: push toward the enemy start (scouting in force)
+		-- nothing known worth it: first the enemy start, then sweep the enemy half (metal spots first), a new
+		-- point every time the army gets there (scouting in force: survivors and expansions are found)
 		local ex, ez = enemyHome(army.team)
-		return ex, ez, "enemy start", 0
+		if not army.swept or (st.x - ex) ^ 2 + (st.z - ez) ^ 2 > 2500 * 2500 and not army.sweeping then
+			army.sweeping = true
+			return ex, ez, "enemy start", 0
+		end
+		local spots = GG.resource_spot_finder and GG.resource_spot_finder.metalSpotsList or {}
+		local hx, hz = startPos(army.team)
+		local best, bx, bz
+		for i = 1, 12 do
+			local x, z
+			local spot = #spots > 0 and spots[random(#spots)]
+			if spot then
+				x, z = spot.x, spot.z
+			else
+				x, z = random(200, MAPX - 200), random(200, MAPZ - 200)
+			end
+			-- the enemy's side of the map, far from where we swept last
+			local score = sqrt((x - hx) ^ 2 + (z - hz) ^ 2) - sqrt((x - ex) ^ 2 + (z - ez) ^ 2) * 0.5
+			if army.lastSweep then
+				score = score + sqrt((x - army.lastSweep[1]) ^ 2 + (z - army.lastSweep[2]) ^ 2) * 0.3
+			end
+			if not best or score > best then
+				best, bx, bz = score, x, z
+			end
+		end
+		army.lastSweep = { bx, bz }
+		return bx, bz, "sweep", 0
 	end
 	return bx, bz, kind, best
 end
@@ -1125,6 +1151,9 @@ local function driveArmy(army, f)
 	end
 	if dist < 250 and army.targetKind ~= "hold" then
 		army.targetFrame = 0 -- arrived: next target
+		if army.targetKind == "enemy start" or army.targetKind == "sweep" then
+			army.swept, army.sweeping = true, false
+		end
 	end
 	army.anchorX, army.anchorZ = clampMap(army.anchorX + dx * min(step, dist), army.anchorZ + dz * min(step, dist))
 	formation(army, army.anchorX, army.anchorZ, dx, dz, t == "siege" and army.targetKind == "base" and step == 0, f)
