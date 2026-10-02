@@ -1014,7 +1014,8 @@
 			"legt4apollyon": "Apollyon",
 			"legt4medusa": "Medusa",
 			"legt4myrmdrone": "Hive Drone",
-			"legt4myrmmite": "Swarm-Mite"
+			"legt4myrmmite": "Swarm-Mite",
+			"legt4skyeye": "Deep Sky Eye"
 		},
 		"descriptions": {
 			"armt4shop": "Hero item shop: sells magic and rare hero items (item level 1-3) into the team stash. Shelf of 9, restocks every 3 min",
@@ -2022,7 +2023,8 @@
 			"legt4apollyon": "HERO Locust King: Spin-Up, Locust Swarm, Siege Lockdown; ultimate Plague of Locusts",
 			"legt4medusa": "HERO Gorgon: Serpent Bite, Gorgon's Gaze, Snake Pit; ultimate Stone Garden",
 			"legt4myrmdrone": "Myrmidon's heat-ray drone",
-			"legt4myrmmite": "Hive Ascendant swarm-mite (short-lived)"
+			"legt4myrmmite": "Hive Ascendant swarm-mite (short-lived)",
+			"legt4skyeye": "Starfall's orbital eye: sight over an area"
 		}
 	}
 }

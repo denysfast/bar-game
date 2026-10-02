@@ -15,6 +15,42 @@ local function cfg(h, key)
 	return h.def.cfg[key]
 end
 
+---------------------------------------------------------------------------- sight over a cast area
+-- an invisible legt4skyeye unit (units/Legion/T4/legt4units.lua) gives the team real LOS / radar there, so its
+-- shells find their targets and the area's effects are drawn for the caster's side (they are LOS-gated)
+local function placeEye(api, h, x, z, R, seconds)
+	local ud = UnitDefNames.legt4skyeye
+	if not ud then
+		return nil
+	end
+	local uid = Spring.CreateUnit(ud.id, x, L.groundY(x, z), z, 0, h.team)
+	if not uid then
+		return nil
+	end
+	Spring.SetUnitNoDraw(uid, true)
+	Spring.SetUnitNoSelect(uid, true)
+	Spring.SetUnitNoMinimap(uid, true)
+	Spring.SetUnitNeutral(uid, true)
+	Spring.SetUnitStealth(uid, true)
+	Spring.SetUnitBlocking(uid, false, false, false, false, false, false, false)
+	for _, s in ipairs({ "los", "airLos", "radar" }) do
+		Spring.SetUnitSensorRadius(uid, s, R)
+	end
+	h.store.eyes[uid] = api.frame() + floor(seconds * 30)
+	return uid
+end
+
+local function eyesTick(api, h, f, all)
+	for uid, untilF in pairs(h.store.eyes) do
+		if all or untilF <= f then
+			h.store.eyes[uid] = nil
+			if L.alive(uid) then
+				Spring.DestroyUnit(uid, false, true)
+			end
+		end
+	end
+end
+
 ---------------------------------------------------------------------------- a1 Constellation
 
 local function dropStar(api, h, s)
@@ -136,6 +172,7 @@ local function gravityLens(api, unitID, h, r, x, z)
 	local pull = api.val(a2.pull, r)
 	local fx = L.fx(api)
 	local y = L.groundY(x, z)
+	placeEye(api, h, x, z, R + 150, dur + 1)
 	local l = { x = x, z = z, radius = R, bonus = api.val(a2.bonus, r), untilF = api.frame() + floor(dur * 30), pulled = 0 }
 	h.store.lenses[#h.store.lenses + 1] = l
 	l.zone = fx.zone(x, z, { radius = R, pattern = "swirl", color = L.a(C.VOID, 0.5), rot = 2.5, ttl = dur })
@@ -176,6 +213,7 @@ local function skyEye(api, unitID, h, r, x, z)
 	local fx = L.fx(api)
 	local y = L.groundY(x, z)
 	api.reveal(x, z, R, dur, h.ally)
+	placeEye(api, h, x, z, R, dur)
 	fx.pillar(x, z, { radius = 60, height = 3000, color = L.a(C.STAR, 0.5), ttl = 0.6 })
 	fx.ring(x, z, { kind = "hex", r0 = R * 0.2, r1 = R, color = L.a(C.STAR, 0.6), width = 30, ttl = 1 })
 	local ids = {
@@ -222,6 +260,7 @@ local function starfall(api, unitID, h, r, x, z)
 	local fx = L.fx(api)
 	local f0 = api.frame()
 	h.store.ultUntil = f0 + floor((dur + 4) * 30)
+	placeEye(api, h, x, z, R + 250, dur + 5)
 	fx.ring(x, z, { kind = "rune", r0 = R, r1 = R, color = L.a(C.STAR, 0.6), width = 24, ttl = 1.2, rot = 0.6 })
 	fx.zone(x, z, { radius = R, pattern = "runes", color = L.a(C.STAR, 0.25), ttl = dur + 3, rot = 0.2 })
 	api.active(unitID, "ult", dur + 3)
@@ -289,6 +328,7 @@ function M.init(api, unitID, h)
 	h.store.stars = {}
 	h.store.lenses = {}
 	h.store.tasks = {}
+	h.store.eyes = h.store.eyes or {}
 	local ids = {}
 	for _, w in pairs(h.def.weapons) do
 		if w.key == "shocker_low" then
@@ -301,6 +341,7 @@ end
 function M.frame(api, unitID, h, f)
 	L.runTasks(h, f)
 	if f % 15 == 0 then
+		eyesTick(api, h, f)
 		constellationTick(api, unitID, h, f)
 		local keep = {}
 		for _, l in ipairs(h.store.lenses) do
@@ -365,6 +406,7 @@ end
 
 function M.destroyed(api, unitID, h)
 	L.endTasks(h)
+	eyesTick(api, h, api.frame(), true)
 	for _, s in ipairs(h.store.stars or {}) do
 		dropStar(api, h, s)
 	end

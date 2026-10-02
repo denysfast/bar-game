@@ -11,6 +11,9 @@ Keys are never in the repo: CM_KEY_FILE (content-master owner key, knowledge-gua
 `content-master-owner-api-key-cpu-b`) and CC_KEY_FILE (content-controller tools key,
 `content-controller-tools-key`, platform home) name files that hold them.
 Qwen jobs wait while the lab holds the cards (availability "degraded"); they run when freed.
+v19 (Legion content): `content-controller-tools-key` is now a provisionable record - mint your own with
+provision_secret(params={owner: <project>}); the minted key belongs to platform eu, so set
+CC_BASE=https://cc-eu.denys.fast (the home default answers 401 invalid_api_key to it).
 """
 import argparse, json, os, sys, time, urllib.request, io, subprocess
 

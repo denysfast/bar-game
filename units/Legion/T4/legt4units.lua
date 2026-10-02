@@ -217,4 +217,32 @@ units.legt4myrmmite = summonDef(T4.base("units/Legion/Air/legdrone.lua", "legdro
 	name = "legt4myrmmite", health = 900, scale = 1.6, damage = 4.5, range = 1.3,
 })
 
+-- an invisible line-of-sight anchor (Starfall's Deep Sky Eye and the areas of its long-range casts): real LOS, radar and
+-- air LOS over a map point for a few seconds. Created / sized / removed by luarules/heroes/legt4starfall.lua
+-- (Spring.SetUnitSensorRadius), neutral, not drawn, not selectable, no collision, no wreck.
+do
+	local eye = T4.base("units/Legion/Utilities/legeyes.lua", "legeyes")
+	eye.metalcost, eye.energycost, eye.buildtime = 0, 0, 10
+	eye.health = 1000000
+	eye.energyupkeep = 0
+	eye.cloakcost = 0
+	eye.initcloaked = false
+	eye.sightdistance = 600
+	eye.radardistance = 600
+	eye.airsightdistance = 600
+	eye.corpse = nil
+	eye.featuredefs = nil
+	eye.blocking = false
+	eye.canselect = false
+	eye.reclaimable = false
+	eye.capturable = false
+	eye.collisionvolumescales = "1 1 1"
+	eye.explodeas = ""
+	eye.selfdestructas = ""
+	eye.customparams.t4_summon = 1
+	eye.customparams.subfolder = "T4"
+	eye.customparams.nohealthbars = 1
+	units.legt4skyeye = eye
+end
+
 return units

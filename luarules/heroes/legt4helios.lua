@@ -262,14 +262,13 @@ local function sunstrike(api, unitID, h, r, x, z)
 			end
 		end
 		local n = (f - t.start) / 6
-		fx.pillar(s.x, s.z, { radius = R * 0.8, height = 2400, color = L.a(C.SOLAR, 0.32), ttl = 0.26, ring = n % 3 == 0 })
-		fx.pillar(s.x, s.z, { radius = R * 0.3, height = 2600, color = L.a(C.WHITEGOLD, 0.5), ttl = 0.26, ring = false })
+		fx.pillar(s.x, s.z, { radius = R * 0.7, height = 2400, color = L.a(C.SOLAR, 0.18), ttl = 0.24, ring = n % 3 == 0 })
+		fx.pillar(s.x, s.z, { radius = R * 0.25, height = 2600, color = L.a(C.WHITEGOLD, 0.35), ttl = 0.24, ring = false })
 		if n % 3 == 0 then
 			fx.ring(s.x, s.z, { kind = "shock", r0 = R * 0.3, r1 = R, color = L.a(C.EMBER, 0.7), width = 30, ttl = 0.6 })
 		end
 		if n % 5 == 0 then
-			fx.flash(s.x, L.groundY(s.x, s.z) + 10, s.z, { radius = R * 0.5, color = L.a(C.SOLAR, 0.5), ttl = 0.8 })
-			fx.ring(s.x, s.z, { kind = "fire", r0 = R * 0.4, r1 = R * 1.05, color = C.EMBER, ttl = 1.1 })
+			fx.ring(s.x, s.z, { kind = "fire", r0 = R * 0.4, r1 = R * 1.05, color = L.a(C.EMBER, 0.7), ttl = 1.1 })
 		end
 		for _, uid in ipairs(api.enemiesIn(s.x, s.z, R, h.ally)) do
 			s.dmg = s.dmg + hurt(api, unitID, h, uid, tick)
@@ -284,10 +283,10 @@ local function sunstrike(api, unitID, h, r, x, z)
 		-- Collapse: every heated enemy within 900 ignites by stacks / 10
 		local cx, cz = s.x, s.z
 		local cr = ult.collapse or 900
-		fx.flash(cx, L.groundY(cx, cz) + 60, cz, { radius = cr, color = { 1, 1, 0.85, 1 }, ttl = 0.6 })
+		fx.flash(cx, L.groundY(cx, cz) + 60, cz, { radius = cr * 0.45, color = { 1, 0.95, 0.75, 0.7 }, ttl = 0.6 })
 		fx.ring(cx, cz, { kind = "shock", r0 = 60, r1 = cr, color = L.a(C.SOLAR, 0.95), width = 60, ttl = 0.9 })
 		fx.ring(cx, cz, { kind = "fire", r0 = 100, r1 = cr, color = C.EMBER, ttl = 1.2 })
-		fx.pillar(cx, cz, { radius = R * 1.3, height = 3000, color = L.a(C.WHITEGOLD, 0.9), ttl = 0.5 })
+		fx.pillar(cx, cz, { radius = R * 0.8, height = 3000, color = L.a(C.WHITEGOLD, 0.6), ttl = 0.5 })
 		local ign, idmg = 0, 0
 		for _, uid in ipairs(api.enemiesIn(cx, cz, cr, h.ally)) do
 			local hv = heatOf(h, uid)

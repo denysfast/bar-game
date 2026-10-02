@@ -206,6 +206,16 @@ function L.budget(victims, budget, cap, falloff)
 	return out
 end
 
+-- wrap a movement callback (api.dash onStep / onLand): it runs on the next frame, outside the core's iteration over
+-- its movers (a callback that pushes / pulls / kills there broke that loop: "invalid key to 'next'")
+function L.later(api, fn)
+	return function(a, b)
+		api.delay(1, function()
+			fn(a, b)
+		end)
+	end
+end
+
 ---------------------------------------------------------------------------- tasks
 -- h.store.tasks: { at = next frame, every = frames, stop = last frame, fn(f, t) -> false ends it, done(t) }
 function L.task(h, every, seconds, fn, done, startIn)

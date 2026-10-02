@@ -259,8 +259,12 @@ local function danse(api, unitID, h, r)
 		for i = 1, dm.count do
 			local uid = list[((i - 1) % max(1, #list)) + 1]
 			if uid then
-				local ox, oy, oz = api.fx and api.fx.orbPos and api.fx.orbPos(unitID, dm.orb, f, i - 1)
-				if not ox then
+				local ox, oy, oz
+				local fxl = api.fx
+				if fxl and fxl.orbPos then
+					ox, oy, oz = fxl.orbPos(unitID, dm.orb, f, i - 1)
+				end
+				if not ox or not oy then
 					ox, oy, oz = api.pos(unitID)
 				end
 				local ux, uy, uz = api.pos(uid)

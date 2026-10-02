@@ -56,6 +56,7 @@ local function bayTick(api, unitID, h, f)
 	local have = #droneList(h)
 	if have >= want then
 		h.store.nextDrone = nil
+		h.store.firstFill = false
 		return
 	end
 	local every = api.val(a1.rebuild, r)
@@ -65,13 +66,19 @@ local function bayTick(api, unitID, h, f)
 	if h.store.hive then
 		every = every * 0.3
 	end
+	-- a fresh hero (or a new Drone Bay rank) fills its bay quickly: one drone a second
+	if h.store.firstFill then
+		every = 1
+	end
 	local frames = max(9, floor(every * 30))
 	if not h.store.nextDrone then
-		h.store.nextDrone = (h.store.firstFill and f or f + frames)
-		h.store.firstFill = false
+		h.store.nextDrone = h.store.firstFill and f or f + frames
 	end
 	if f >= h.store.nextDrone then
 		launchDrone(api, unitID, h)
+		if have + 1 >= want then
+			h.store.firstFill = false
+		end
 		h.store.nextDrone = have + 1 < want and f + frames or nil
 	end
 end
@@ -258,8 +265,9 @@ function M.init(api, unitID, h)
 end
 
 function M.rank(api, unitID, h, key, rank)
-	if key == "a1" and rank == 1 then
+	if key == "a1" then
 		h.store.firstFill = true
+		h.store.nextDrone = nil
 	end
 end
 

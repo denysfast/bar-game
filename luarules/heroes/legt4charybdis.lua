@@ -134,7 +134,7 @@ local function surge(api, unitID, h, r, x, z)
 	local width = a3.width or 240
 	local victims = L.alongLine(api, x0, z0, tx, tz, width, h.ally)
 	local trail = fx.attach(unitID, "trail", { color = L.a(C.TIDE, 0.8), width = 40, length = 0.6 })
-	local ok = api.dash(unitID, h, tx, tz, { seconds = 0.5, onLand = function(lx, lz)
+	local ok = api.dash(unitID, h, tx, tz, { seconds = 0.5, onLand = L.later(api, function(lx, lz)
 		fx.detach(trail)
 		local ly = L.groundY(lx, lz)
 		fx.flash(lx, ly + 30, lz, { radius = 160, color = C.FOAM, ttl = 0.35 })
@@ -165,7 +165,7 @@ local function surge(api, unitID, h, r, x, z)
 			api.cooldown(unitID, h, "a3", api.val(a3.cooldown, r) * 0.5)
 		end
 		api.log("legt4charybdis a3 surge rank=%d dist=%d water=%s victims=%d dmg=%d", r, d, tostring(wet), #victims, dmg)
-	end })
+	end) })
 	if not ok then
 		fx.detach(trail)
 	end

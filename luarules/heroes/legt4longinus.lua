@@ -145,7 +145,7 @@ local function phaseRail(api, unitID, h, r, x, z)
 	local wide = 30 + 15 * (r - 1) / 9
 	fx.beam(x0, y0 + 40, z0, tx, ty + 40, tz, { color = L.a(C.RAIL, 0.9), width = wide, ttl = 0.6, pulse = 6, flare = 1.2 })
 	fx.beam(x0, y0 + 40, z0, tx, ty + 40, tz, { color = L.a(C.WHITE, 0.9), width = wide * 0.3, ttl = 0.45, pulse = 8, flare = 0 })
-	local ok = api.dash(unitID, h, tx, tz, { seconds = 0.4, untargetable = true, onLand = function(lx, lz)
+	local ok = api.dash(unitID, h, tx, tz, { seconds = 0.4, untargetable = true, onLand = L.later(api, function(lx, lz)
 		local ly = L.groundY(lx, lz)
 		fx.flash(lx, ly + 40, lz, { radius = 120, color = C.RAIL, ttl = 0.3 })
 		fx.ring(lx, lz, { kind = "electric", r0 = 30, r1 = 220, color = C.RAIL, width = 20, ttl = 0.4 })
@@ -164,7 +164,7 @@ local function phaseRail(api, unitID, h, r, x, z)
 			api.reloadNow(unitID, n)
 		end
 		api.log("legt4longinus a3 phase rail rank=%d dist=%d victims=%d dmg=%d", r, sqrt(L.d2(x0, z0, lx, lz)), #victims, total)
-	end })
+	end) })
 	if not ok then
 		fx.detach(trail)
 	end

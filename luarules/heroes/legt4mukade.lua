@@ -267,7 +267,7 @@ local function coil(api, unitID, h, r, targetID)
 	local lx, lz = tx + dx / d * rad, tz + dz / d * rad
 	local c = { target = targetID, r = r, dmg = 0, start = api.frame(), ids = { trail } }
 	h.store.coil = c
-	api.dash(unitID, h, lx, lz, { seconds = 0.35, arc = 40, onLand = function()
+	api.dash(unitID, h, lx, lz, { seconds = 0.35, arc = 40, onLand = L.later(api, function()
 		if h.store.coil ~= c then
 			return
 		end
@@ -296,7 +296,7 @@ local function coil(api, unitID, h, r, targetID)
 		end, function()
 			coilEnd(api, unitID, h)
 		end, 1)
-	end })
+	end) })
 	api.active(unitID, "ult", dur + 0.4)
 	api.log("legt4mukade ult coil rank=%d target=%s dur=%.1f", r, tostring(targetID), dur)
 	return true

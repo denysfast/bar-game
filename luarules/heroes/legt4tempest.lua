@@ -192,7 +192,7 @@ local function stormCharge(api, unitID, h, r, x, z, targetID)
 	local px, pz = x0, z0
 	local hitSet, pathHits, pathDmg = {}, 0, 0
 	local pd, stun = api.val(a2.pathDmg, r) * power, api.val(a2.stun, r)
-	local ok = api.dash(unitID, h, tx, tz, { speed = a2.speed or 900, onStep = function(sx, sz)
+	local ok = api.dash(unitID, h, tx, tz, { speed = a2.speed or 900, onStep = L.later(api, function(sx, sz)
 		local sy = L.groundY(sx, sz)
 		if L.d2(px, pz, sx, sz) > 60 * 60 then
 			fx.chain({ px, L.groundY(px, pz) + 50, pz, sx, sy + 50, sz }, { color = C.STORM, width = 8, branches = 2, ttl = 0.25, flash = false })
@@ -208,7 +208,7 @@ local function stormCharge(api, unitID, h, r, x, z, targetID)
 				pathHits, pathDmg = pathHits + 1, pathDmg + pd
 			end
 		end
-	end, onLand = function(lx, lz)
+	end), onLand = L.later(api, function(lx, lz)
 		fx.detach(trail)
 		fx.detach(elec)
 		local ly = L.groundY(lx, lz)
@@ -222,7 +222,7 @@ local function stormCharge(api, unitID, h, r, x, z, targetID)
 			setMomentum(api, unitID, h, 100)
 		end
 		api.log("legt4tempest a2 charge rank=%d dist=%d path hits=%d dmg=%d stun=%.1f clap=%d hit=%d", r, sqrt(L.d2(x0, z0, lx, lz)), pathHits, pathDmg, stun, clap, #hit)
-	end })
+	end) })
 	if not ok then
 		fx.detach(trail)
 		fx.detach(elec)
