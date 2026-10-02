@@ -17,9 +17,9 @@
 
 local M = {}
 
-local BLUE = { 0.55, 0.72, 1.0, 1.0 }
-local RED = { 1.0, 0.22, 0.12, 1.0 }
-local ORB = { radius = 26, height = 150, orbit = 70, speed = 1.6 }
+local BLUE = "electric" -- GG.HeroFX palette names
+local RED = "rage"
+local ORB = { color = "rage", radius = 18, height = 120, orbit = 45, speed = 0.5 } -- speed: revolutions per second
 local SALVO_WINDOW = 12 -- frames: the hits of one lightning salvo (10 bolts) count as one
 
 local function b(h, key)
@@ -30,7 +30,7 @@ end
 local function bolt(api, h, x1, y1, z1, x2, y2, z2, red)
 	local fx = api.fx
 	if fx and fx.bolt then
-		fx.bolt(x1, y1, z1, x2, y2, z2, { color = red and RED or BLUE, width = red and 9 or 6, ttl = 0.3, branches = 2 })
+		fx.bolt(x1, y1, z1, x2, y2, z2, { color = red and RED or BLUE, width = red and 5 or 3, ttl = 0.3 })
 	else
 		api.fire(h, red and "thunder_rage" or "hero_ab_bolt", x1, y1, z1, x2, y2, z2, { ttl = 6 })
 	end
@@ -49,8 +49,8 @@ local function orbPos(api, unitID, f)
 	if not x then
 		return nil
 	end
-	local a = f / 30 * ORB.speed
-	return x + math.cos(a) * ORB.orbit, y + ORB.height + math.sin(f / 13) * 12, z + math.sin(a) * ORB.orbit
+	local a = f / 30 * ORB.speed * 2 * math.pi
+	return x + math.cos(a) * ORB.orbit, y + ORB.height, z + math.sin(a) * ORB.orbit
 end
 
 ---------------------------------------------------------------------------- a1 Chain Lightning
@@ -101,7 +101,7 @@ local function chain(api, unitID, h, fromID, dmg, red)
 		x, y, z = nx, ny, nz
 	end
 	if n > 0 and api.fx and api.fx.chain then
-		api.fx.chain(points, { color = red and RED or BLUE, width = red and 8 or 6, ttl = 0.35, branches = 1 })
+		api.fx.chain(points, { color = red and RED or BLUE, width = red and 4 or 3, ttl = 0.4, delay = 0.06 })
 	end
 	if n > 0 then
 		api.log("armt4zeus a1 chain rank=%d salvo=%d jumps=%d/%d range=%d first=%d last=%d", r, dmg, n, jumps, range, first, last)
@@ -138,7 +138,9 @@ local function empMissile(api, unitID, h, r, x, y, z, targetID)
 		onHit = function(ix, iz, hits)
 			local fx = api.fx
 			if fx and fx.ring then
-				fx.ring(ix, iz, { r0 = 30, r1 = aoe, color = { 0.6, 0.75, 1, 0.9 }, ttl = 0.6, kind = "electric" })
+				fx.ring(ix, iz, { kind = "electric", r0 = 20, r1 = aoe, width = 30, ttl = 0.9, color = "emp" })
+				fx.ring(ix, iz, { kind = "shock", r0 = 10, r1 = aoe * 1.1, width = 40, ttl = 0.7, color = "emp" })
+				fx.flash(ix, Spring.GetGroundHeight(ix, iz) + 20, iz, { radius = 140, color = "emp", ttl = 0.5 })
 			end
 			local heroesHit = 0
 			for _, uid in ipairs(hits) do
@@ -191,7 +193,8 @@ local function devour(api, unitID, h, r, targetID, x, z)
 	bolt(api, h, hx, hy + 40, hz, tx, ty + 20, tz, h.store.rage ~= nil)
 	local fx = api.fx
 	if fx and fx.flash then
-		fx.flash(tx, ty + 20, tz, { radius = 90, color = { 0.6, 0.8, 1, 1 }, ttl = 0.5 })
+		fx.flash(tx, ty + 20, tz, { radius = 90, color = "electric", ttl = 0.5 })
+		fx.attach(unitID, "link", { target = targetID, style = "drain", color = "electric", ttl = 0.6 })
 	end
 	api.ceg("hero-zap", tx, ty, tz)
 	local info = api.consume(targetID)
@@ -254,9 +257,10 @@ local function rageOn(api, unitID, h, r)
 	local rage = { untilFrame = f + math.floor(dur * 30), nextOrb = f + 15 }
 	local fx = api.fx
 	if fx and fx.attach then
-		rage.elec = fx.attach(unitID, "electric", { color = RED, intensity = 1.0 })
-		rage.orb = fx.attach(unitID, "orb", { color = RED, radius = ORB.radius, height = ORB.height, orbit = ORB.orbit, speed = ORB.speed })
-		rage.aura = fx.attach(unitID, "aura", { radius = 160, color = { 1, 0.25, 0.15, 0.7 }, pattern = "electric" })
+		rage.elec = fx.attach(unitID, "electric", { color = RED, intensity = 1.6 })
+		rage.orb = fx.attach(unitID, "orb", ORB)
+		rage.tint = fx.attach(unitID, "tint", { pattern = "heat", color = RED, strength = 0.6 })
+		rage.aura = fx.attach(unitID, "aura", { radius = 160, color = RED, pattern = "electric" })
 	end
 	h.store.rage = rage
 	api.active(unitID, "ult", dur)
@@ -276,7 +280,7 @@ local function rageOff(api, unitID, h)
 	api.unbuff(unitID, h, "rage")
 	local fx = api.fx
 	if fx and fx.detach then
-		for _, id in ipairs({ rage.elec, rage.orb, rage.aura }) do
+		for _, id in ipairs({ rage.elec, rage.orb, rage.tint, rage.aura }) do
 			if id then
 				fx.detach(id)
 			end
