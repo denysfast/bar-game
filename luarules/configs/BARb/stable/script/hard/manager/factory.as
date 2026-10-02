@@ -74,6 +74,19 @@ array<float> t4Weights = {
 IUnitTask@ AiMakeTask(CCircuitUnit@ unit)
 {
 	if ((userData[unit.circuitDef.id].attr & Attr::T4) != 0) {
+		// v19: the hero gadget names the next hero in the altar's rules param "hero_next" (hero cap of 3, altar
+		// upgrades, revives first); "" = nothing now (slots full, research running). "?" = no gadget: the old pick.
+		const string heroNext = unit.GetRulesParam("hero_next", "?");
+		if (heroNext != "?") {
+			if (heroNext == "")
+				return null;
+			CCircuitDef@ hd = ai.GetCircuitDef(heroNext);
+			if (hd !is null && hd.IsAvailable(ai.frame) && hd.count < hd.maxThisUnit) {
+				AiLog("[custom] hero: " + unit.circuitDef.GetName() + " builds " + heroNext + " (hero_next)");
+				return aiFactoryMgr.Enqueue(TaskS::Recruit(Task::RecruitType::FIREPOWER, Task::Priority::HIGH, hd, unit.GetPos(ai.frame), 64.f));
+			}
+			return null;
+		}
 		const string side = unit.circuitDef.GetName().substr(0, 3);
 		CCircuitDef@ pick = null;
 		float best = 1e9f;

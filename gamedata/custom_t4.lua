@@ -306,6 +306,9 @@ function T4.hero(ud, fx, extraWeapons)
 	local cp = ud.customparams
 	cp.t4_hero = 1
 	cp.t4_fx = fx
+	-- v19: every hero takes EMP alike - half the paralysis damage (unit_paralyze_damage_multiplier.lua); api.stun lasts
+	-- half as long on heroes (the base Juggernaut was immune, Bastion no longer is)
+	cp.paralyzemultiplier = 0.5
 	for _, wd in pairs(ud.weapondefs or {}) do
 		scaleCegRefs(wd, fx)
 	end
@@ -334,6 +337,15 @@ function T4.hero(ud, fx, extraWeapons)
 					w.name = (wd.name or key) .. " (" .. suffix .. ")"
 					for field, v in pairs(c.set or {}) do
 						w[field] = deepcopy(v)
+					end
+					if w.weapontype == "LightningCannon" and c.set and c.set.rgbcolor then
+						-- the GL4 lightning gadget (gfx_lightning_cannon_gl4.lua) reads these overrides
+						local r, g, bl = tostring(c.set.rgbcolor):match("([%d%.]+)%s+([%d%.]+)%s+([%d%.]+)")
+						w.customparams = w.customparams or {}
+						w.customparams.lightning_color_r, w.customparams.lightning_color_g, w.customparams.lightning_color_b = r, g, bl
+						w.customparams.lightning_core_color_r = "1"
+						w.customparams.lightning_core_color_g = tostring(math.min(1, (tonumber(g) or 0) + 0.35))
+						w.customparams.lightning_core_color_b = tostring(math.min(1, (tonumber(bl) or 0) + 0.25))
 					end
 					if w.weapontype == "BeamLaser" or w.weapontype == "LightningCannon" then
 						w.damage = { default = 0 }

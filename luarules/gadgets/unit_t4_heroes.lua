@@ -108,14 +108,15 @@ end
 --   buff(unitID, h, id, seconds | nil, mods), unbuff(unitID, h, id)   mods: damage, reload, speed, turn, range, armor,
 --       regen (HP/s), immobile, cloak (engine cloak when the unitdef can cloak), hidden, unstoppable, reflect, scale,
 --       turretTurn (calls the COB function SetTurretTurnMult(x1000) when the script has it - no stock script does)
---   setScale(unitID, s)                          model scale through the root piece matrix
+--   setScale(unitID, s)                          model scale: unit rules param hero_scale + GG.HeroFX.scale(unitID, s)
+--                                                (Recoil cannot scale a COB unit's model at runtime; the fx draws it)
 --   fire(h, weaponName, fromX, fromY, fromZ, targetID | x, y, z, opts) -> projectileID   an extra weapondef
 --       <hero>_<weaponName> (or a real weapon key); opts {dmg, aoe, stun, para, dtype, fx, onHit(x, z, hits), ttl,
 --       gravity}: with dmg the projectile's own damage is replaced by the ability's (applied on impact); without it
 --       the engine damage counts as a hero weapon hit. Beams / lightning hit at once. Never a starburst.
 --   swapWeapons(unitID, h, suffix | nil)         projectiles drawn with the <key>_<suffix> copies (config weaponCopies)
 --   summon(unitID, h, unitName, count, opts) -> ids   opts {expire, leash, guard = heroID (attack the hero's target,
---       stay in leash), spread, cap, respawn = {max, every}, build = seconds (nanoframe), credit (default true: damage
+--       stay in leash), spread, cap, respawn = {max, every}, build = seconds (still and stunned under a print effect), credit (default true: damage
 --       counts as the hero's: XP, damage type), scaleWithLevel (HP / damage x ability power), persist (outlive the hero)}
 --   order(uids, cmd, params, opts)
 --   cooldown(unitID, h, key, seconds), ready(h, key), active(unitID, key, seconds), K.toggleOff(unitID, h, key)
@@ -666,34 +667,21 @@ if gadgetHandler:IsSyncedCode() then
 			return m
 		end
 
-		-- model scale through the root piece matrix (normalised, so a script that rewrote the matrix is scaled again)
-		local spGetUnitPieceMatrix = Spring.GetUnitPieceMatrix
-		local spSetUnitPieceMatrix = Spring.SetUnitPieceMatrix
+		-- model scale (Rage Mode & co): Recoil has no runtime model scaling for COB units (SetUnitPieceMatrix only accepts
+		-- rotation/translation and blocks script animation), so the scale is published as the unit rules param
+		-- hero_scale and handed to the fx library (GG.HeroFX.scale(unitID, s), unsynced redraw) when it has one
 		function applyScale(unitID, s)
-			local piece = Spring.GetUnitRootPiece and Spring.GetUnitRootPiece(unitID)
-			if not piece or not spGetUnitPieceMatrix or not spSetUnitPieceMatrix then
-				return
+			local F = GG.HeroFX
+			if F and F.scale then
+				pcall(F.scale, unitID, s)
 			end
-			local m = { spGetUnitPieceMatrix(unitID, piece) }
-			if #m < 16 then
-				return
-			end
-			local len = sqrt(m[1] * m[1] + m[2] * m[2] + m[3] * m[3])
-			if len < 1e-4 then
-				return
-			end
-			local k = s / len
-			if abs(k - 1) < 0.005 then
-				return
-			end
-			for _, i in ipairs({ 1, 2, 3, 5, 6, 7, 9, 10, 11 }) do
-				m[i] = m[i] * k
-			end
-			spSetUnitPieceMatrix(unitID, piece, m)
 		end
 
 		function setScale(unitID, s)
 			s = s or 1
+			if abs(s - (scaled[unitID] or 1)) < 0.005 then
+				return
+			end
 			scaled[unitID] = abs(s - 1) > 0.005 and s or nil
 			applyScale(unitID, s)
 			spSetUnitRulesParam(unitID, "hero_scale", s, INLOS)
@@ -3692,7 +3680,7 @@ if gadgetHandler:IsSyncedCode() then
 			local a = random() * 6.283
 			local sp = opts.spread or 280
 			local sx, sz = clampX(x + math.cos(a) * sp), clampZ(z + math.sin(a) * sp)
-			local uid = Spring.CreateUnit(ud.id, sx, spGetGroundHeight(sx, sz), sz, random(0, 3), h.team, opts.build and true or false)
+			local uid = Spring.CreateUnit(ud.id, sx, spGetGroundHeight(sx, sz), sz, random(0, 3), h.team)
 			if not uid then
 				return nil
 			end
@@ -3709,8 +3697,9 @@ if gadgetHandler:IsSyncedCode() then
 				spSetUnitRulesParam(uid, "hero_summon_expire", s.expire, ALLIED)
 			end
 			if opts.build and opts.build > 0 then
+				-- "printed": still (stunned) for `build` seconds under the summon effect (a Lua-made nanoframe dies at once)
 				s.buildFrom, s.buildFrames = f, floor(opts.build * GAME_SPEED)
-				Spring.SetUnitHealth(uid, { build = 0.01 })
+				stunUnit(uid, opts.build, nil, nil)
 			end
 			if not s.guard then
 				Spring.GiveOrderToUnit(uid, CMD.GUARD, { unitID }, 0)
@@ -3757,12 +3746,11 @@ if gadgetHandler:IsSyncedCode() then
 		summonTick = function(f, every)
 			for uid, s in pairs(summoned) do
 				if s.buildFrom then
-					local p = min(1, (f - s.buildFrom) / max(1, s.buildFrames))
-					if alive(uid) then
-						Spring.SetUnitHealth(uid, { build = p })
-					end
-					if p >= 1 then
+					if f - s.buildFrom >= s.buildFrames then
 						s.buildFrom = nil
+					elseif (f - s.buildFrom) % 6 == 0 then
+						local x, y, z = spGetUnitPosition(uid)
+						ceg("hero-summon", x, y, z)
 					end
 				end
 			end
@@ -5378,12 +5366,9 @@ if gadgetHandler:IsSyncedCode() then
 	---------------------------------------------------------------- frames
 	do
 
-		-- every frame: shots / reload of heroes whose module wants `fired`; model scale held
+		-- every frame: shots / reload of heroes whose module wants `fired`
 		local function heroFrameTick(f)
 			for unitID, h in pairs(heroes) do
-				if scaled[unitID] then
-					applyScale(unitID, scaled[unitID])
-				end
 				local mod = h.def.mod
 				if mod and mod.fired then
 					h.lastReload = h.lastReload or {}
