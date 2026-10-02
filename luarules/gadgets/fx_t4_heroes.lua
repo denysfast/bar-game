@@ -40,6 +40,9 @@
 --   orbPointPos(x, z, opts, frame, index) -> x,y,z   same for attachPoint orbs
 --   detach(id)                  soft fade-out of any effect (attachments and one-shots alike)
 --   hit(id, x, y, z)            ripple on a "sphere" at world point x,y,z (last 4 hits are animated)
+--   scale(unitID, s, time=0.6)  grow/shrink the unit's RENDERED model around its origin (s = 1 normal, 1.35 rage),
+--                               smooth over `time` s; all passes incl. shadows (CUS GL4 slot userDefined[3].w);
+--                               attached auras/spheres/arcs/tints follow. Collision/selection are unchanged.
 --   set(id, {radius=, color=, alpha=, stacks=, max=, angle=, rot=, arc=, intensity=, scale=, target=, time=})
 --                               change a running effect; radius/alpha/scale animate over opts.time seconds
 --
@@ -155,6 +158,11 @@ if gadgetHandler:IsSyncedCode() then
 	function FX.set(id, opts)
 		if id then
 			SendToUnsynced("herofx", "set", id, encode(opts))
+		end
+	end
+	function FX.scale(unitID, s, time)
+		if unitID then
+			SendToUnsynced("herofx", "scale", 0, unitID, s or 1, time or -1)
 		end
 	end
 
@@ -1482,6 +1490,69 @@ function impl.set(gid, s)
 	end
 end
 
+--------------------------------------------------------------------------------
+-- Runtime model scale (Rage Mode & co): CUS GL4 reads userDefined[3].w (= scale - 1, slot 15)
+-- in its vertex shader for every pass; our own attached effects read the same slot.
+--------------------------------------------------------------------------------
+local SCALE_SLOT = 15
+local SCALE_DEFAULT_TIME = 0.6
+local scaleAnim = {} -- unitID -> { from, to, start, frames }
+local scaleCur = {} -- unitID -> current scale (absent = 1)
+local scaleBuf = { 0 }
+local spGetFrameTimeOffset = Spring.GetFrameTimeOffset
+local glSetUnitBufferUniforms = gl.SetUnitBufferUniforms
+
+local function drawFrameNow()
+	return spGetGameFrame() + (spGetFrameTimeOffset and spGetFrameTimeOffset() or 0)
+end
+
+local function writeScale(unitID, v)
+	if glSetUnitBufferUniforms then
+		scaleBuf[1] = v - 1
+		glSetUnitBufferUniforms(unitID, scaleBuf, SCALE_SLOT)
+	end
+end
+
+function impl.scale(unitID, s, time)
+	if not unitID or not spValidUnitID(unitID) then
+		return
+	end
+	s = s or 1
+	local from = scaleCur[unitID] or 1
+	local frames = (time or SCALE_DEFAULT_TIME) * 30
+	if frames <= 0.5 then
+		scaleAnim[unitID] = nil
+		scaleCur[unitID] = (math.abs(s - 1) > 0.0001) and s or nil
+		writeScale(unitID, s)
+		return
+	end
+	scaleAnim[unitID] = { from, s, drawFrameNow(), frames }
+end
+
+local function updateScales()
+	if next(scaleAnim) == nil then
+		return
+	end
+	local now = drawFrameNow()
+	for u, a in pairs(scaleAnim) do
+		local t = (now - a[3]) / a[4]
+		if t >= 1 then
+			t = 1
+		elseif t < 0 then
+			t = 0
+		end
+		local k = t * t * (3 - 2 * t)
+		local v = a[1] + (a[2] - a[1]) * k
+		writeScale(u, v)
+		if t >= 1 then
+			scaleAnim[u] = nil
+			scaleCur[u] = (math.abs(a[2] - 1) > 0.0001) and a[2] or nil
+		else
+			scaleCur[u] = v
+		end
+	end
+end
+
 -- public unsynced API (same signatures as the synced forwarder)
 function FX.bolt(x1, y1, z1, x2, y2, z2, opts) return impl.bolt(newID(), x1, y1, z1, x2, y2, z2, opts or {}) end
 function FX.chain(points, opts) return impl.chain(newID(), points, opts or {}) end
@@ -1495,6 +1566,7 @@ function FX.attachPoint(x, z, kind, opts) return impl.attachPoint(newID(), x, z,
 function FX.detach(id) if id then impl.detach(id) end end
 function FX.hit(id, x, y, z) if id then impl.hit(id, x, y, z) end end
 function FX.set(id, opts) if id and opts then impl.set(id, opts) end end
+function FX.scale(unitID, s, time) impl.scale(unitID, s, time) end
 function FX.debug(on) debugStats = on and true or false end
 function FX.stats()
 	local t = {}
@@ -1545,6 +1617,9 @@ local function onSync(_, op, id, ...)
 		impl.hit(id, x, y, z)
 	elseif op == "set" then
 		impl.set(id, decode((...)))
+	elseif op == "scale" then
+		local u, sc, t = ...
+		impl.scale(u, sc, t >= 0 and t or nil)
 	end
 end
 
@@ -1741,6 +1816,17 @@ function gadget:Initialize()
 	gadgetHandler:AddSyncAction("herofx", onSync)
 	GG.HeroFX = FX
 	gadget:PlayerChanged()
+	-- re-apply scales published by the core (e.g. after a LuaRules reload)
+	for _, u in ipairs(Spring.GetAllUnits()) do
+		local hs = Spring.GetUnitRulesParam(u, "hero_scale")
+		if hs and math.abs(hs - 1) > 0.005 then
+			impl.scale(u, hs, 0)
+		end
+	end
+end
+
+function gadget:Update()
+	updateScales()
 end
 
 function gadget:Shutdown()
@@ -1771,6 +1857,11 @@ function gadget:PlayerChanged()
 end
 
 function gadget:UnitDestroyed(unitID)
+	if scaleCur[unitID] or scaleAnim[unitID] then
+		-- the uniform slot is reused by the next unit: put it back to the identity
+		scaleCur[unitID], scaleAnim[unitID] = nil, nil
+		writeScale(unitID, 1)
+	end
 	local t = unitRecs[unitID]
 	if not t then
 		return

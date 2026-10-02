@@ -171,8 +171,13 @@ void main() {
 	vec3 fb;
 	if (mode < 0.5) {
 		// body crawl: an arc between two nearby points on the unit's (heading-rotated) ellipsoid
-		vec3 C = dp.xyz + vec3(0.0, i_p0w.w, 0.0);
-		vec3 ext = i_p0w.xyz;
+#if ATTACHED == 1
+		float us = fxUnitScale(instData.y);
+#else
+		float us = 1.0;
+#endif
+		vec3 C = dp.xyz + vec3(0.0, i_p0w.w * us, 0.0);
+		vec3 ext = i_p0w.xyz * us;
 		dA.y = abs(dA.y) * 0.9 + 0.08;
 		dA = normalize(dA);
 		vec3 dB = normalize(dA + (hash32(key + 19.7) * 2.0 - 1.0) * 1.3);
