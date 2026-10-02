@@ -123,7 +123,7 @@ local function flaresFrame(api, unitID, h, f)
 			if f % 15 == 0 then
 				local left = (fl.untilF - f) / 30
 				for _, uid in ipairs(api.enemiesIn(fl.x, fl.z, fl.R, h.ally)) do
-					api.mark(uid, "exposed", 1, { vuln = fl.vuln, from = unitID })
+					api.mark(uid, "exposed", 1, { vuln = fl.vuln, from = unitID, max = 1 }) -- v19-balance: max 1 (the 0.5 s refresh stacked it without end)
 					if not fl.exposed[uid] and fl.n < 30 then
 						fl.exposed[uid] = true
 						fl.n = fl.n + 1
