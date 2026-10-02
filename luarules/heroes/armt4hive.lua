@@ -362,7 +362,7 @@ function M.autocast(api, unitID, h, key, rank)
 			return hx, hy, hz
 		end
 		local cx, cz, _, cnt = L.cluster(api, x, z, range, 250, h.ally)
-		if cx and cnt >= 5 then
+		if cx and cnt >= 4 then
 			return cx, L.gy(cx, cz), cz
 		end
 	elseif key == "ult" then

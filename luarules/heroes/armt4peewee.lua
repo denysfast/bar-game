@@ -356,7 +356,7 @@ function M.autocast(api, unitID, h, key, rank)
 		end
 	elseif key == "a3" then
 		local n = #L.seenEnemies(api, x, z, gunRange(api, unitID, h), h.ally)
-		if n >= 6 then
+		if n >= 4 then
 			return x, y, z
 		end
 	elseif key == "ult" then
