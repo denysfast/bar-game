@@ -1,5 +1,10 @@
 # v19 heroes: the Armada roster (design-arm, wave 1)
 
+> **Orchestrator decisions (binding over the text below):** Thor Electro-Devour has NO heal cap — heals 50%→200%
+> of the eaten unit's max HP as the human said. Razor's ult drones are REAL summon units (respawning, like the
+> Legion drone carrier), not FX-only orbs. Razor's shield is a Lua absorb pool (as designed).
+
+
 Ten Armada heroes for the altar `armt4gant`: the 4 existing unitnames are redone (to keep saves) and 6 are new.
 All of them are ground, amphibious or all-terrain units. Each hero has a different base model, all of them Armada.
 Conventions used below:
