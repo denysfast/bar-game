@@ -14,6 +14,18 @@ local function freeShots(ud)
 	end
 end
 
+-- the look of an ability projectile whose damage the hero module applies by the clock (L.lob / L.drop in
+-- luarules/heroes/cort4_lib.lua): it flies through units and lands where it was aimed
+local function groundOnly(wd)
+	wd.collideenemy = false
+	wd.collidefriendly = false
+	wd.collidefeature = false
+	wd.collideneutral = false
+	wd.avoidfriendly = false
+	wd.avoidfeature = false
+	return wd
+end
+
 -- a builder base turned into a fighter: no construction
 local function noBuild(ud, keepRepair)
 	ud.buildoptions = nil
@@ -116,8 +128,8 @@ hellwalker.weapondefs.karg_shoulder.damage = { default = 1, vtol = 2400 }
 freeShots(hellwalker)
 units.cort4hellwalker = T4.hero(hellwalker, 2.5, {
 	-- Hell on Earth meteors (the damage is the ability's; the impact is drawn by the module)
-	meteor = T4.shellWeapon({ name = "Hellfire Meteor", damage = 1, aoe = 200, velocity = 1350, size = 16, rgb = "1 0.45 0.08",
-		ceg = "custom:blank", soundhit = "xplolrg4", range = 9000 }),
+	meteor = groundOnly(T4.shellWeapon({ name = "Hellfire Meteor", damage = 1, aoe = 200, velocity = 1350, size = 16, rgb = "1 0.45 0.08",
+		ceg = "custom:blank", soundhit = "xplolrg4", range = 9000 })),
 })
 
 ----------------------------------------------------------------------------------------------- 3 Armageddon
@@ -143,13 +155,20 @@ freeShots(armageddon)
 local bomblet = T4.shellWeapon({ name = "Cluster Bomblet", damage = 1, aoe = 90, velocity = 420, size = 3.2, rgb = "1 0.55 0.15",
 	ceg = "custom:blank", soundhit = "xplosml2", range = 600 })
 bomblet.soundhit = "xplosml2"
+groundOnly(bomblet)
 local rain = T4.missileWeapon({ name = "Armageddon Rain", damage = 1, aoe = 200, model = "catapultmissile.s3o", velocity = 1100,
 	ceg = "custom:blank", cegtag = "missiletrailsmall-red", soundhit = "rockhit", soundstart = "rapidrocket3", range = 5000 })
 rain.customparams = { t4_ability = 1 }
+rain.smoketrail = false
+groundOnly(rain)
 units.cort4armageddon = T4.hero(armageddon, 2.5, {
 	bomblet = bomblet,
 	rain = rain,
-	nuke = T4.nukeWeapon({ name = "Armageddon Warhead", damage = 1, aoe = 600, ceg = "custom:blank", customparams = { t4_ability = 1 } }),
+	nuke = (function()
+		local w = T4.nukeWeapon({ name = "Armageddon Warhead", damage = 1, aoe = 600, ceg = "custom:blank", customparams = { t4_ability = 1 } })
+		w.smoketrail = false
+		return groundOnly(w)
+	end)(),
 })
 
 ----------------------------------------------------------------------------------------------- 4 Vesuvius
@@ -183,8 +202,9 @@ do
 	salvo.flighttime = 6
 	salvo.weaponvelocity = 900
 	local volcanic = T4.shellWeapon({ name = "Volcanic Bomb", damage = 1, aoe = 300, velocity = 900, size = 14, rgb = "1 0.35 0.05",
-		ceg = "custom:blank", cegtag = "burnflamexl", soundstart = "krogun1", soundhit = "xplonuk2", range = 4000 })
+		ceg = "custom:blank", soundstart = "krogun1", soundhit = "xplonuk2", range = 4000 })
 	volcanic.customparams = { t4_ability = 1 }
+	groundOnly(volcanic)
 	units.cort4vesuvius = T4.hero(vesuvius, 2.2, { salvo = salvo, volcanic = volcanic })
 end
 
@@ -314,6 +334,10 @@ local commandoBase = T4.base("units/Scavengers/Bots/cormandot4.lua", "cormandot4
 noBuild(commandoBase)
 commandoBase.cloakcost = 0
 commandoBase.customparams.firestateoncloak = nil -- Ghost Protocol: the first shot from cloak is the Ambush
+-- the Disintegrator goes to weapon slot 1 (aimed by the arm, quick): in slot 2 the scavenger script's back turret
+-- needs ~5 s to unfold and never fired while the EMP scattergun kept re-aiming the arm
+commandoBase.weapons = { commandoBase.weapons[2], commandoBase.weapons[1] }
+commandoBase.weapons[1].badtargetcategory = nil
 commandoBase.cloakcostmoving = 0
 local commando = T4.derive(commandoBase, {
 	name = "cort4commando",

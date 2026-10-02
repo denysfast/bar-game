@@ -65,6 +65,9 @@ local function liveDrones(h)
 	for _, uid in ipairs(h.store.drones) do
 		if L.alive(uid) then
 			keep[#keep + 1] = uid
+		else
+			-- shot down: the next one waits for the reprint interval (droneBay)
+			h.store.lostNew = (h.store.lostNew or 0) + 1
 		end
 	end
 	h.store.drones = keep
@@ -79,6 +82,11 @@ local function droneBay(api, unitID, h, f)
 	local a1 = b(h, "a1")
 	local drones = liveDrones(h)
 	local want = api.val(a1.count, r)
+	if (h.store.lostNew or 0) > 0 then
+		h.store.lost = (h.store.lost or 0) + h.store.lostNew
+		h.store.lostNew = 0
+		h.store.nextPrint = max(h.store.nextPrint or 0, f + floor(api.val(a1.reprint, r) * 30))
+	end
 	if #drones < want and f >= (h.store.nextPrint or 0) then
 		local ids = api.summon(unitID, h, "cort4printer_drone", 1, { spread = 70, fx = "blank" })
 		local uid = ids[1]
@@ -92,11 +100,10 @@ local function droneBay(api, unitID, h, f)
 			end
 			L.log(api, h, "a1 drone printed %d/%d dps=%d", #drones, want, api.val(a1.dps, r) * api.power(h))
 		end
-		-- the first drones come quickly, then one per reprint interval
-		h.store.nextPrint = f + ((#drones < 2 and not h.store.everFull) and 30 or floor(api.val(a1.reprint, r) * 30))
-		if #drones >= want then
-			h.store.everFull = true
-		end
+		-- new bay slots fill at one drone a second; a drone that was lost is reprinted after the reprint interval
+		h.store.printed = (h.store.printed or 0) + 1
+		h.store.lost = max(0, (h.store.lost or 0) - 1)
+		h.store.nextPrint = f + (((h.store.lost or 0) > 0) and floor(api.val(a1.reprint, r) * 30) or 30)
 	end
 end
 

@@ -338,7 +338,13 @@ local function fall(api, unitID, h)
 	L.flash(api, x, y + 40, z, { radius = 260, color = { 1, 0.7, 0.5, 0.8 }, ttl = 0.5 })
 	L.ring(api, x, z, { kind = "rune", r0 = 300, r1 = 80, width = 34, ttl = down, color = L.col(L.RED, 0.85), rot = 1.2 })
 	L.pillar(api, x, z, { radius = 120, height = 900, color = { 1, 0.3, 0.08, 0.85 }, ttl = down, ring = true })
-	api.downed(unitID, h, down, rise)
+	api.downed(unitID, h, down, function(a, u, hh)
+		L.later(a, function()
+			if L.alive(u) then
+				rise(a, u, hh)
+			end
+		end)
+	end)
 	L.log(api, h, "ult fall rank=%d cooldown=%d", r, api.val(ult.cooldown, r))
 end
 
@@ -365,6 +371,15 @@ function M.cast(api, unitID, h, key, rank, x, y, z, targetID)
 		return circleBeam(api, unitID, h, rank)
 	end
 	return false
+end
+
+-- the Gauss DGun slug pierces (noexplode): one shot counts once per victim (L.repeatHit)
+function M.hit(api, unitID, h, victimID, victimDefID, damage, weaponDefID, isParalyzer)
+	local n = h.def.keyNum.juggernaut_fire and h.def.keyNum.juggernaut_fire[1]
+	if n and h.def.weapons[n].wdid == weaponDefID then
+		return L.slugHit(api, h, victimID, weaponDefID, damage, n, 15)
+	end
+	return damage
 end
 
 function M.damaged(api, unitID, h, damage, attackerID, weaponDefID, isParalyzer, ax, az)

@@ -244,6 +244,9 @@ function M.impact(api, unitID, h, weaponDefID, x, y, z, projectileID)
 	if w and weaponDefID == w.wdid and api.rank(h, "a1") > 0 then
 		cluster(api, unitID, h, x, y, z)
 	end
+	if Spring.GetGameRulesParam("cort4_debug") == 1 then
+		L.log(api, h, "impact wd=%s pid=%s at %d,%d,%d", WeaponDefs[weaponDefID].name, tostring(projectileID), x, y, z)
+	end
 end
 
 function M.frame(api, unitID, h, f)

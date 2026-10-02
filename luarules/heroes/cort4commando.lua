@@ -22,9 +22,10 @@ end
 
 ---------------------------------------------------------------------------- a1 Ghost Protocol
 
-local function uncloak(api, unitID, h, f)
+local function uncloak(api, unitID, h, f, why)
 	local st = h.store
 	if st.cloaked then
+		L.log(api, h, "a1 decloak (%s)", why or "?")
 		st.cloaked = false
 		Spring.SetUnitCloak(unitID, false)
 		api.unbuff(unitID, h, "ghost")
@@ -40,6 +41,7 @@ local function cloak(api, unitID, h, r, f)
 	local st = h.store
 	st.cloaked = true
 	st.cloakAt = f
+	st.engineCloaked = false
 	Spring.SetUnitCloak(unitID, true, a1.decloak or 50)
 	api.buff(unitID, h, "ghost", nil, { speed = api.val(a1.speed, r) })
 	st.cloakFx = {
@@ -56,9 +58,14 @@ local function ghostFrame(api, unitID, h, f)
 	end
 	local st = h.store
 	if st.cloaked then
-		-- the engine dropped the cloak (an enemy came within 50, or it fired): start over
-		if f - (st.cloakAt or f) > 24 and not Spring.GetUnitIsCloaked(unitID) then
-			uncloak(api, unitID, h, f)
+		-- the engine cloaks at its next slow update (the cloak gadget may hold it back a few seconds after a shot);
+		-- once cloaked, an engine decloak means it fired (or an enemy came within 50): that shot is the Ambush
+		local isC = Spring.GetUnitIsCloaked(unitID)
+		if isC then
+			st.engineCloaked = true
+		elseif st.engineCloaked then
+			st.ambush = f + 60
+			uncloak(api, unitID, h, f, "engine")
 		end
 	elseif f - (st.lastAct or 0) >= api.val(b(h, "a1").delay, r) * 30 and not Spring.GetUnitIsStunned(unitID) then
 		cloak(api, unitID, h, r, f)
@@ -123,8 +130,8 @@ local function mines(api, unitID, h, r, x, z)
 		local d = (a2.spread or 200) * sqrt(random() * 0.8 + 0.2)
 		local mx, mz = L.clampX(x + cos(a) * d), L.clampZ(z + sin(a) * d)
 		local m = { x = mx, z = mz, untilF = f + floor((a2.life or 60) * 30) }
-		m.fx = L.ring(api, mx, mz, { kind = "electric", r0 = 46, r1 = 50, width = 10, ttl = a2.life or 60, color = L.col(EMP, 0.25),
-			visible = "ally", ally = h.ally })
+		m.fx = L.ring(api, mx, mz, { kind = "hex", r0 = 50, r1 = 50, width = 8, ttl = a2.life or 60, color = { 0.45, 0.85, 1, 0.3 },
+			rot = 0.5, visible = "ally", ally = h.ally })
 		list[#list + 1] = m
 		L.bolt(api, hx, hy + 80, hz, mx, L.gy(mx, mz) + 5, mz, { color = L.col(EMP, 0.6), width = 1.5, ttl = 0.2, branches = 0,
 			visible = "ally", ally = h.ally })
@@ -302,12 +309,12 @@ function M.fired(api, unitID, h, weaponNum)
 	if h.store.cloaked then
 		h.store.ambush = f + 60
 	end
-	uncloak(api, unitID, h, f)
+	uncloak(api, unitID, h, f, "fired")
 end
 
 function M.damaged(api, unitID, h, damage, attackerID, weaponDefID, isParalyzer)
 	if damage > 0 then
-		uncloak(api, unitID, h, api.frame())
+		uncloak(api, unitID, h, api.frame(), "hit")
 	end
 	return damage
 end
@@ -315,6 +322,14 @@ end
 function M.hit(api, unitID, h, victimID, victimDefID, damage, weaponDefID, isParalyzer)
 	if isParalyzer or damage <= 0 then
 		return damage
+	end
+	-- the Disintegrator slug passes through: one hit per victim per shot
+	local gun = h.def.keyNum.commando_back_cannon and h.def.keyNum.commando_back_cannon[1]
+	if gun and h.def.weapons[gun].wdid == weaponDefID then
+		damage = L.slugHit(api, h, victimID, weaponDefID, damage, gun, 12)
+		if damage <= 0 then
+			return 0
+		end
 	end
 	local f = api.frame()
 	if h.store.ambush and f <= h.store.ambush then

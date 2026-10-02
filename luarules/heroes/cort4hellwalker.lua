@@ -20,15 +20,19 @@ end
 
 ---------------------------------------------------------------------------- a1 Combustion (Heat)
 
+-- Heat decays 1/s once the enemy is out of the flame for a second; a combusted enemy is burnt out for 3 s (no Heat)
 local function heatOf(h, uid, f)
 	local e = h.store.heat[uid]
 	if not e then
 		return 0, nil
 	end
 	local a1 = b(h, "a1")
-	local v = max(0, e.v - (f - e.t) / 30 * (a1.decay or 1))
-	e.v, e.t = v, f
-	return v, e
+	local idle = f - max(e.t, (e.gain or -999) + 30)
+	if idle > 0 then
+		e.v = max(0, e.v - idle / 30 * (a1.decay or 1))
+		e.t = f
+	end
+	return e.v, e
 end
 
 local combust
@@ -44,7 +48,11 @@ local function addHeat(api, unitID, h, uid, n, f)
 		e = { v = 0, t = f, gain = -99 }
 		h.store.heat[uid] = e
 	end
+	if e.cool and f < e.cool then
+		return
+	end
 	e.v = min(a1.maxHeat or 10, v + n)
+	e.t = max(e.t, f)
 	if e.v >= (a1.maxHeat or 10) and not e.boom then
 		e.boom = true
 		local q = h.store.boomQ
@@ -55,7 +63,7 @@ end
 combust = function(api, unitID, h, uid, f)
 	local a1 = b(h, "a1")
 	local r = api.rank(h, "a1")
-	h.store.heat[uid] = nil
+	h.store.heat[uid] = { v = 0, t = f, gain = f, cool = f + 90 }
 	if not L.alive(uid) then
 		return
 	end
@@ -110,16 +118,28 @@ local function hellcharge(api, unitID, h, r, x, z)
 	local trail = L.attach(api, unitID, "trail", { color = FIRE, width = 120, length = 0.6, ttl = secs + 0.4 })
 	local tint = L.attach(api, unitID, "tint", { pattern = "heat", color = FIRE, strength = 0.8, ttl = secs + 0.5 })
 	local ok = api.dash(unitID, h, tx, tz, { speed = 1400, onStep = function(px, pz)
+		local new = {}
 		for _, uid in ipairs(api.enemiesIn(px, pz, 150, h.ally)) do
 			if not hit[uid] then
 				hit[uid] = true
-				n = n + 1
-				api.damage(uid, dmg, unitID, { dtype = "flame" })
-				api.push(uid, px, pz, 120, 0.3)
-				addHeat(api, unitID, h, uid, a2.heat or 5, api.frame())
-				local ux, uy, uz = api.pos(uid)
-				L.flash(api, ux, uy + 20, uz, { radius = 90, color = FIRE, ttl = 0.3 })
+				new[#new + 1] = uid
 			end
+		end
+		if #new > 0 then
+			L.later(api, function()
+				for _, uid in ipairs(new) do
+					if L.alive(uid) then
+						n = n + 1
+						api.damage(uid, dmg, unitID, { dtype = "flame" })
+						api.push(uid, px, pz, 120, 0.3)
+						addHeat(api, unitID, h, uid, a2.heat or 5, api.frame())
+						local ux, uy, uz = api.pos(uid)
+						if ux then
+							L.flash(api, ux, uy + 20, uz, { radius = 90, color = FIRE, ttl = 0.3 })
+						end
+					end
+				end
+			end)
 		end
 	end, onLand = function(lx, lz)
 		L.detach(api, trail)
@@ -330,7 +350,8 @@ function M.frame(api, unitID, h, f)
 		local n = 0
 		for uid in pairs(h.store.heat) do
 			local v = heatOf(h, uid, f)
-			if not L.alive(uid) or v <= 0 then
+			local e = h.store.heat[uid]
+			if not L.alive(uid) or (v <= 0 and not (e and e.cool and f < e.cool)) then
 				h.store.heat[uid] = nil
 			elseif v >= 7 and n < 20 then
 				n = n + 1

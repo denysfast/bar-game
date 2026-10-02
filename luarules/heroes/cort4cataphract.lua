@@ -87,15 +87,27 @@ local function lanceCharge(api, unitID, h, r, x, z)
 		if steps % 3 == 0 then
 			L.ring(api, bx, bz, { kind = "shock", r0 = 60, r1 = 150, width = 18, ttl = 0.25, color = L.col(L.AMBER, 0.8) })
 		end
+		local new = {}
 		for _, uid in ipairs(api.enemiesIn(bx, bz, 140, h.ally)) do
 			if not hit[uid] then
 				hit[uid] = true
-				n = n + 1
-				api.damage(uid, dmg, unitID, { dtype = "laser" })
-				api.push(uid, px, pz, a1.knock or 150, 0.3)
-				local ux, uy, uz = api.pos(uid)
-				L.flash(api, ux, uy + 25, uz, { radius = 120, color = LANCE, ttl = 0.3 })
+				new[#new + 1] = uid
 			end
+		end
+		if #new > 0 then
+			L.later(api, function()
+				for _, uid in ipairs(new) do
+					if L.alive(uid) then
+						n = n + 1
+						api.damage(uid, dmg, unitID, { dtype = "laser" })
+						api.push(uid, px, pz, a1.knock or 150, 0.3)
+						local ux, uy, uz = api.pos(uid)
+						if ux then
+							L.flash(api, ux, uy + 25, uz, { radius = 120, color = LANCE, ttl = 0.3 })
+						end
+					end
+				end
+			end)
 		end
 	end, onLand = function()
 		L.detach(api, trail)
@@ -202,7 +214,7 @@ local function gauntlet(api, unitID, h, r, targetID)
 		local d = max(1, sqrt(dx * dx + dz * dz))
 		local stop = L.radius(t) + 50
 		local ex, ez = tx - dx / d * stop, tz - dz / d * stop
-		api.dash(unitID, h, ex, ez, { seconds = hop, untargetable = true, onLand = function(lx, lz)
+		api.dash(unitID, h, ex, ez, { seconds = hop, untargetable = true, onLand = function(lx, lz) L.later(api, function()
 			local ly = L.gy(lx, lz)
 			L.bolt(api, cx, cy + 40, cz, lx, ly + 40, lz, { color = LANCE, width = 20, ttl = 0.3, branches = 2 })
 			if L.alive(t) then
@@ -216,7 +228,7 @@ local function gauntlet(api, unitID, h, r, targetID)
 			st.n = st.n + 1
 			local nxt = L.mostValuable(api, h, lx, lz, ult.range or 900, done)
 			step(nxt)
-		end })
+		end) end })
 	end
 	step(targetID)
 	return true

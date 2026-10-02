@@ -74,8 +74,10 @@ local function quake(api, unitID, h, why)
 		api.slow(uid, a2.slow or 0.4, a2.slowTime or 2)
 		addFault(api, unitID, h, uid)
 	end
-	L.ring(api, x, z, { kind = "shock", r0 = 60, r1 = R, width = 40, ttl = 0.4, color = DUST })
-	L.ring(api, x, z, { kind = "fog", r0 = 40, r1 = R * 0.7, width = 60, ttl = 0.7, color = { 0.75, 0.6, 0.45, 0.5 } })
+	L.ring(api, x, z, { kind = "shock", r0 = 60, r1 = R, width = 70, ttl = 0.6, color = DUST })
+	L.ring(api, x, z, { kind = "shock", r0 = 30, r1 = R * 0.6, width = 40, ttl = 0.45, color = { 1, 0.75, 0.45, 0.8 } })
+	L.ring(api, x, z, { kind = "fog", r0 = 40, r1 = R * 0.8, width = 90, ttl = 1.0, color = { 0.75, 0.6, 0.45, 0.6 } })
+	L.flash(api, x, y + 10, z, { radius = 140, color = { 1, 0.7, 0.4, 0.8 }, ttl = 0.35 })
 	L.log(api, h, "a2 quake (%s) rank=%d dmg=%d radius=%d hit=%d knocks=%d", why, r, dmg, R, #hits, h.store.knocks or 0)
 end
 
@@ -117,7 +119,7 @@ local function titanGrip(api, unitID, h, r, targetID)
 	local _, vmax = Spring.GetUnitHealth(targetID)
 	local share = min(a1.cap or 30000, api.val(a1.share, r) * (vmax or 0)) * api.power(h)
 	local trail = L.attach(api, targetID, "trail", { color = L.ORANGE, width = 30, length = 0.5, ttl = 1.2 })
-	local ok = api.throw(targetID, cx, cz, 1.0, function(lx, lz)
+	local ok = api.throw(targetID, cx, cz, 1.0, function(lx, lz) L.later(api, function()
 		L.detach(api, trail)
 		api.damage(targetID, dmg, unitID, { dtype = "plasma" })
 		local splash = a1.splash or 250
@@ -130,12 +132,19 @@ local function titanGrip(api, unitID, h, r, targetID)
 			addFault(api, unitID, h, uid)
 		end
 		local ly = L.gy(lx, lz)
-		L.ring(api, lx, lz, { kind = "shock", r0 = 40, r1 = 300, width = 46, ttl = 0.5, color = L.ORANGE })
-		L.ring(api, lx, lz, { kind = "fog", r0 = 60, r1 = 260, width = 80, ttl = 1.0, color = { 0.8, 0.6, 0.4, 0.6 } })
+		L.ring(api, lx, lz, { kind = "shock", r0 = 40, r1 = 340, width = 60, ttl = 0.7, color = L.ORANGE })
+		L.ring(api, lx, lz, { kind = "fire", r0 = 30, r1 = 220, width = 70, ttl = 0.6, color = L.col(L.ORANGE, 0.8) })
+		L.ring(api, lx, lz, { kind = "fog", r0 = 60, r1 = 300, width = 100, ttl = 1.4, color = { 0.8, 0.6, 0.4, 0.7 } })
 		L.flash(api, lx, ly + 30, lz, { radius = 220, color = { 1, 0.6, 0.3, 1 }, ttl = 0.45 })
+		for i = 1, min(12, #hits) do
+			local ux, uy, uz = api.pos(hits[i])
+			if ux then
+				L.flash(api, ux, uy + 20, uz, { radius = 60, color = L.AMBER, ttl = 0.6 })
+			end
+		end
 		L.log(api, h, "a1 throw landed rank=%d victimDmg=%d splash=%d hit=%d dist=%d", r, dmg, share, #hits,
 			sqrt(L.d2(lx, lz, tx, tz)))
-	end)
+	end) end)
 	if not ok then
 		L.detach(api, trail)
 		return false
@@ -204,9 +213,16 @@ local function fissures(api, unitID, h, r, cx, cz)
 	for t = 1, ult.ticks or 3 do
 		api.delay(t * 30 - 10, function()
 			local n = 0
+			local seen = {}
 			for _, l in ipairs(lines) do
-				local hits = api.line(cx, cz, l[1], l[2], 120, dmg, unitID, { dtype = "flame" })
-				n = n + #hits
+				-- one hit per enemy per eruption (the fissures meet at the centre)
+				for _, uid in ipairs(api.line(cx, cz, l[1], l[2], 120, 0, unitID)) do
+					if not seen[uid] then
+						seen[uid] = true
+						n = n + 1
+						api.damage(uid, dmg, unitID, { dtype = "flame", ally = h.ally })
+					end
+				end
 				for s = 1, 4 do
 					local f = (s - 0.5 + random() * 0.5) / 4
 					local px, pz = cx + (l[1] - cx) * f, cz + (l[2] - cz) * f
@@ -233,7 +249,7 @@ local function earthshatter(api, unitID, h, r, x, z)
 	L.ring(api, hx, hz, { kind = "fog", r0 = 80, r1 = 340, width = 90, ttl = 1.0, color = { 0.75, 0.6, 0.45, 0.6 } })
 	local trail = L.attach(api, unitID, "trail", { color = L.ORANGE, width = 60, length = 0.5, ttl = leap + 0.3 })
 	L.ring(api, tx, tz, { kind = "hex", r0 = R, r1 = R * 0.3, width = 30, ttl = leap, color = L.RED })
-	local ok = api.dash(unitID, h, tx, tz, { seconds = leap, arc = 420, untargetable = true, onLand = function(lx, lz)
+	local ok = api.dash(unitID, h, tx, tz, { seconds = leap, arc = 420, untargetable = true, onLand = function(lx, lz) L.later(api, function()
 		L.detach(api, trail)
 		local dmg = api.val(ult.dmg, r) * api.power(h)
 		local stun = api.val(ult.stun, r)
@@ -254,7 +270,7 @@ local function earthshatter(api, unitID, h, r, x, z)
 		L.ring(api, lx, lz, { kind = "fire", r0 = 50, r1 = R * 0.6, width = 80, ttl = 0.8, color = L.col(L.LAVA, 0.9) })
 		fissures(api, unitID, h, r, lx, lz)
 		L.log(api, h, "ult land rank=%d dmg=%d radius=%d stun=%.1f hit=%d dealt=%d", r, dmg, R, stun, n, dealt)
-	end })
+	end) end })
 	if not ok then
 		L.detach(api, trail)
 		return false

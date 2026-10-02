@@ -389,6 +389,51 @@ function L.tick(api, unitID, h, f)
 	end
 end
 
+---------------------------------------------------------------------------- pass-through slugs
+
+-- a DGun slug (noexplode) damages a unit on every frame it overlaps it (x4..x15 on big targets, the first contact at
+-- the edge of its blast for ~15%): one shot counts once per victim, at the weapon's full damage.
+-- L.slugHit(api, h, victimID, weaponDefID, damage, weaponNum) -> the damage to deal (0 for a repeat)
+function L.slugHit(api, h, victimID, weaponDefID, damage, n, window)
+	if L.repeatHit(api, h, victimID, weaponDefID, window) then
+		return 0
+	end
+	local w = n and h.def.weapons[n]
+	return w and math.max(damage, w.damage * (h.dmgMult or 1)) or damage
+end
+
+function L.repeatHit(api, h, victimID, weaponDefID, window)
+	local f = api.frame()
+	local seen = h.store._slug
+	if not seen then
+		seen = {}
+		h.store._slug = seen
+	end
+	local key = victimID * 65536 + weaponDefID
+	local last = seen[key]
+	if last and f - last < (window or 15) then
+		return true
+	end
+	seen[key] = f
+	if f % 300 == 0 then
+		for k, t in pairs(seen) do
+			if f - t > 60 then
+				seen[k] = nil
+			end
+		end
+	end
+	return false
+end
+
+---------------------------------------------------------------------------- movement callbacks
+
+-- run fn on the next frame. Movement callbacks (api.dash / throw / downed onLand, onStep) run inside the core's
+-- movers loop: a unit killed or a new movement started there changes that table while it is traversed ("invalid key
+-- to 'next'"), so anything that may kill, push or dash goes through this
+function L.later(api, fn)
+	api.delay(1, fn)
+end
+
 ---------------------------------------------------------------------------- debug numbers
 
 -- "[ability]" log lines (benches: game rules param hero_ability_log = 1)
