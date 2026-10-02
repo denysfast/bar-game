@@ -11,6 +11,8 @@ Keys are never in the repo: CM_KEY_FILE (content-master owner key, knowledge-gua
 `content-master-owner-api-key-cpu-b`) and CC_KEY_FILE (content-controller tools key,
 `content-controller-tools-key`, platform home) name files that hold them.
 Qwen jobs wait while the lab holds the cards (availability "degraded"); they run when freed.
+v19: `content-controller-tools-key` is a provisionable (provision_secret, params owner=beyond-all-reason, reuse=true);
+the minted key works on platform eu: CC_BASE=https://cc-eu.denys.fast (cc-home answers 401 invalid_api_key).
 
 v19 UI set (--style track --seed 21 --size 128; key: knowledge-guardian `content-master-owner-api-key-cpu-b`,
 project "beyond-all-reason"): stat_vit "a glowing green armored heart inside a hexagonal plate, health and
