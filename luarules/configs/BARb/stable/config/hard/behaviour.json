@@ -147,7 +147,7 @@
 			"attribute": ["support"],
 			"midposoffset": [0, 0, -16],
 			"limit": 8,
-			"build_speed": 1.0 // bp 600
+			"build_speed": 45.0 // v19-ai2: was 1.0; Legion's leggant has 45 and was the only side reaching T3
 		},
 		"armvp": {
 			"role": ["static"],
@@ -178,7 +178,7 @@
 			"role": ["static"],
 			"attribute": ["support"],
 			"limit": 8,
-			"build_speed": 1.0 //bp 300
+			"build_speed": 45.0 // v19-ai2: was 1.0; Legion's leggant has 45 and was the only side reaching T3
 		},
 		"corvp": {
 			"role": ["builder"],
