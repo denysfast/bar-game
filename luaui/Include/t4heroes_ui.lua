@@ -215,6 +215,23 @@ function K.fit(str, size, maxW)
 	return s .. ".."
 end
 
+-- split a long text into lines of at most n characters (by words)
+function K.wrap(str, n)
+	local out, line = {}, ""
+	for word in tostring(str or ""):gmatch("%S+") do
+		if line ~= "" and #line + 1 + #word > n then
+			out[#out + 1] = line
+			line = word
+		else
+			line = line == "" and word or (line .. " " .. word)
+		end
+	end
+	if line ~= "" then
+		out[#out + 1] = line
+	end
+	return out
+end
+
 function K.hovered(x1, y1, x2, y2)
 	local mx, my = Spring.GetMouseState()
 	return mx >= x1 and mx <= x2 and my >= y1 and my <= y2
