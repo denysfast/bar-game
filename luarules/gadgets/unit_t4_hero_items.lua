@@ -49,7 +49,10 @@ end
 --   game:           items_ground ("<id>:<x>:<z>:<rarity code>;..."), items_ground_<id> (item string, "" = gone)
 -- UI events: Script.LuaUI.T4HeroItemEvent(kind, teamID, unitID, itemString, number) for allies and spectators;
 --   kinds: pickup (number 1 = kept, 0 = scrapped), scrap, equip, unequip, salvage, buy, refresh, nometal,
---   stashfull, noshop, use, drop, dup (that unique / set piece is worn already), proc (power key in itemString).
+--   stashfull, noshop, use, drop, dup (that unique / set piece is worn already), proc (a unique / set power
+--   triggered: power key in itemString - chain, blastKill, slayer, execute, orbital, lowShield, cheatDeath, lifeOnHit,
+--   reflect, mark, souls, staticWake; number = its damage / heal / shield HP / % / soul count; at most one per
+--   power per hero every 2 s). items_cdlen_<slot> is published on equip (0 = no active), refreshed after a use.
 
 local I = VFS.Include("luarules/configs/t4_hero_items.lua")
 
@@ -188,6 +191,9 @@ if gadgetHandler:IsSyncedCode() then
 		Spring.Echo("[t4items] " .. string.format(fmt, ...))
 	end
 	local function toUI(kind, teamID, unitID, str, num)
+		if Spring.GetGameRulesParam("items_debug") == 1 then
+			Spring.Echo(string.format("[t4items] event %s team %s unit %s %s %s", kind, tostring(teamID), tostring(unitID), tostring(str), tostring(num)))
+		end
 		SendToUnsynced("t4heroitems_event", kind, teamID or -1, unitID or -1, str or "", num or 0)
 	end
 	local function refreshHero(unitID)
@@ -261,6 +267,21 @@ if gadgetHandler:IsSyncedCode() then
 		if not hp or hp <= 0 or spGetUnitIsDead(target) then
 			procKills[target] = frameNow()
 		end
+	end
+	-- UI toast of a power that triggered: at most one per power per hero every PROC_TOAST seconds
+	local PROC_TOAST = 2 * GAME_SPEED
+	local function procEvent(unitID, s, key, num)
+		s = s or state[unitID]
+		if not s then
+			return
+		end
+		local f = frameNow()
+		s.toast = s.toast or {}
+		if (s.toast[key] or -1e9) + PROC_TOAST > f then
+			return
+		end
+		s.toast[key] = f
+		toUI("proc", s.team, unitID, key, floor(num or 0))
 	end
 	local function procScale(h)
 		return 1 + 0.015 * max(0, ((h and h.level) or 1) - 1)
@@ -352,12 +373,25 @@ if gadgetHandler:IsSyncedCode() then
 		s.stats, s.powers, s.pw, s.sets = stats, powers, byKey, sets
 	end
 
+	-- cooldown (frames) of an item's active power for this hero, 0 = no active
+	local function activeCdLen(s, it)
+		for _, p in ipairs(I.powers(it)) do
+			local info = I.powerInfo[p.key]
+			if info and info.active then
+				local cdr = min(0.4, s.stats and s.stats.cdr or 0)
+				return floor(p.p.cooldown * (1 - cdr) * GAME_SPEED)
+			end
+		end
+		return 0
+	end
+
 	local function publishSlots(unitID, s)
 		local sets = {}
 		for slot = 1, I.SLOTS do
 			local it = s.slots[slot]
 			spSetUnitRulesParam(unitID, "items_slot_" .. slot, it and it.str or "", INLOS)
 			spSetUnitRulesParam(unitID, "items_cd_" .. slot, s.cd[slot] or 0, ALLIED)
+			spSetUnitRulesParam(unitID, "items_cdlen_" .. slot, it and activeCdLen(s, it) or 0, ALLIED)
 		end
 		for si, n in pairs(s.sets or {}) do
 			sets[#sets + 1] = si .. ":" .. n
@@ -831,6 +865,7 @@ if gadgetHandler:IsSyncedCode() then
 			for _, p in ipairs(pw.slayer) do
 				if heroVictim or (unitCost[victimDefID] or 0) >= p.p.minCost then
 					mult = mult + p.v
+					procEvent(attackerID, s, "slayer", p.v * 100)
 				end
 			end
 		end
@@ -840,6 +875,7 @@ if gadgetHandler:IsSyncedCode() then
 				for _, p in ipairs(pw.execute) do
 					if hp / maxHp < p.p.below then
 						mult = mult + p.v
+						procEvent(attackerID, s, "execute", p.v * 100)
 					end
 				end
 			end
@@ -848,6 +884,9 @@ if gadgetHandler:IsSyncedCode() then
 			local v, p = sumPower(s, "mark")
 			local mk = marks[victimID]
 			if not mk or mk.v <= v or mk.expire < f then
+				if not mk or mk.expire < f then
+					procEvent(attackerID, s, "mark", v * 100)
+				end
 				marks[victimID] = { v = v, expire = f + p.p.duration * GAME_SPEED }
 			end
 		end
@@ -861,7 +900,8 @@ if gadgetHandler:IsSyncedCode() then
 				s.lohCount = s.lohCount + 1
 				local hp, maxHp = spGetUnitHealth(attackerID)
 				if hp and hp < maxHp then
-					spSetUnitHealth(attackerID, min(maxHp, hp + v))
+					spSetUnitHealth(attackerID, min(maxHp, hp + v / max(0.2, (h and h.hpMult) or 1))) -- v in effective HP
+					procEvent(attackerID, s, "lifeOnHit", v)
 				end
 			end
 		end
@@ -869,6 +909,7 @@ if gadgetHandler:IsSyncedCode() then
 			for i, p in ipairs(pw.chain) do
 				if random() < p.p.chance and procReady(s, "chain" .. i, f) then
 					chainArc(attackerID, h, victimID, p.p, p.v)
+					procEvent(attackerID, s, "chain", p.v * procScale(h))
 				end
 			end
 		end
@@ -899,7 +940,7 @@ if gadgetHandler:IsSyncedCode() then
 				end
 				s.shieldFx = F.attach(unitID, "sphere", { color = { 1.0, 0.85, 0.4, 0.5 }, hex = true, ttl = p.p.duration })
 			end
-			toUI("proc", s.team, unitID, "lowShield", floor(s.shield))
+			procEvent(unitID, s, "lowShield", s.shield)
 		end
 		if s.shield > 0 then
 			if s.shieldExp > f then
@@ -917,7 +958,8 @@ if gadgetHandler:IsSyncedCode() then
 		end
 		if pw.reflect and inProc == 0 and attackerID and attackerID ~= unitID and damage > 0 then
 			local v = sumPower(s, "reflect")
-			local amount = min(damage * v, 20000)
+			local amount = min(damage * ((h and h.hpMult) or 1) * v, 20000) -- damage is engine HP: back to effective HP
+			procEvent(unitID, s, "reflect", amount)
 			later(1, function()
 				dealDamage(attackerID, amount, unitID, nil, "reflect")
 			end)
@@ -951,7 +993,7 @@ if gadgetHandler:IsSyncedCode() then
 				end
 			end
 		end)
-		toUI("proc", s.team, unitID, "cheatDeath", s.cheatReady)
+		procEvent(unitID, s, "cheatDeath", v * 100)
 		log("Phoenix Heart: hero %d cheats death (%.0f%% health)", unitID, v * 100)
 		return true
 	end
@@ -1016,6 +1058,7 @@ if gadgetHandler:IsSyncedCode() then
 				if s.souls < p.p.stacks then
 					s.souls = s.souls + 1
 					s.needRefresh = true
+					procEvent(heroID, s, "souls", s.souls)
 					spSetUnitRulesParam(heroID, "items_souls", s.souls, INLOS)
 				end
 				s.lastKill = f
@@ -1025,6 +1068,7 @@ if gadgetHandler:IsSyncedCode() then
 				local maxHp = pk and pk.maxHp or unitHealth[victimDefID] or 0
 				local dmg = min(p.p.cap, maxHp * v) * procScale(h)
 				blastAt(heroID, h, x, z, dmg, p.p.radius, s.ally, victimID)
+				procEvent(heroID, s, "blastKill", dmg)
 			end
 		end
 		-- drops (heroes drop in heroDeath)
@@ -1172,6 +1216,7 @@ if gadgetHandler:IsSyncedCode() then
 									spSpawnCEG("hero-nova-fire", tx, ty, tz, 0, 1, 0, 0, 0)
 								end
 								local dmg = v * procScale(h)
+								procEvent(unitID, s, "orbital", dmg)
 								later(4, function()
 									dealDamage(target, dmg, unitID, "laser", "orbital")
 								end)
@@ -1185,6 +1230,7 @@ if gadgetHandler:IsSyncedCode() then
 							if #targets > 0 then
 								s.timers.wake = f + p.p.period * GAME_SPEED
 								local dmg = v * procScale(h)
+								procEvent(unitID, s, "staticWake", dmg)
 								for _, t in ipairs(targets) do
 									local tx, ty, tz = spGetUnitPosition(t)
 									fxBolt(x, y + 80, z, tx, ty + 20, tz, { 0.75, 0.45, 1.0, 1 })
