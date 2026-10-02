@@ -642,7 +642,7 @@ if gadgetHandler:IsSyncedCode() then
 		publishShelf(teamID)
 	end
 
-	local function shopBuy(teamID, idx, uid)
+	local function shopBuy(teamID, idx, uid, paid)
 		local sh = shelf[teamID]
 		if not shopUnit(teamID) or not sh then
 			toUI("noshop", teamID)
@@ -657,7 +657,7 @@ if gadgetHandler:IsSyncedCode() then
 			return false
 		end
 		local price = I.price(it)
-		if not Spring.UseTeamResource(teamID, "metal", price) then
+		if not paid and not Spring.UseTeamResource(teamID, "metal", price) then
 			toUI("nometal", teamID, -1, it.str, price)
 			return false
 		end
@@ -1383,10 +1383,63 @@ if gadgetHandler:IsSyncedCode() then
 		return best
 	end
 
-	local function aiReserve(teamID)
-		local G = GG.T4Heroes
-		local bank = G and type(G.bank) == "table" and tonumber(G.bank[teamID]) or 0
-		return 15000 + (bank or 0)
+	-- AI item budget: every 10 s an AI team with heroes and a shop puts aside up to ITEM_SHARE of its metal income
+	-- into its own item bank (taken from storage like the hero gadget's hero_ai_bank, which is already out of
+	-- storage - so the two never fight over the same metal; we start at a lower storage fill than it does).
+	-- A purchase is paid from the item bank first, then from storage down to ITEM_FLOOR.
+	-- Team rules param items_ai_bank (allied).
+	local ITEM_SHARE = 0.22
+	local ITEM_FLOOR = 8000
+	local ITEM_FILL = 0.12    -- take only while storage is fuller than this
+	local itemBank = {}
+
+	local function aiBankTick(teamID, heroes)
+		local cur, stor, _, inc = Spring.GetTeamResources(teamID, "metal")
+		cur, stor, inc = cur or 0, stor or 0, inc or 0
+		local b = itemBank[teamID] or 0
+		local sh = shelf[teamID]
+		local want = 0
+		if #heroes > 0 and sh and shopUnit(teamID) then
+			for _, it in pairs(sh.items) do
+				if it then
+					want = max(want, I.price(it))
+				end
+			end
+			want = max(15000, want * 1.3)
+		end
+		if b < want and inc > 0 and cur > stor * ITEM_FILL then
+			local take = min(inc * ITEM_SHARE * 10, cur - stor * ITEM_FILL, want - b)
+			if take > 0 and Spring.UseTeamResource(teamID, "metal", take) then
+				b = b + take
+			end
+		elseif b > want then
+			local back = min(b - want, max(0, stor - cur))
+			if back > 0 then
+				Spring.AddTeamResource(teamID, "metal", back)
+				b = b - back
+			end
+		end
+		itemBank[teamID] = b
+		spSetTeamRulesParam(teamID, "items_ai_bank", floor(b), ALLIED)
+	end
+
+	-- pay `price` from the item bank, then from storage above ITEM_FLOOR
+	local function aiPay(teamID, price, dry)
+		local b = itemBank[teamID] or 0
+		local cur = Spring.GetTeamResources(teamID, "metal") or 0
+		local fromStore = max(0, price - b)
+		if fromStore > 0 and cur - fromStore < ITEM_FLOOR then
+			return false
+		end
+		if dry then
+			return true
+		end
+		if fromStore > 0 and not Spring.UseTeamResource(teamID, "metal", fromStore) then
+			return false
+		end
+		itemBank[teamID] = b - (price - fromStore)
+		spSetTeamRulesParam(teamID, "items_ai_bank", floor(itemBank[teamID]), ALLIED)
+		return true
 	end
 
 	local function aiShop(teamID, heroes, f)
@@ -1394,32 +1447,43 @@ if gadgetHandler:IsSyncedCode() then
 		if not sh or not shopUnit(teamID) then
 			return
 		end
-		local metal = Spring.GetTeamResources(teamID, "metal") or 0
 		local bestIdx, bestGain, bestPrice
 		for i, it in pairs(sh.items) do
 			if it then
 				local price = I.price(it)
 				local gain = aiGain(teamID, it, heroes)
-				if gain > 0.4 and metal - price >= aiReserve(teamID) and (not bestGain or gain / price > bestGain / bestPrice) then
+				if gain > 0.3 and aiPay(teamID, price, true) and (not bestGain or gain / price > bestGain / bestPrice) then
 					bestIdx, bestGain, bestPrice = i, gain, price
 				end
 			end
 		end
 		if bestIdx then
 			local it = sh.items[bestIdx]
-			if shopBuy(teamID, bestIdx) then
-				log("AI team %d buys %s [%s ilvl %d] for %d metal (gain %.2f)", teamID, I.name(it), it.rarity, it.ilvl, bestPrice, bestGain)
-				aiDirty[teamID] = true
+			if #(stash[teamID] or {}) < I.STASH_SIZE and aiPay(teamID, bestPrice) then
+				if shopBuy(teamID, bestIdx, nil, true) then
+					log("AI team %d buys %s [%s ilvl %d] for %d metal (gain %.2f, item bank left %d)", teamID, I.name(it), it.rarity,
+						it.ilvl, bestPrice, bestGain, itemBank[teamID] or 0)
+					aiDirty[teamID] = true
+				else
+					itemBank[teamID] = (itemBank[teamID] or 0) + bestPrice -- not sold: keep the metal for items
+				end
 			end
-		elseif metal > 120000 and f - (sh.aiRefreshed or 0) > 90 * GAME_SPEED then
+		elseif (itemBank[teamID] or 0) >= 15000 and f - (sh.aiRefreshed or 0) > 120 * GAME_SPEED
+			and aiPay(teamID, I.SHOP_REFRESH_FEE, true) then
+			-- nothing worth buying and the budget is full: pay for a new shelf
 			sh.aiRefreshed = f
-			shopRefresh(teamID)
+			if aiPay(teamID, I.SHOP_REFRESH_FEE) then
+				shopRefresh(teamID, true)
+				log("AI team %d refreshes the shelf (item bank %d)", teamID, itemBank[teamID] or 0)
+			end
 		end
 	end
 
+	-- salvage: over 12 stash items, everything clearly worse than what every hero wears in its category
+	-- (gain < -0.15 for each hero, all of their slots of that category full); over 30, the worst down to 30
 	local function aiSalvage(teamID, heroes)
 		local s = stash[teamID]
-		if not s or #s <= 24 then
+		if not s or #s <= 12 or #heroes == 0 then
 			return
 		end
 		local scored = {}
@@ -1427,10 +1491,22 @@ if gadgetHandler:IsSyncedCode() then
 			scored[#scored + 1] = { it = it, gain = aiGain(teamID, it, heroes) }
 		end
 		table.sort(scored, function(a, b) return a.gain < b.gain end)
-		for i = 1, #s - 20 do
-			local idx = findStash(teamID, nil, scored[i].it.uid)
+		local n = #s
+		for _, c in ipairs(scored) do
+			if not (c.gain < -0.15 or n > 30) then
+				break
+			end
+			local idx = findStash(teamID, nil, c.it.uid)
 			if idx then
-				salvage(teamID, idx)
+				local ok, metal = salvage(teamID, idx)
+				if ok then
+					n = n - 1
+					log("AI team %d salvages %s [%s ilvl %d] for %d metal (gain %.2f, stash %d)", teamID, I.name(c.it), c.it.rarity,
+						c.it.ilvl, metal, c.gain, n)
+				end
+			end
+			if n <= 12 then
+				break
 			end
 		end
 	end
@@ -1685,6 +1761,7 @@ if gadgetHandler:IsSyncedCode() then
 					end
 					if f >= (aiNext[teamID] or 0) then
 						aiNext[teamID] = f + 10 * GAME_SPEED
+						aiBankTick(teamID, heroes)
 						aiShop(teamID, heroes, f)
 						aiSalvage(teamID, heroes)
 					end
