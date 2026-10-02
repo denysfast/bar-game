@@ -1411,6 +1411,7 @@ if gadgetHandler:IsSyncedCode() then
 			local h = newHero(unitID, unitDefID, teamID, rec)
 			applyStats(unitID, h)
 			insertCmds(unitID, h)
+			modHook(h, "init", api, unitID, h) -- v19: before the AI learns ranks (rank hooks expect init state)
 			if isAITeam[teamID] then
 				learnAI(unitID, h)
 			end
@@ -1420,7 +1421,6 @@ if gadgetHandler:IsSyncedCode() then
 			if x then
 				ceg(rec and "hero-revive" or "hero-levelup-big", x, y, z)
 			end
-			modHook(h, "init", api, unitID, h)
 			toUI(rec and "revived" or "born", unitID, h.level)
 			refreshAltars(teamID)
 		end
