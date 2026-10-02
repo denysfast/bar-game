@@ -13,6 +13,9 @@
 		"scavCommanderNameTag": "Scav Commander",
 		"scavDecoyCommanderNameTag": "Scav Decoy",
 		"names": {
+			"armt4shop": "Hero Armory: Arsenal Vault",
+			"cort4shop": "Hero Armory: War Exchange",
+			"legt4shop": "Hero Armory: Legion Reliquary",
 			"legsplab": "Offshore Seaplane Platform",
 			"legspcon": "Construction Seaplane",
 			"legspsurfacegunship": "Enyo",
@@ -1006,6 +1009,9 @@
 			"legt4tempest": "Tempest"
 		},
 		"descriptions": {
+			"armt4shop": "Hero item shop: sells magic and rare hero items (item level 1-3) into the team stash. Shelf of 9, restocks every 3 min",
+			"cort4shop": "Hero item shop: sells magic and rare hero items (item level 1-3) into the team stash. Shelf of 9, restocks every 3 min",
+			"legt4shop": "Hero item shop: sells magic and rare hero items (item level 1-3) into the team stash. Shelf of 9, restocks every 3 min",
 			"legsplab": "Constructs Seaplanes",
 			"legspcon": "Tech 1 Constructor",
 			"legspsurfacegunship": "Riot Cannon Seaplane Gunship",

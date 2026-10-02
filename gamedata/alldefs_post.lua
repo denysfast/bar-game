@@ -846,6 +846,8 @@ local function unitDef_Post(name, uDef)
 	}
 	if t4Foundry[name] and buildoptions then
 		buildoptions[#buildoptions + 1] = t4Foundry[name]
+		-- v19 hero items: the faction's hero item shop (units/other/t4shops.lua) next to the altar
+		buildoptions[#buildoptions + 1] = t4Foundry[name]:sub(1, 3) .. "t4shop"
 	end
 
 	if next(buildoptions) then
