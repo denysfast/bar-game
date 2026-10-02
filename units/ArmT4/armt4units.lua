@@ -57,7 +57,7 @@ zeus.weapondefs.empmissile.customparams.stockpilelimit = nil
 -- armthor.bos + SetTurretTurnMult (Rage Mode turns the turret faster: buff turretTurn), scripts/Units/armt4zeus.bos
 zeus.script = "Units/armt4zeus.cob"
 zeus.sightdistance = 1100 -- sight close to the main weapon's reach
-units.armt4zeus = T4.hero(zeus, 2.2)
+units.armt4zeus = T4.hero(zeus, 1.5) -- effect scale of its stock CEGs (2.2 drew a 900-wide lightning dome per salvo)
 
 ------------------------------------------------------------------------------------------------ 2. Atlas
 -- armt4atlas: Atlas, the Bulwark (Bantha x2). Doom Lens, Bulwark Protocol, Seismic Charge, Doomsday Lance.

@@ -24,16 +24,18 @@ end
 ---------------------------------------------------------------------------- a1 Overpressure
 
 function M.projectile(api, unitID, h, proID, weaponDefID)
+	-- (the core passes the weapondef of the original shot; while h.swap is "op" the projectile is the white-hot copy)
 	if api.rank(h, "a1") <= 0 or L.weaponKey(h, weaponDefID) ~= "arm_bosscannon" then
 		return
 	end
 	local st = h.store
 	local f = api.frame()
 	local every = b(h, "a1").every or 4
+	local op = h.swap == "op"
 	if f ~= st.salvoFrame then
 		st.salvoFrame = f
 		st.salvos = (st.salvos or 0) + 1
-		local op = L.isCopy(h, weaponDefID, "op")
+		st.opSalvo = op
 		if op then
 			st.opSalvos = (st.opSalvos or 0) + 1
 			L.after(h, 2, function() api.swapWeapons(unitID, h, nil) end)
@@ -49,7 +51,7 @@ function M.projectile(api, unitID, h, proID, weaponDefID)
 			L.after(h, 2, function() api.swapWeapons(unitID, h, "op") end)
 		end
 	end
-	if L.isCopy(h, weaponDefID, "op") then
+	if op then
 		local w = L.weapon(h, "arm_bosscannon")
 		if w and Spring.SetProjectileDamages then
 			local splash = math.sqrt(math.max(0.2, 1 + (h.mods and h.mods.splash or 0)))

@@ -236,7 +236,7 @@ local function overrun(api, unitID, h, r)
 	applyOverrun(api, h, st, f)
 	if fx then
 		fx.ring(x, z, { kind = "shock", r0 = 0, r1 = ult.radius or 900, color = { 0.4, 0.75, 1, 0.8 }, ttl = 0.6, width = 50 })
-		fx.flash(x, y + 50, z, { radius = 300, color = BLUE, ttl = 0.5 })
+		fx.flash(x, y + 50, z, { radius = 160, color = BLUE, ttl = 0.4 })
 		st.fx = {
 			fx.attach(unitID, "electric", { color = BLUE, intensity = 0.8 }),
 			fx.attach(unitID, "aura", { pattern = "electric", color = BLUE, radius = 220 }),

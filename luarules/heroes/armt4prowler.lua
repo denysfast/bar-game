@@ -245,7 +245,8 @@ local function apexOn(api, unitID, h, r, targetID)
 	local dur = api.val(ult.duration, r)
 	local st = { prey = targetID, r = r, untilFrame = api.frame() + math.floor(dur * 30), damage = api.val(ult.damage, r) }
 	api.mark(targetID, "apex", dur, { reveal = true, from = unitID })
-	api.forceTarget(unitID, targetID, dur) -- the hunt: its guns stay on the prey
+	api.forceTarget(unitID, targetID, dur) -- the hunt: its guns stay on the prey ...
+	Spring.GiveOrderToUnit(unitID, CMD.ATTACK, { targetID }, 0) -- ... and it closes in
 	api.buff(unitID, h, "apex", dur, { speed = api.val(ult.speed, r) })
 	api.active(unitID, "ult", dur)
 	local fx = api.fx

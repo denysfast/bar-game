@@ -210,7 +210,7 @@ local function shellTick(api, unitID, h, f)
 	local frac = ab.left / math.max(1, cap)
 	if fx and st.shellFx and math.abs(frac - (st.shellFrac or -1)) > 0.04 then
 		st.shellFrac = frac
-		fx.set(st.shellFx, { alpha = frac > 0.01 and (0.2 + 0.45 * frac) or 0, time = 0.3 })
+		fx.set(st.shellFx, { alpha = frac > 0.01 and (0.15 + 0.35 * frac) or 0, time = 0.3 })
 	end
 	if f % 15 == 0 then
 		Spring.SetUnitRulesParam(unitID, "hero_absorb", math.floor(ab.left), { allied = true })

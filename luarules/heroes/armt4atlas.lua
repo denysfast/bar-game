@@ -16,7 +16,7 @@ local M = {}
 
 local GOLD = { 1, 0.95, 0.7, 1 }
 local SUNDER = { 1, 0.55, 0.2, 0.6 }
-local SHIELD = { 0.5, 0.7, 1, 0.18 }
+local SHIELD = { 0.4, 0.65, 1, 0.08 }
 
 local function b(h, key)
 	return h.def.cfg[key]

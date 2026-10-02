@@ -120,9 +120,11 @@ end
 local function prism(api, unitID, h, r, allyID)
 	local a2 = b(h, "a2")
 	if not allyID or allyID == unitID or not L.alive(allyID) or Spring.GetUnitAllyTeam(allyID) ~= h.ally then
+		api.log("armt4starlight a2 prism: no ally target (%s)", tostring(allyID))
 		return false
 	end
 	if L.unitDist(unitID, allyID) > (a2.range or 1500) * 1.1 then
+		api.log("armt4starlight a2 prism: ally too far (%d)", L.unitDist(unitID, allyID))
 		return false
 	end
 	local dur = api.val(a2.duration, r)

@@ -311,8 +311,8 @@ local function rageOn(api, unitID, h, r)
 	local fx = api.fx
 	local x, y, z = api.pos(unitID)
 	if fx then
-		fx.flash(x, y + 60, z, { radius = 220, color = RED, ttl = 0.5 })
-		fx.ring(x, z, { kind = "shock", r0 = 40, r1 = 600, width = 50, color = { 1, 0.2, 0.1, 0.9 }, ttl = 0.6 })
+		fx.flash(x, y + 60, z, { radius = 150, color = RED, ttl = 0.4 })
+		fx.ring(x, z, { kind = "shock", r0 = 40, r1 = 420, width = 36, color = { 1, 0.2, 0.1, 0.8 }, ttl = 0.5 })
 		fx.ring(x, z, { kind = "electric", r0 = 60, r1 = 320, width = 30, color = RED, ttl = 0.8 })
 		rage.fx = {
 			fx.attach(unitID, "electric", { color = RED, intensity = 1.0 }),
