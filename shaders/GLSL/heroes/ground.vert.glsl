@@ -40,9 +40,12 @@ void main() {
 	vec2 c = i_geo.xy;
 #if ATTACHED == 1
 	c = uni[instData.y].drawPos.xz;
+	float us = fxUnitScale(instData.y);
+#else
+	float us = 1.0;
 #endif
 	float ak = smoothstep(i_anim.z, i_anim.z + max(i_anim.w, 0.001), now);
-	float sc = mix(i_anim.x, 1.0, ak);
+	float sc = mix(i_anim.x, 1.0, ak) * us;
 	float al = mix(i_anim.y, 1.0, ak);
 	vec2 local = gridxy * i_geo.z * sc;
 	vec3 world;

@@ -117,6 +117,10 @@ struct SUniformsBuffer {
 layout(std140, binding = 1) readonly buffer UniformsBuffer {
 	SUniformsBuffer uni[];
 };
+// runtime model scale of a unit (GG.HeroFX.scale), stored as scale - 1 in userDefined[3].w
+float fxUnitScale(uint idx) {
+	return 1.0 + uni[idx].userDefined[3].w;
+}
 #endif
 
 // unit heading: 0 along +z, increasing towards +x

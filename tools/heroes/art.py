@@ -16,6 +16,13 @@ provision_secret(params={owner: <project>}); the minted key belongs to platform 
 CC_BASE=https://cc-eu.denys.fast (the home default answers 401 invalid_api_key to it). The eu platform had no
 image.qwen21.edit worker (task stuck "waiting_for_capacity"); the federation manager routes it to a platform that has
 one: CC_BASE=https://content.manager.denys.fast with the key `content-controller-manager-cmk-agent-tooling`.
+
+v19 UI set (--style track --seed 21 --size 128; key: knowledge-guardian `content-master-owner-api-key-cpu-b`,
+project "beyond-all-reason"): stat_vit "a glowing green armored heart inside a hexagonal plate, health and
+regeneration", stat_mob "cyan double chevron arrows with a glowing scanner eye, speed and vision", stat_dmg "an
+orange blazing explosion burst behind a crossed cannon barrel, firepower", stat_rng "a violet long-range targeting
+reticle with distance rings, weapon reach", stat_imp "a golden shockwave blast piercing through a cracked armor
+plate, impact and penetration"; ui/ab_generic (--style ability), ui/ui_stash, ui_shop, ui_salvage, ui_altar.
 """
 import argparse, json, os, sys, time, urllib.request, io, subprocess
 
