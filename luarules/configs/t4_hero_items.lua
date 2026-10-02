@@ -368,7 +368,7 @@ I.uniques = {
 		flavor = "Where the standard goes, the army follows.",
 		art = "a holographic war banner standard projected from a processor, legendary relic" },
 	{ id = "static_wake", name = "Static Wake", base = "fusion_cell",
-		powers = { { key = "staticWake", roll = { 1500, 2600 }, period = 2, targets = 3, radius = 550 } },
+		powers = { { key = "staticWake", roll = { 1200, 2000 }, period = 2, targets = 3, radius = 550 } },
 		fixed = { power = { 0.06, 0.12 } },
 		flavor = "The air around it never stops crackling.",
 		art = "a fusion cell radiating a ring of purple static lightning, legendary relic" },
@@ -1063,12 +1063,18 @@ if type(H) == "table" then
 	H.categoryOrder = I.categoryOrder
 	H.itemCategories = I.categories
 	H.slotCategory = I.slotCategory
-	-- the v15 item tables are gone; empty ones keep old readers from erroring
-	H.items = H.items or {}
-	H.itemOrder = H.itemOrder or {}
-	H.itemIndex = H.itemIndex or {}
-	H.rarities = H.rarities or {}
-	H.rarityOrder = H.rarityOrder or {}
+	-- TRANSITION ONLY (remove once unit_t4_heroes.lua no longer has the v15 item code): the v15 item tables
+	-- are gone; one inert item and zero drop odds keep the old code paths (randomItem, drops) from erroring.
+	-- The v19 items gadget publishes its own rules params (items_*), so the old hero_item_* / hero_stash_* stay unused.
+	H.ITEM_DROP_CHANCE = 0
+	H.ITEM_DROP_MAX = 0
+	H.ITEM_PROC_ICD = I.PROC_ICD
+	H.items = H.items or { legacy_scrap = { id = "legacy_scrap", name = "Scrap", category = "utility", rarity = "common",
+		tags = {}, stats = {}, short = "", desc = "" } }
+	H.itemOrder = H.itemOrder or { "legacy_scrap" }
+	H.itemIndex = H.itemIndex or { legacy_scrap = 1 }
+	H.rarities = H.rarities or { common = { color = { 0.85, 0.85, 0.85 }, weight = 1, score = 0, scrap = 0, rank = 1 } }
+	H.rarityOrder = H.rarityOrder or { "common" }
 end
 
 return I

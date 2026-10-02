@@ -174,6 +174,7 @@ if gadgetHandler:IsSyncedCode() then
 	local pendingKill = {} -- victimID -> { hero, defID, x, z, maxHp, team }
 	local pendingDeath = {} -- hero unitID -> { x, z, level, team }
 	local inProc = 0
+	local procKills = {}    -- unitID -> frame: killed by an item power (its death sets off no Pyre: no chain reactions)
 	local aiDirty = {}
 	local aiNext = {}
 
@@ -241,9 +242,12 @@ if gadgetHandler:IsSyncedCode() then
 		queue[#queue + 1] = { at = frameNow() + frames, fn = fn }
 	end
 	-- item power damage, dealt outside the damage callins (next frame) and never re-triggering item powers
-	local function dealDamage(target, amount, attackerID, dtype)
+	local function dealDamage(target, amount, attackerID, dtype, what)
 		if not spValidUnitID(target) or spGetUnitIsDead(target) or amount <= 0 then
 			return
+		end
+		if Spring.GetGameRulesParam("items_debug") == 1 then
+			log("power %s: %d damage to %d by %s", what or dtype or "?", amount, target, tostring(attackerID))
 		end
 		inProc = inProc + 1
 		local G = GG.T4Heroes
@@ -253,6 +257,10 @@ if gadgetHandler:IsSyncedCode() then
 			Spring.AddUnitDamage(target, amount, 0, attackerID, -1)
 		end
 		inProc = inProc - 1
+		local hp = spGetUnitHealth(target)
+		if not hp or hp <= 0 or spGetUnitIsDead(target) then
+			procKills[target] = frameNow()
+		end
 	end
 	local function procScale(h)
 		return 1 + 0.015 * max(0, ((h and h.level) or 1) - 1)
@@ -727,7 +735,7 @@ if gadgetHandler:IsSyncedCode() then
 				if px then
 					fxBolt(px, py, pz, x, y + 30, z)
 				end
-				dealDamage(cur, dmg, heroID, "electric")
+				dealDamage(cur, dmg, heroID, "electric", "chain")
 				px, py, pz = x, y + 30, z
 				local nxt
 				for _, uid in ipairs(enemiesNear(x, z, p.radius, s and s.ally or spGetUnitAllyTeam(heroID), 8)) do
@@ -751,7 +759,7 @@ if gadgetHandler:IsSyncedCode() then
 			end
 			for _, uid in ipairs(enemiesNear(x, z, radius, ally)) do
 				if uid ~= exceptID then
-					dealDamage(uid, dmg, heroID, "flame")
+					dealDamage(uid, dmg, heroID, "flame", "blastKill")
 				end
 			end
 		end)
@@ -911,7 +919,7 @@ if gadgetHandler:IsSyncedCode() then
 			local v = sumPower(s, "reflect")
 			local amount = min(damage * v, 20000)
 			later(1, function()
-				dealDamage(attackerID, amount, unitID, nil)
+				dealDamage(attackerID, amount, unitID, nil, "reflect")
 			end)
 		end
 		return damage
@@ -1012,7 +1020,7 @@ if gadgetHandler:IsSyncedCode() then
 				end
 				s.lastKill = f
 			end
-			if s.pw.blastKill and x then
+			if s.pw.blastKill and x and not procKills[victimID] then
 				local v, p = sumPower(s, "blastKill")
 				local maxHp = pk and pk.maxHp or unitHealth[victimDefID] or 0
 				local dmg = min(p.p.cap, maxHp * v) * procScale(h)
@@ -1111,6 +1119,11 @@ if gadgetHandler:IsSyncedCode() then
 		for k in pairs(war) do
 			war[k] = nil
 		end
+		for uid, pf in pairs(procKills) do
+			if f - pf > 2 * GAME_SPEED then
+				procKills[uid] = nil
+			end
+		end
 		for uid, mk in pairs(marks) do
 			if mk.expire < f or not spValidUnitID(uid) then
 				marks[uid] = nil
@@ -1160,7 +1173,7 @@ if gadgetHandler:IsSyncedCode() then
 								end
 								local dmg = v * procScale(h)
 								later(4, function()
-									dealDamage(target, dmg, unitID, "laser")
+									dealDamage(target, dmg, unitID, "laser", "orbital")
 								end)
 							end
 						end
@@ -1176,7 +1189,7 @@ if gadgetHandler:IsSyncedCode() then
 									local tx, ty, tz = spGetUnitPosition(t)
 									fxBolt(x, y + 80, z, tx, ty + 20, tz, { 0.75, 0.45, 1.0, 1 })
 									later(1, function()
-										dealDamage(t, dmg, unitID, "electric")
+										dealDamage(t, dmg, unitID, "electric", "staticWake")
 									end)
 								end
 							end
@@ -1590,6 +1603,9 @@ if gadgetHandler:IsSyncedCode() then
 			publishShelf(teamID)
 		end
 		marks[unitID] = nil
+		if inProc > 0 then
+			procKills[unitID] = frameNow()
+		end
 		local x, _, z = spGetUnitPosition(unitID)
 		-- a hero: drop in the next frame unless the hero gadget calls onHeroDeath first
 		local h = heroesTbl()[unitID]
@@ -1695,6 +1711,9 @@ if gadgetHandler:IsSyncedCode() then
 			worn = function(unitID) return state[unitID] and state[unitID].slots or {} end,
 			state = function(unitID) return state[unitID] end,
 			handle = handle,
+			-- true while an item power deals its damage: the hero gadget should not multiply it again
+			-- (it is already scaled by the hero's level) nor run on-hit effects for it
+			isItemDamage = function() return inProc > 0 end,
 			setAI = function(teamID, ai) isAITeam[teamID] = ai end,
 			aiEquip = function(teamID) aiEquipTeam(teamID) end,
 			ground = ground,
