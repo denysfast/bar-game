@@ -251,9 +251,9 @@ void main() {
 		float edgeN = (n - 0.5) * r * 0.35;
 		float disc = 1.0 - smoothstep(r * 0.55, r + edgeN, d);
 		float dens = disc * smoothstep(0.25, 0.75, n * 0.7 + n2 * 0.5);
-		I = dens * 0.8;
+		I = dens * 1.2;
 		hot = 0.0;
-		occ = dens * 0.8;
+		occ = dens * 0.6;
 	} else if (kind < 9.5) {
 		// ---- web: radial spokes + sagging polygonal threads, a pulse running along the threads
 		float r = r1;
@@ -308,15 +308,17 @@ void main() {
 		float r = r1;
 		if (d > r * 1.15) discard;
 		float rn = d / r;
-		float fl = fbm2(vec2(ang * 3.0 + seed, d * 0.035 - now * 0.11));
-		float fl2 = fbm2(vec2(ang * 7.0 - seed, d * 0.07 - now * 0.19));
-		float tongue = smoothstep(rn * 0.55 - 0.05, rn * 0.55 + 0.3, fl * 0.75 + fl2 * 0.35);
-		float body = tongue * (1.0 - smoothstep(0.8, 1.08, rn));
-		float coreF = body * (1.0 - smoothstep(0.0, 0.6, rn));
+		vec2 dirN = p / max(d, 0.001);
+		float fl = fbm2(dirN * 5.0 + vec2(seed + d * 0.03 - now * 0.11, d * 0.015));
+		float fl2 = fbm2(dirN * 6.0 - vec2(seed, 0.0) + vec2(d * 0.07 - now * 0.19));
+		float th = 0.28 + rn * 0.24;
+		float tongue = smoothstep(th, th + 0.12, fl * 0.75 + fl2 * 0.35);
+		float body = tongue * (1.0 - smoothstep(0.8, 1.05, rn));
+		float h = body * (1.0 - rn * 0.75) * (0.7 + 0.6 * fl2);
 		float fade = timed ? 1.0 - smoothstep(0.7, 1.0, life) : 1.0;
-		I = (body * 1.1 + coreF * 0.6) * fade;
-		hot = pow(body, 3.0) * 0.9 * (1.0 - rn) * fade;
-		occ = body * 0.4 * fade;
+		I = body * (0.45 + 0.75 * fl2) * fade;
+		hot = smoothstep(0.55, 1.0, h) * 0.35 * fade;
+		occ = body * 0.6 * fade;
 	} else {
 		// ---- swirl: whirlpool / gravity well, spiral arms flowing inward to a dark core
 		float r = r1;

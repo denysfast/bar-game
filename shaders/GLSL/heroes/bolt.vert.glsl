@@ -232,7 +232,7 @@ void main() {
 		cover = clamp(w / max(minW, 0.001), 0.25, 1.0);
 		w = max(w, minW);
 	} else {
-		float gs = i_extra.z > 0.0 ? i_extra.z : 9.0;
+		float gs = i_extra.z > 0.0 ? i_extra.z : 7.0;
 		w = width * gs + 3.0;
 		float minW = camDist * 0.005;
 		cover = clamp(w / max(minW, 0.001), 0.3, 1.0);
