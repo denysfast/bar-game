@@ -157,6 +157,10 @@ local apollyon = T4.derive(T4.base("units/Scavengers/Vehicles/legapollyon.lua", 
 	footprint = 9,
 	movementclass = "T4TANK9",
 })
+-- the scavenger base unit's heap points at Units/cor6X6.s3o, which does not exist: the standard 6x6 heap
+if apollyon.featuredefs and apollyon.featuredefs.heap then
+	apollyon.featuredefs.heap.object = "Units/cor6X6A.s3o"
+end
 units.legt4apollyon = T4.hero(apollyon, 2.2)
 
 -- 10. Medusa, the Gorgon (Medusa rocket tank x3): petrify control artillery. Serpent Bite, Gorgon's Gaze, Snake
@@ -177,9 +181,11 @@ units.legt4medusa = T4.hero(medusa, 2.5)
 
 local function summonDef(ud, p)
 	ud.objectname = "Units/T4/" .. p.name .. ".s3o"
-	ud.metalcost = 0
+	-- a tiny cost, not 0: the engine derives unit power from the cost (power 0 -> division-by-zero cautions)
+	ud.metalcost = 1
 	ud.energycost = 0
 	ud.buildtime = 10
+	ud.power = ud.power or 1
 	ud.health = p.health
 	ud.speed = p.speed or ud.speed
 	ud.featuredefs = nil
@@ -222,7 +228,8 @@ units.legt4myrmmite = summonDef(T4.base("units/Legion/Air/legdrone.lua", "legdro
 -- (Spring.SetUnitSensorRadius), neutral, not drawn, not selectable, no collision, no wreck.
 do
 	local eye = T4.base("units/Legion/Utilities/legeyes.lua", "legeyes")
-	eye.metalcost, eye.energycost, eye.buildtime = 0, 0, 10
+	eye.metalcost, eye.energycost, eye.buildtime = 1, 0, 10 -- not 0: unit power derives from the cost
+	eye.power = 1
 	eye.health = 1000000
 	eye.energyupkeep = 0
 	eye.cloakcost = 0
