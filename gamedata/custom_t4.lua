@@ -228,12 +228,19 @@ T4.heroBalance = {
 	cort4bastion    = { hp = 520000, dps = 8500, speed = 28 },  -- front: walking fortress (was 1.07M HP at 13 speed)
 	cort4hellwalker = { hp = 400000, dps = 12000, speed = 50 }, -- front: flame brawler (800 range)
 	legt4tempest    = { hp = 380000, dps = 12000, speed = 58 }, -- front: melee assault (670 range)
+	legt4keres      = { hp = 480000, dps = 9500, speed = 40 },  -- front: anti-swarm brawler (v19 Legion)
+	legt4mukade     = { hp = 360000, dps = 10000, speed = 52 }, -- front: burrowing assassin (v19 Legion)
 	armt4aegis      = { hp = 320000, dps = 8000, speed = 48 },  -- center: shield bearer (plus its deflector)
-	legt4helios     = { hp = 340000, dps = 11000, speed = 34 }, -- center: heat / support
+	legt4helios     = { hp = 340000, dps = 10500, speed = 34 }, -- center: heat / support
 	legt4longinus   = { hp = 300000, dps = 11000, speed = 45 }, -- center: titan hunter
+	legt4charybdis  = { hp = 320000, dps = 4850, speed = 60 },  -- center: crowd control hover (v19 Legion): real ~9000, the
+	                                                             -- sweepfire heat ray counts once per 3 s (units/Legion/T4)
+	legt4apollyon   = { hp = 440000, dps = 10500, speed = 30 }, -- center: suppression / siege (v19 Legion)
 	armt4olympus    = { hp = 220000, dps = 8000, speed = 30, alt = { shocker_high = true } }, -- back: artillery 3300+ (high/low arc: one fires)
 	cort4armageddon = { hp = 200000, dps = 9000, speed = 36 },  -- back: rocket artillery 2700+
 	legt4starfall   = { hp = 220000, dps = 6500, speed = 26 },  -- back: orbital artillery ~7000
+	legt4myrmidon   = { hp = 260000, dps = 6500, speed = 32, alt = { plasma_high = true } }, -- back: hive mother (+drones; v19 Legion)
+	legt4medusa     = { hp = 230000, dps = 7500, speed = 34 },  -- back: petrify rocket artillery (v19 Legion)
 }
 
 -- v19 (dmgfix): a blast hits more units the bigger it is - against an army a 480-radius shell did 10.9x its shown

@@ -26,6 +26,14 @@ MODELS = [
     ("legt4starfall",   "legelrpcmech",    1.6),
     ("legt4longinus",   "legerailtank",    1.8),
     ("legt4tempest",    "legeshotgunmech", 2.0),
+    ("legt4myrmidon",   "legeallterrainmech", 2.0),
+    ("legt4keres",      "legkeres",        2.4),
+    ("legt4mukade",     "legpede",         2.0),
+    ("legt4charybdis",  "legehovertank",   2.4),
+    ("legt4apollyon",   "legapollyon",     2.0),
+    ("legt4medusa",     "legmed",          3.0),
+    ("legt4myrmdrone",  "legheavydronesmall", 1.5),
+    ("legt4myrmmite",   "legdrone",        1.6),
 ]
 
 here = os.path.dirname(os.path.abspath(__file__))

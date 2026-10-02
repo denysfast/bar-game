@@ -1006,7 +1006,15 @@
 			"legt4helios": "Helios",
 			"legt4starfall": "Starfall",
 			"legt4longinus": "Longinus",
-			"legt4tempest": "Tempest"
+			"legt4tempest": "Tempest",
+			"legt4myrmidon": "Myrmidon",
+			"legt4keres": "Keres",
+			"legt4mukade": "Mukade",
+			"legt4charybdis": "Charybdis",
+			"legt4apollyon": "Apollyon",
+			"legt4medusa": "Medusa",
+			"legt4myrmdrone": "Hive Drone",
+			"legt4myrmmite": "Swarm-Mite"
 		},
 		"descriptions": {
 			"armt4shop": "Hero item shop: sells magic and rare hero items (item level 1-3) into the team stash. Shelf of 9, restocks every 3 min",
@@ -2003,10 +2011,18 @@
 			"cort4armageddon": "HERO Doomsayer: Salvage Nanites, Hunter Swarm; ultimate Armageddon Protocol (rocket rain + nuke)",
 			"cort4hellwalker": "HERO Inferno: Immolation, Hellcharge; ultimate Rain of Fire (meteors + fireball)",
 			"legt4gant": "Hero altar: builds and revives the Legion heroes (one of each). Heroes near it heal fast",
-			"legt4helios": "HERO Sunbringer: Solar Flare, Heat Haze; ultimate Sunstrike (beam of the sun + nuclear flare)",
-			"legt4starfall": "HERO Astronomer: Deep Sky Radar, Starburst Rounds; ultimate Meteor Storm from orbit",
-			"legt4longinus": "HERO Titan hunter: Titan Slayer, Phase Cloak; ultimate Spear of Longinus (nuclear impact)",
-			"legt4tempest": "HERO Stormblade: Critical Strike, Mirror Images; ultimate Bladestorm"
+			"legt4helios": "HERO Sunbringer: Solar Heat ignites, Corona Flare, Sunspot; ultimate Sunstrike",
+			"legt4starfall": "HERO Astronomer: Constellation, Gravity Lens, Deep Sky Eye; ultimate Starfall",
+			"legt4longinus": "HERO Titan hunter: Sunder, Hunter's Mark, Phase Rail; ultimate Spear of Longinus",
+			"legt4tempest": "HERO Stormblade: Momentum, Storm Charge, Storm Echoes; ultimate Eye of the Storm",
+			"legt4myrmidon": "HERO Hive Mother: Drone Bay, Repair Swarm, Sacrificial Dive; ultimate Hive Ascendant",
+			"legt4keres": "HERO Death-Spirit: Soul Harvest, Death Grip, Devour; ultimate Danse Macabre",
+			"legt4mukade": "HERO Great Centipede: Burrow, Venom Rails, Molting; ultimate Coil",
+			"legt4charybdis": "HERO Maelstrom hover: Undertow, Waterspout, Surge; ultimate Maw of the Deep",
+			"legt4apollyon": "HERO Locust King: Spin-Up, Locust Swarm, Siege Lockdown; ultimate Plague of Locusts",
+			"legt4medusa": "HERO Gorgon: Serpent Bite, Gorgon's Gaze, Snake Pit; ultimate Stone Garden",
+			"legt4myrmdrone": "Myrmidon's heat-ray drone",
+			"legt4myrmmite": "Hive Ascendant swarm-mite (short-lived)"
 		}
 	}
 }
