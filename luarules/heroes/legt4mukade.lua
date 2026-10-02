@@ -130,6 +130,9 @@ local function burrow(api, unitID, h, r, x, z)
 			return
 		end
 		api.buff(unitID, h, "burrow", nil, { hidden = true })
+		-- underground: the model is not drawn; its own side sees a sand swirl moving with it, everyone in LOS the mound
+		Spring.SetUnitNoDraw(unitID, true)
+		b.swirl = fx.attach(unitID, "aura", { radius = 140, color = L.a(C.AMBER, 0.45), pattern = "swirl", visible = "ally", ally = h.ally })
 		local steps = max(1, floor(travel * 10))
 		local i = 0
 		L.task(h, 3, travel + 0.2, function()
@@ -148,6 +151,10 @@ local function burrow(api, unitID, h, r, x, z)
 		end, function()
 			h.store.burrow = nil
 			api.unbuff(unitID, h, "burrow")
+			fx.detach(b.swirl)
+			if L.alive(unitID) then
+				Spring.SetUnitNoDraw(unitID, false)
+			end
 			if not L.alive(unitID) then
 				return
 			end
@@ -412,6 +419,9 @@ end
 
 function M.destroyed(api, unitID, h)
 	L.endTasks(h)
+	if h.store.burrow and L.alive(unitID) then
+		Spring.SetUnitNoDraw(unitID, false)
+	end
 	h.store.coil = nil
 	h.store.burrow = nil
 	L.markClear(api, h.store.venomFx or {})

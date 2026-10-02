@@ -253,8 +253,8 @@ local function echoes(api, unitID, h, r)
 		api.unitBuff(uid, "legt4tempest_echo", dur, { damage = k })
 		h.store.echoes[uid] = { born = api.frame() }
 		local ex, ey, ez = api.pos(uid)
-		fx.pillar(ex, ez, { radius = 60, height = 700, color = L.a(C.STORM, 0.7), ttl = 0.4 })
-		fx.ring(ex, ez, { kind = "shock", r0 = 20, r1 = 200, color = C.STORM, width = 20, ttl = 0.4 })
+		fx.pillar(ex, ez, { radius = 45, height = 700, color = L.a(C.STORM, 0.45), ttl = 0.4 })
+		fx.ring(ex, ez, { kind = "electric", r0 = 20, r1 = 200, color = L.a(C.STORM, 0.7), width = 18, ttl = 0.4 })
 		fx.attach(uid, "electric", { color = C.STORM, intensity = 0.8, ttl = dur })
 		fx.attach(uid, "tint", { pattern = "electric", color = C.STORM, strength = 0.8, ttl = dur })
 		fx.attach(uid, "aura", { radius = 90, color = L.a(C.STORM, 0.3), pattern = "electric", ttl = dur })
@@ -309,7 +309,7 @@ local function eyeOfStorm(api, unitID, h, r)
 	api.active(unitID, "ult", dur)
 	local e = { dmg = 0, ticks = 0, reflected = {}, ids = {
 		fx.attach(unitID, "electric", { color = C.STORM, intensity = 1.6 }),
-		fx.attach(unitID, "aura", { radius = R, color = L.a(C.STORM, 0.45), pattern = "electric" }),
+		fx.attach(unitID, "aura", { radius = R, color = L.a(C.STORM, 0.35), pattern = "electric" }),
 		fx.attach(unitID, "aura", { radius = R * 0.55, color = L.a(C.FOAM, 0.3), pattern = "swirl" }),
 		fx.attach(unitID, "orb", { color = C.FOAM, radius = 12, height = 120, orbit = R * 0.45, speed = 1.2, count = 4, crackle = 4 }),
 	} }
@@ -351,7 +351,7 @@ local function eyeOfStorm(api, unitID, h, r)
 		local CR = ult.clapRadius or 700
 		local clap = api.val(ult.clap, r) * api.power(h)
 		local hit = api.area(x, z, CR, clap, unitID, { dtype = "electric", stun = api.val(ult.clapStun, r) })
-		fx.flash(x, y + 60, z, { radius = 400, color = C.FOAM, ttl = 0.5 })
+		fx.flash(x, y + 60, z, { radius = 300, color = L.a(C.STORM, 0.6), ttl = 0.5 })
 		fx.ring(x, z, { kind = "shock", r0 = 50, r1 = CR, color = L.a(C.STORM, 0.95), width = 50, ttl = 0.7 })
 		fx.ring(x, z, { kind = "electric", r0 = 80, r1 = CR * 0.9, color = C.STORM, width = 30, ttl = 0.6 })
 		fx.pillar(x, z, { radius = 150, height = 1500, color = L.a(C.STORM, 0.8), ttl = 0.35 })

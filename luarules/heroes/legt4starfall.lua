@@ -85,14 +85,14 @@ local function placeStar(api, unitID, h, x, z)
 	local ttl = a1.ttl or 8
 	local y = L.groundY(x, z)
 	local s = { x = x, z = z, y = y, expire = f + floor(ttl * 30), ids = {} }
-	fx.flash(x, y + 30, z, { radius = 60, color = C.STAR, ttl = 0.4 })
+	fx.flash(x, y + 30, z, { radius = 45, color = L.a(C.STAR, 0.6), ttl = 0.4 })
 	s.ids[#s.ids + 1] = fx.ring(x, z, { kind = "rune", r0 = 70, r1 = 70, color = L.a(C.STAR, 0.8), width = 16, ttl = ttl, rot = 1.2 })
 	s.ids[#s.ids + 1] = fx.attachPoint(x, z, "orb", { color = C.STAR, radius = 14, height = 40, orbit = 0, crackle = 4, ttl = ttl })
 	local prev = stars[#stars]
 	if prev and prev.expire > f and L.d2(prev.x, prev.z, x, z) <= api.val(a1.link, r) ^ 2 then
 		local life = (min(prev.expire, s.expire) - f) / 30
-		s.link = fx.beam(prev.x, prev.y + 40, prev.z, x, y + 40, z, { color = L.a(C.STAR, 0.7), width = 5, ttl = life, pulse = 1.5, flare = 0.4 })
-		s.glow = fx.beam(prev.x, prev.y + 40, prev.z, x, y + 40, z, { color = L.a(C.VOID, 0.25), width = 22, ttl = life, pulse = 0.6, flare = 0 })
+		s.link = fx.beam(prev.x, prev.y + 40, prev.z, x, y + 40, z, { color = L.a(C.STAR, 0.45), width = 4, ttl = life, pulse = 1.5, flare = 0.3 })
+		s.glow = fx.beam(prev.x, prev.y + 40, prev.z, x, y + 40, z, { color = L.a(C.VOID, 0.14), width = 18, ttl = life, pulse = 0.6, flare = 0 })
 		s.ids[#s.ids + 1] = s.glow
 		s.prev = prev
 		prev.next = s
@@ -119,14 +119,20 @@ local function constellationTick(api, unitID, h, f)
 	local dmg = api.val(a1.dmg, r) * api.power(h)
 	local fx = L.fx(api)
 	local total, n = 0, 0
+	-- an enemy touching several lines burns once per tick
+	local burned = {}
 	for _, s in ipairs(keep) do
 		local p = s.prev
 		if p and p.expire > f then
-			local hit = api.line(p.x, p.z, s.x, s.z, (a1.width or 40) * 2, dmg, unitID, { dtype = "plasma" })
-			for i, uid in ipairs(hit) do
-				total, n = total + dmg, n + 1
-				if i <= 6 then
-					L.unitFlash(api, uid, 25, C.STAR, 0.3)
+			for _, e in ipairs(L.alongLine(api, p.x, p.z, s.x, s.z, (a1.width or 40) * 2, h.ally)) do
+				local uid = e[1]
+				if not burned[uid] then
+					burned[uid] = true
+					api.damage(uid, dmg, unitID, { dtype = "plasma" })
+					total, n = total + dmg, n + 1
+					if n <= 8 then
+						L.unitFlash(api, uid, 25, C.STAR, 0.3)
+					end
 				end
 			end
 		end
@@ -285,7 +291,7 @@ local function starfall(api, unitID, h, r, x, z)
 			key = "ult", dmg = dmg, aoe = aoe, dtype = "plasma", gravity = 0,
 			onHit = function(ix, iz, hits)
 				local iy = L.groundY(ix, iz)
-				fx.flash(ix, iy + 30, iz, { radius = 140, color = C.STAR, ttl = 0.35 })
+				fx.flash(ix, iy + 30, iz, { radius = 90, color = L.a(C.STAR, 0.6), ttl = 0.35 })
 				fx.ring(ix, iz, { kind = "shock", r0 = 20, r1 = aoe, color = L.a(C.STAR, 0.8), width = 24, ttl = 0.5 })
 				placeStar(api, unitID, h, ix, iz)
 				st.hits = st.hits + #hits
@@ -309,7 +315,7 @@ local function starfall(api, unitID, h, r, x, z)
 			key = "ult", dmg = comet, aoe = caoe, dtype = "plasma", gravity = 0,
 			onHit = function(ix, iz, hits)
 				local iy = L.groundY(ix, iz)
-				fx.flash(ix, iy + 60, iz, { radius = 600, color = { 0.85, 0.9, 1, 1 }, ttl = 0.7 })
+				fx.flash(ix, iy + 60, iz, { radius = 380, color = { 0.75, 0.85, 1, 0.6 }, ttl = 0.7 })
 				fx.ring(ix, iz, { kind = "shock", r0 = 40, r1 = 900, color = L.a(C.STAR, 0.9), width = 70, ttl = 1.1 })
 				fx.ring(ix, iz, { kind = "rune", r0 = 200, r1 = caoe, color = L.a(C.VOID, 0.7), width = 30, ttl = 1.5, rot = 2 })
 				placeStar(api, unitID, h, ix, iz)

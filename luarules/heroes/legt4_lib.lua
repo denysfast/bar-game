@@ -9,15 +9,16 @@ local spGetUnitDefID = Spring.GetUnitDefID
 local spValidUnitID = Spring.ValidUnitID
 local spGetGroundHeight = Spring.GetGroundHeight
 
--- Legion palette (roster_leg.md)
+-- Legion palette (roster_leg.md), saturated a little: the effects blend additively, and the pale roster tints
+-- (star / storm / soul / foam) burned out to white wherever a few of them overlapped
 L.C = {
-	SOLAR = { 1, 0.85, 0.45, 1 }, EMBER = { 1, 0.45, 0.1, 1 }, WHITEGOLD = { 1, 0.97, 0.8, 1 },
-	STAR = { 0.55, 0.75, 1, 1 }, VOID = { 0.7, 0.5, 1, 1 },
-	RAIL = { 0.4, 0.9, 1, 1 }, STORM = { 0.6, 0.8, 1, 1 },
-	HIVE = { 1, 0.6, 0.2, 1 }, HEAL = { 0.45, 1, 0.55, 1 },
-	SOUL = { 0.55, 1, 0.8, 1 }, AMBER = { 0.9, 0.62, 0.3, 1 }, VENOM = { 0.5, 1, 0.25, 1 },
-	TIDE = { 0.3, 0.7, 1, 1 }, FOAM = { 0.85, 0.95, 1, 1 }, ABYSS = { 0.05, 0.15, 0.4, 0.9 },
-	GORGON = { 0.3, 1, 0.5, 1 }, STONE = { 0.65, 0.7, 0.6, 1 }, WHITE = { 1, 1, 1, 1 },
+	SOLAR = { 1, 0.75, 0.3, 1 }, EMBER = { 1, 0.4, 0.08, 1 }, WHITEGOLD = { 1, 0.92, 0.65, 1 },
+	STAR = { 0.4, 0.6, 1, 1 }, VOID = { 0.62, 0.38, 1, 1 },
+	RAIL = { 0.2, 0.85, 1, 1 }, STORM = { 0.35, 0.6, 1, 1 },
+	HIVE = { 1, 0.55, 0.15, 1 }, HEAL = { 0.35, 1, 0.45, 1 },
+	SOUL = { 0.25, 1, 0.6, 1 }, AMBER = { 0.9, 0.55, 0.2, 1 }, VENOM = { 0.45, 1, 0.15, 1 },
+	TIDE = { 0.2, 0.6, 1, 1 }, FOAM = { 0.6, 0.85, 1, 1 }, ABYSS = { 0.05, 0.15, 0.4, 0.9 },
+	GORGON = { 0.25, 1, 0.45, 1 }, STONE = { 0.6, 0.62, 0.55, 1 }, WHITE = { 1, 1, 1, 1 },
 }
 
 -- colour with another alpha

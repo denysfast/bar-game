@@ -327,9 +327,13 @@ end
 
 function M.frame(api, unitID, h, f)
 	-- ignitions queued by the hits
-	for uid in pairs(h.store.igniteQ) do
-		h.store.igniteQ[uid] = nil
-		ignite(api, unitID, h, uid, 1)
+	-- (ignitions spread Heat and may queue more: take a snapshot, the new ones go next time)
+	local q = h.store.igniteQ
+	if next(q) then
+		h.store.igniteQ = {}
+		for uid in pairs(q) do
+			ignite(api, unitID, h, uid, 1)
+		end
 	end
 	L.runTasks(h, f)
 	if f % 15 == 0 then

@@ -83,11 +83,11 @@ local heroes = {
 		},
 		weaponDefs = function(T4)
 			local meteor = T4.shellWeapon({
-				name = "Starfall meteor", aoe = 16, damage = 0, ceg = "custom:hero-impact-star", cegtag = T4.FX.ref("starfire-small", 2.5),
+				name = "Starfall meteor", aoe = 16, damage = 0, ceg = "custom:ministarfire-explosion", cegtag = T4.FX.ref("starfire-small", 2.5),
 				rgb = "0.6 0.75 1", size = 18, soundhit = "xplolrg2", range = 9000, velocity = 1100,
 			})
 			local comet = T4.shellWeapon({
-				name = "Starfall comet", aoe = 16, damage = 0, ceg = "custom:hero-impact-star", cegtag = T4.FX.ref("starfire-small", 2.5),
+				name = "Starfall comet", aoe = 16, damage = 0, ceg = "custom:starfire-explosion", cegtag = T4.FX.ref("starfire-small", 2.5),
 				rgb = "0.85 0.9 1", size = 42, soundhit = "xplonuk3", range = 9000, velocity = 1300,
 			})
 			for _, w in ipairs({ meteor, comet }) do
