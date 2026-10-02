@@ -13,7 +13,9 @@ Keys are never in the repo: CM_KEY_FILE (content-master owner key, knowledge-gua
 Qwen jobs wait while the lab holds the cards (availability "degraded"); they run when freed.
 v19 (Legion content): `content-controller-tools-key` is now a provisionable record - mint your own with
 provision_secret(params={owner: <project>}); the minted key belongs to platform eu, so set
-CC_BASE=https://cc-eu.denys.fast (the home default answers 401 invalid_api_key to it).
+CC_BASE=https://cc-eu.denys.fast (the home default answers 401 invalid_api_key to it). The eu platform had no
+image.qwen21.edit worker (task stuck "waiting_for_capacity"); the federation manager routes it to a platform that has
+one: CC_BASE=https://content.manager.denys.fast with the key `content-controller-manager-cmk-agent-tooling`.
 """
 import argparse, json, os, sys, time, urllib.request, io, subprocess
 
