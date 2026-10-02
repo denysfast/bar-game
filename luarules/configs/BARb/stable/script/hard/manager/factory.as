@@ -205,7 +205,7 @@ bool AiIsSwitchAllowed(CCircuitDef@ facDef)
  * factories that already exist are recycled by the gadget game_ai_unjam.lua (tech ladder part).
  */
 const float TECH_T2_INCOME = 150.f;
-const float TECH_T3_INCOME = 800.f;
+const float TECH_T3_INCOME = 400.f;  // v19-ai2: was 800 - Armada/Cortex sat on T2 labs while Legion's stock picks were T3 gantries by minute 10 (Legion won every game vs Armada, v18 too)
 const float TECH_T4_INCOME = 700.f;  // custom T4 heroes: a gantry pick becomes the hero altar
 
 CCircuitDef@ Upgrade(CCircuitDef@ d, const string& in from, const string& in to)
