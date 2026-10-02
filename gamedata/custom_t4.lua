@@ -224,8 +224,8 @@ T4.heroBalance = {
 	--                  health     dps      speed (elmos/s)
 	armt4atlas      = { hp = 420000, dps = 11000, speed = 36 }, -- front: assault anchor
 	armt4zeus       = { hp = 400000, dps = 10000, speed = 40 }, -- front: lightning + EMP (not counted)
-	cort4colossus   = { hp = 420000, dps = 11000, speed = 34 }, -- front: flagship
-	cort4bastion    = { hp = 520000, dps = 8500, speed = 28 },  -- front: walking fortress (was 1.07M HP at 13 speed)
+	cort4colossus   = { hp = 440000, dps = 10000, speed = 34 }, -- front: initiator, crowd control
+	cort4bastion    = { hp = 520000, dps = 8500, speed = 30 },  -- front: Juggernaut, killer tank that gets up again
 	cort4hellwalker = { hp = 400000, dps = 12000, speed = 50 }, -- front: flame brawler (800 range)
 	legt4tempest    = { hp = 380000, dps = 12000, speed = 58 }, -- front: melee assault (670 range)
 	legt4keres      = { hp = 480000, dps = 9500, speed = 40 },  -- front: anti-swarm brawler (v19 Legion)
@@ -237,10 +237,17 @@ T4.heroBalance = {
 	                                                             -- sweepfire heat ray counts once per 3 s (units/Legion/T4)
 	legt4apollyon   = { hp = 440000, dps = 10500, speed = 30 }, -- center: suppression / siege (v19 Legion)
 	armt4olympus    = { hp = 220000, dps = 8000, speed = 30, alt = { shocker_high = true } }, -- back: artillery 3300+ (high/low arc: one fires)
-	cort4armageddon = { hp = 200000, dps = 9000, speed = 36 },  -- back: rocket artillery 2700+
+	cort4armageddon = { hp = 220000, dps = 8000, speed = 34 },  -- back: rocket artillery 2700+
 	legt4starfall   = { hp = 220000, dps = 6500, speed = 26 },  -- back: orbital artillery ~7000
 	legt4myrmidon   = { hp = 260000, dps = 6500, speed = 32, alt = { plasma_high = true } }, -- back: hive mother (+drones; v19 Legion)
 	legt4medusa     = { hp = 230000, dps = 7500, speed = 34 },  -- back: petrify rocket artillery (v19 Legion)
+	-- v19 Cortex roster (doc/v19-heroes/roster_cor.md)
+	cort4vesuvius   = { hp = 380000, dps = 10000, speed = 34 }, -- center: twin-barrel siege tank
+	cort4printer    = { hp = 300000, dps = 5000, speed = 42 },  -- center: drone carrier (+ drones)
+	cort4commando   = { hp = 240000, dps = 11000, speed = 70 }, -- front: cloaked assassin (+ EMP, not counted)
+	cort4deadeye    = { hp = 220000, dps = 9000, speed = 30 },  -- back: sniper 1870
+	cort4karganeth  = { hp = 340000, dps = 10000, speed = 40 }, -- center: missiles + AA (vtol only, not counted)
+	cort4cataphract = { hp = 300000, dps = 10000, speed = 64, alt = { depthcharge = true } }, -- front: hover lancer
 }
 
 -- v19 (dmgfix): a blast hits more units the bigger it is - against an army a 480-radius shell did 10.9x its shown
