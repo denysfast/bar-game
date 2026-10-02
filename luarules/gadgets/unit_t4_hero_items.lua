@@ -1435,60 +1435,224 @@ if gadgetHandler:IsSyncedCode() then
 		end
 	end
 
-	local function aiBuildShop(teamID, heroes)
-		if #heroes == 0 or shopUnit(teamID) then
-			return
-		end
-		for _, sdid in pairs(I.SHOPS) do
-			local sd = UnitDefNames[sdid]
-			if sd and Spring.GetTeamUnitDefCount(teamID, sd.id) > 0 then
-				return -- one is being built
+	-- AI teams build their shop with a builder borrowed from the skirmish AI (BARb would re-task it at once):
+	-- "detach" it, order the build at a site checked with TestBuildOrder near the altar, follow the nanoframe,
+	-- send up to SHOP_HELPERS more builders to help, retry with another builder / site on a timeout, and hand
+	-- every borrowed unit back ("attach") when the shop stands or the job is given up.
+	local SHOP_HELPERS = 2
+	local SHOP_START_TIMEOUT = 75 * GAME_SPEED   -- no nanoframe this long after the order: retry
+	local SHOP_JOB_TIMEOUT = 6 * 60 * GAME_SPEED -- the whole job; then give up for SHOP_COOLDOWN
+	local SHOP_COOLDOWN = 90 * GAME_SPEED
+	local shopJob = {}   -- teamID -> { builder, helpers = {}, def, x, z, issued, started, tries, bad = {uid=true} }
+	local shopRetry = {} -- teamID -> frame the next job may start
+
+	local function toAI(teamID, text)
+		SendToUnsynced("t4heroitems_aimsg", teamID, text)
+	end
+
+	local function alive(uid)
+		return uid and spValidUnitID(uid) and not spGetUnitIsDead(uid)
+	end
+
+	local function teamShopFrames(teamID)
+		for _, sname in pairs(I.SHOPS) do
+			local sd = UnitDefNames[sname]
+			if sd then
+				for _, uid in ipairs(Spring.GetTeamUnitsByDefs(teamID, sd.id) or {}) do
+					return uid, sd.id
+				end
 			end
 		end
-		if (Spring.GetTeamResources(teamID, "metal") or 0) < 3000 then
+	end
+
+	local function borrowed(uid)
+		local G = GG.T4Heroes
+		if G and G.escorts then
+			for _, e in pairs(G.escorts) do
+				if e.units and e.units[uid] then
+					return true
+				end
+			end
+		end
+		return (GG.AICommanderUnits or {})[uid]
+	end
+
+	local function releaseJob(teamID, why)
+		local job = shopJob[teamID]
+		if not job then
 			return
 		end
-		local ax, az
+		local ids = {}
+		local all = { job.builder }
+		for _, h in ipairs(job.helpers) do
+			all[#all + 1] = h
+		end
+		for _, uid in pairs(all) do
+			if alive(uid) and spGetUnitTeam(uid) == teamID then
+				Spring.GiveOrderToUnit(uid, CMD.STOP, {}, 0)
+				ids[#ids + 1] = uid
+			end
+		end
+		if #ids > 0 then
+			toAI(teamID, "attach " .. table.concat(ids, ","))
+		end
+		log("AI team %d: shop job ends (%s), %d builders handed back", teamID, why, #ids)
+		shopJob[teamID] = nil
+	end
+
+	local function altarPos(teamID)
 		for _, uid in ipairs(Spring.GetTeamUnits(teamID)) do
 			if altarDefs[spGetUnitDefID(uid)] then
-				ax, _, az = spGetUnitPosition(uid)
-				break
+				local x, _, z = spGetUnitPosition(uid)
+				return x, z
 			end
 		end
-		local builder, bestD, shopDef
+	end
+
+	-- builders that can make a shop, best first (finished, ground, few orders, near the altar)
+	local function shopBuilders(teamID, ax, az, exclude)
+		local list = {}
 		for _, uid in ipairs(Spring.GetTeamUnits(teamID)) do
 			local udid = spGetUnitDefID(uid)
 			local sdid = builderShop[udid]
-			if sdid and not spGetUnitIsDead(uid) then
+			if sdid and not exclude[uid] and alive(uid) and not borrowed(uid) then
 				local _, _, _, _, bp = spGetUnitHealth(uid)
 				if bp and bp >= 1 then
 					local x, _, z = spGetUnitPosition(uid)
-					local d = ax and (x - ax) ^ 2 + (z - az) ^ 2 or 0
-					if not bestD or d < bestD then
-						builder, bestD, shopDef = uid, d, sdid
+					local d = ax and sqrt((x - ax) ^ 2 + (z - az) ^ 2) or 0
+					local score = d + (UnitDefs[udid].canFly and 1500 or 0) + Spring.GetUnitCommandCount(uid) * 150
+					list[#list + 1] = { uid = uid, sdid = sdid, x = x, z = z, score = score }
+				end
+			end
+		end
+		table.sort(list, function(a, b) return a.score < b.score end)
+		return list
+	end
+
+	local function findSite(teamID, sdid, cx, cz, tries)
+		local rings = { 260, 380, 520, 680, 860, 1060 }
+		for ri = 1, #rings do
+			local r = rings[ri] + (tries or 0) * 60
+			for k = 0, 15 do
+				local a = k / 16 * 6.283 + ri * 0.7 + (tries or 0)
+				local x = floor((cx + math.cos(a) * r) / 16) * 16 + 8
+				local z = floor((cz + math.sin(a) * r) / 16) * 16 + 8
+				if x > 96 and z > 96 and x < Game.mapSizeX - 96 and z < Game.mapSizeZ - 96 then
+					local y = spGetGroundHeight(x, z)
+					if y > 0 and Spring.TestBuildOrder(sdid, x, y, z, 0) == 2 then
+						return x, y, z
 					end
 				end
 			end
 		end
-		if not builder then
+	end
+
+	local function startJob(teamID, f, job)
+		local ax, az = altarPos(teamID)
+		job = job or { helpers = {}, tries = 0, bad = {}, began = f }
+		local cands = shopBuilders(teamID, ax, az, job.bad)
+		local c = cands[1]
+		if not c then
+			return false
+		end
+		local x, y, z = findSite(teamID, c.sdid, ax or c.x, az or c.z, job.tries)
+		if not x then
+			job.bad[c.uid] = true
+			return false
+		end
+		job.builder, job.def, job.x, job.z, job.issued = c.uid, c.sdid, x, z, f
+		job.tries = job.tries + 1
+		toAI(teamID, "detach " .. c.uid)
+		Spring.GiveOrderToUnit(c.uid, CMD.STOP, {}, 0)
+		Spring.GiveOrderToUnit(c.uid, -c.sdid, { x, y, z, 0 }, 0)
+		shopJob[teamID] = job
+		log("AI team %d: builder %d (%s) detached, builds a %s at %d,%d (try %d)", teamID, c.uid, UnitDefs[spGetUnitDefID(c.uid)].name,
+			UnitDefs[c.sdid].name, x, z, job.tries)
+		return true
+	end
+
+	local function aiBuildShop(teamID, heroes, f)
+		local job = shopJob[teamID]
+		if shopUnit(teamID) then
+			if job then
+				releaseJob(teamID, "shop finished")
+			end
 			return
 		end
-		local bx, _, bz = spGetUnitPosition(builder)
-		local cx, cz = ax or bx, az or bz
-		for ring = 1, 6 do
-			local r = 160 + ring * 110
-			for k = 0, 11 do
-				local a = k / 12 * 6.283 + ring
-				local x = floor((cx + math.cos(a) * r) / 16) * 16 + 8
-				local z = floor((cz + math.sin(a) * r) / 16) * 16 + 8
-				if x > 64 and z > 64 and x < Game.mapSizeX - 64 and z < Game.mapSizeZ - 64 then
-					local y = spGetGroundHeight(x, z)
-					if Spring.TestBuildOrder(shopDef, x, y, z, 0) == 2 then
-						Spring.GiveOrderToUnit(builder, -shopDef, { x, y, z, 0 }, 0)
-						log("AI team %d: builder %d orders a %s at %d,%d", teamID, builder, UnitDefs[shopDef].name, x, z)
-						return
+		if not job then
+			if #heroes == 0 or f < (shopRetry[teamID] or 0) or (Spring.GetTeamResources(teamID, "metal") or 0) < 2000 then
+				return
+			end
+			local nano = teamShopFrames(teamID)
+			if nano then
+				-- a frame is standing (the AI's own or an old job): adopt it
+				job = { helpers = {}, tries = 1, bad = {}, began = f, issued = f, nano = nano }
+				shopJob[teamID] = job
+			elseif not startJob(teamID, f) then
+				shopRetry[teamID] = f + SHOP_COOLDOWN
+				return
+			end
+			job = shopJob[teamID]
+		end
+		if f - job.began > SHOP_JOB_TIMEOUT then
+			releaseJob(teamID, "timeout")
+			shopRetry[teamID] = f + SHOP_COOLDOWN
+			return
+		end
+		local nano = teamShopFrames(teamID)
+		if nano then
+			job.nano = nano
+			job.started = job.started or f
+		end
+		if not alive(job.builder) then
+			job.builder = nil
+		end
+		if job.nano and alive(job.nano) then
+			-- everyone borrowed keeps building it; up to SHOP_HELPERS more join
+			local workers = { job.builder }
+			for _, h in ipairs(job.helpers) do
+				workers[#workers + 1] = h
+			end
+			if #job.helpers < SHOP_HELPERS or not job.builder then
+				local ax, az = spGetUnitPosition(job.nano)
+				local ex = { [job.builder or -1] = true }
+				for _, h in ipairs(job.helpers) do
+					ex[h] = true
+				end
+				for _, c in ipairs(shopBuilders(teamID, ax, az, ex)) do
+					if #job.helpers >= SHOP_HELPERS and job.builder then
+						break
+					end
+					if c.score < 2500 then
+						toAI(teamID, "detach " .. c.uid)
+						if not job.builder then
+							job.builder = c.uid
+						else
+							job.helpers[#job.helpers + 1] = c.uid
+						end
+						workers[#workers + 1] = c.uid
 					end
 				end
+			end
+			for _, uid in pairs(workers) do
+				if alive(uid) and Spring.GetUnitCommandCount(uid) == 0 then
+					Spring.GiveOrderToUnit(uid, CMD.REPAIR, { job.nano }, 0)
+				end
+			end
+			return
+		end
+		-- no frame yet: the builder must still be on its way with the order
+		local idle = not job.builder or Spring.GetUnitCommandCount(job.builder) == 0
+		if idle or f - job.issued > SHOP_START_TIMEOUT then
+			if job.builder then
+				job.bad[job.builder] = true
+				toAI(teamID, "attach " .. job.builder)
+				Spring.GiveOrderToUnit(job.builder, CMD.STOP, {}, 0)
+				job.builder = nil
+			end
+			if job.tries >= 4 or not startJob(teamID, f, job) then
+				releaseJob(teamID, "no builder could start it")
+				shopRetry[teamID] = f + SHOP_COOLDOWN
 			end
 		end
 	end
@@ -1523,11 +1687,11 @@ if gadgetHandler:IsSyncedCode() then
 						aiNext[teamID] = f + 10 * GAME_SPEED
 						aiShop(teamID, heroes, f)
 						aiSalvage(teamID, heroes)
-						if f % (30 * GAME_SPEED) < 10 * GAME_SPEED then
-							aiBuildShop(teamID, heroes)
-						end
 					end
 					aiAutoUse(teamID, heroes)
+					if f % (2 * GAME_SPEED) < 15 then
+						aiBuildShop(teamID, heroes, f)
+					end
 				end
 			end
 		end
@@ -1790,9 +1954,14 @@ else
 
 	function gadget:Initialize()
 		gadgetHandler:AddSyncAction("t4heroitems_event", itemEvent)
+		-- detach / attach builders for the AI's shop (only the client hosting that AI delivers it)
+		gadgetHandler:AddSyncAction("t4heroitems_aimsg", function(_, teamID, text)
+			Spring.SendSkirmishAIMessage(teamID, text)
+		end)
 	end
 
 	function gadget:Shutdown()
 		gadgetHandler:RemoveSyncAction("t4heroitems_event")
+		gadgetHandler:RemoveSyncAction("t4heroitems_aimsg")
 	end
 end
