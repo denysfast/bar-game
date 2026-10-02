@@ -61,6 +61,7 @@ local function printFx(api, unitID)
 end
 
 local function liveDrones(h)
+	h.store.drones = h.store.drones or {}
 	local keep = {}
 	for _, uid in ipairs(h.store.drones) do
 		if L.alive(uid) then
@@ -351,6 +352,8 @@ function M.init(api, unitID, h)
 end
 
 function M.rank(api, unitID, h, key, rank)
+	h.store.drones = h.store.drones or {} -- v19: the AI may learn ranks before init ran
+	h.store.turrets = h.store.turrets or {}
 	if key == "a1" then
 		-- stronger drones for the ones already out
 		local p = api.val(b(h, "a1").dps, rank) * api.power(h)
