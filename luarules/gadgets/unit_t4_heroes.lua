@@ -137,6 +137,9 @@ end
 --       commanders, altars and heroes are refused
 --   reveal(x, z, r, seconds, ally)   intercept(x, z, r, ally, maxCount) -> n   shieldDrain(uid) -> drained
 --   cast(unitID, h, kitAbility, rank, tx, tz, targetID)   any generic kit ability, no cooldown
+--   also: seenBy(uid, ally), caster(unitID, h, key), blast(caster, x, z, r, dmg, stun, emp, dtype),
+--   bestCluster(x, z, range, radius, ally) -> metal, x, z, mostValuableEnemy(x, z, range, ally) -> uid, metal,
+--   enemyCostNear(x, z, r, ally), weaponReach(h), endBuffs(unitID, h, flag), losCloak(uid, on)
 -- Items (GG.T4HeroItems, the items gadget; every hook optional, api appended LAST; item power damage through
 --   GG.T4Heroes.damage(target, dmg, attackerID, {dtype, item = true}) or while GG.T4HeroItems.isItemDamage() is true
 --   gets no hero multiplier and no on-hit effects; after an equipment change it calls GG.T4Heroes.refresh(uid)):
