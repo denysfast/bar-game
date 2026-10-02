@@ -1162,6 +1162,19 @@ if gadgetHandler:IsSyncedCode() then
 		return true
 	end
 
+	-- the metal of an ultimate / ability rank the level allows but the AI cannot pay yet (with its reserve), or nil
+	local function aiWaitCost(h)
+		local m = Spring.GetTeamResources(h.team, "metal") or 0
+		for _, key in ipairs({ "ult", "a1", "a2", "a3" }) do
+			if h.def.cfg[key] then
+				local st, cost = learnState(h, key)
+				if st == "metal" or (st == "ok" and (cost or 0) > prepaid and (cost or 0) * 1.5 > m) then
+					return cost
+				end
+			end
+		end
+	end
+
 	-- the AI spends its points (and metal): the ultimate whenever it can, then the abilities (lowest rank first),
 	-- then the stats in the order of its role (H.AI_STAT_WEIGHTS: the lowest rank / weight next)
 	local function learnAI(unitID, h)
@@ -1185,6 +1198,11 @@ if gadgetHandler:IsSyncedCode() then
 				end
 			end
 			if not pick then
+				-- an ultimate / ability rank the level allows but the metal does not: keep the point for it (the AI
+				-- bank pays it, see aiEconomy) instead of spending it on a stat
+				if aiWaitCost(h) then
+					return
+				end
 				local best
 				for _, key in ipairs(H.statKeys) do
 					if aiCanLearn(h, key) then
@@ -5226,13 +5244,10 @@ if gadgetHandler:IsSyncedCode() then
 									end
 									b = prepaid
 									if h.level - #h.picks > 0 then
-										for _, key in ipairs(h.def.keys) do
-											local st, cost = learnState(h, key)
-											if st == "metal" then
-												saving = true
-												need = max(need, cost or 0)
-												break
-											end
+										local wait = aiWaitCost(h)
+										if wait then
+											saving = true
+											need = max(need, wait)
 										end
 									end
 									prepaid = 0
