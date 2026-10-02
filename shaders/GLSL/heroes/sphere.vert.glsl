@@ -47,7 +47,9 @@ void main() {
 	if (env < 0.002) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
 #if ATTACHED == 1
 	vec4 anc = uni[instData.y].drawPos;
+	float us = fxUnitScale(instData.y);
 #else
+	float us = 1.0;
 	vec4 anc = i_anchor;
 #endif
 	float ak = smoothstep(i_anim.z, i_anim.z + max(i_anim.w, 0.001), now);
@@ -55,7 +57,7 @@ void main() {
 	float al = mix(i_anim.y, 1.0, ak);
 	// pops in with a small overshoot
 	float pop = 1.0 + 0.12 * sin(clamp((now - start) / 12.0, 0.0, 1.0) * PI) * (1.0 - smoothstep(0.0, 1.0, (now - start) / 12.0));
-	vec3 ext = i_shape.yzw * sc * pop * mix(0.6, 1.0, smoothstep(start, start + 10.0, now));
+	vec3 ext = i_shape.yzw * us * sc * pop * mix(0.6, 1.0, smoothstep(start, start + 10.0, now));
 	vec3 n = normalize(sph.xyz);
 	vec3 local = n * ext;
 	vec3 wn = normalize(n / max(ext, vec3(0.001)));
@@ -63,7 +65,7 @@ void main() {
 		local = fxRotHeading(local, anc.w);
 		wn = fxRotHeading(wn, anc.w);
 	}
-	vec3 world = anc.xyz + vec3(0.0, i_shape.x, 0.0) + local;
+	vec3 world = anc.xyz + vec3(0.0, i_shape.x * us, 0.0) + local;
 	gl_Position = cameraViewProj * vec4(world, 1.0);
 	vColor = vec4(i_color.rgb, i_color.a * al);
 	vLife = i_life;

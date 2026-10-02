@@ -53,6 +53,13 @@ void main() {
 	vec4 worldPos = ApplyTransform(modelTX, localPos);
 	vec3 wn = RotateByQuaternion(modelTX.quat, RotateByQuaternion(pieceTX.quat, normal));
 #endif
+	// follow the runtime model scale exactly like the CUS shaders do (scale around the model origin)
+	float us = fxUnitScale(instData.y);
+#if USEQUATERNIONS == 0
+	worldPos = modelMatrix * vec4(localPos.xyz * us, 1.0);
+#else
+	worldPos = ApplyTransform(modelTX, vec4(localPos.xyz * us, 1.0));
+#endif
 	float env = fxEnvelope(now, i_par.z, i_par.w, 10.0, 15.0);
 	float ak = smoothstep(i_anim.y, i_anim.y + max(i_anim.z, 0.001), now);
 	float al = mix(i_anim.x, 1.0, ak);

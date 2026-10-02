@@ -582,6 +582,12 @@ void main(void)
 	vec3 modelSpaceBitangent;
 	GetModelSpaceVertex(piecePos.xyz, modelPos, modelVertexNormal, safeT, modelSpaceTangent, safeB, modelSpaceBitangent);
 
+	#ifndef STATICMODEL
+		// runtime model scale around the unit origin (GG.HeroFX.scale, e.g. Rage Mode): userDefined[3].w = scale - 1,
+		// 0 for every other unit, so their output is unchanged. Applies to every pass (forward, deferred, shadow, reflection).
+		modelPos.xyz *= 1.0 + UNITUNIFORMS.userDefined[3].w;
+	#endif
+
 	#if USEQUATERNIONS == 1
 		Transform modelToWorldTX = Lerp(
 			transforms[instData.x + 0u],
