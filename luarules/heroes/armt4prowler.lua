@@ -15,7 +15,7 @@ local L = VFS.Include("luarules/heroes/armt4_lib.lua", nil, VFS.ZIP_FIRST)
 local M = {}
 
 local BREACH = { 1, 0.6, 0.2, 0.6 }
-local FOG = { 0.6, 0.7, 0.8, 0.35 }
+local FOG = { 0.3, 0.5, 0.6, 0.6 }
 local PREY = { 1, 0.2, 0.15, 0.7 }
 local CABLE = { 0.8, 0.8, 0.85, 1 }
 
@@ -245,6 +245,7 @@ local function apexOn(api, unitID, h, r, targetID)
 	local dur = api.val(ult.duration, r)
 	local st = { prey = targetID, r = r, untilFrame = api.frame() + math.floor(dur * 30), damage = api.val(ult.damage, r) }
 	api.mark(targetID, "apex", dur, { reveal = true, from = unitID })
+	api.forceTarget(unitID, targetID, dur) -- the hunt: its guns stay on the prey
 	api.buff(unitID, h, "apex", dur, { speed = api.val(ult.speed, r) })
 	api.active(unitID, "ult", dur)
 	local fx = api.fx

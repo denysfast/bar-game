@@ -56,6 +56,7 @@ local zeus = T4.derive(T4.base("units/ArmGantry/armthor.lua", "armthor"), {
 zeus.weapondefs.empmissile.customparams.stockpilelimit = nil
 -- armthor.bos + SetTurretTurnMult (Rage Mode turns the turret faster: buff turretTurn), scripts/Units/armt4zeus.bos
 zeus.script = "Units/armt4zeus.cob"
+zeus.sightdistance = 1100 -- sight close to the main weapon's reach
 units.armt4zeus = T4.hero(zeus, 2.2)
 
 ------------------------------------------------------------------------------------------------ 2. Atlas
@@ -72,6 +73,7 @@ local atlas = T4.derive(T4.base("units/ArmGantry/armbanth.lua", "armbanth"), {
 	footprint = 8,
 	movementclass = "T4BOT8",
 })
+atlas.sightdistance = 1300 -- sight close to the main weapon's reach
 units.armt4atlas = T4.hero(atlas, 2.5)
 
 ------------------------------------------------------------------------------------------------ 3. Peewee Prime
@@ -90,6 +92,7 @@ local peewee = T4.derive(T4.base("units/Scavengers/Bots/armpwt4.lua", "armpwt4")
 	movementclass = "T4BOT8",
 	turn = 0.6,
 })
+peewee.sightdistance = 950 -- sight close to the main weapon's reach
 units.armt4peewee = T4.hero(peewee, 2.2)
 
 ------------------------------------------------------------------------------------------------ 4. Razor
@@ -109,6 +112,7 @@ local aegis = T4.derive(T4.base("units/ArmGantry/armraz.lua", "armraz"), {
 	accel = 0.9,
 	turn = 0.8,
 })
+aegis.sightdistance = 950 -- sight close to the main weapon's reach
 units.armt4aegis = T4.hero(aegis, 2.5)
 
 -- Razor Swarm drone (armdrone x1.6): red beam laser; damage per rank and level through the hero module
@@ -189,6 +193,7 @@ damageAll(prowler.weapondefs.armamph_missile, 400)
 prowler.weapondefs.armamph_missile.name = "Tandem missiles"
 prowler.weapons[2].onlytargetcategory = "SURFACE VTOL"
 prowler.weapons[2].badtargetcategory = nil
+prowler.sightdistance = 1150 -- sight close to the main weapon's reach
 units.armt4prowler = T4.hero(prowler, 2.2)
 
 ------------------------------------------------------------------------------------------------ 6. Ratte
@@ -207,6 +212,7 @@ local ratte = T4.derive(T4.base("units/Scavengers/Vehicles/armrattet4.lua", "arm
 	movementclass = "T4TANK9",
 	turn = 0.7,
 })
+ratte.sightdistance = 1350 -- sight close to the main weapon's reach
 units.armt4ratte = T4.hero(ratte, 2.0, {
 	-- a2 Creeping Barrage: one high-arc shell of the walk (damage from the ability)
 	hero_barrage = abilityShell({ name = "Creeping barrage shell", aoe = 220, damage = 1, size = 8, velocity = 900,
@@ -236,6 +242,7 @@ local recluse = T4.derive(T4.base("units/Scavengers/Bots/armsptkt4.lua", "armspt
 		adv_rocket = { reloadtime = 6 },
 	},
 })
+recluse.sightdistance = 1500 -- sight close to the main weapon's reach
 units.armt4recluse = T4.hero(recluse, 2.2, {
 	-- a2 Web Field: the canister (0 damage, the field is the ability)
 	hero_webcanister = abilityShell({ name = "Web canister", aoe = 60, damage = 1, size = 6, velocity = 900, gravity = 0.4,
@@ -316,6 +323,7 @@ local starlight = T4.derive(T4.base("units/ArmVehicles/T2/armmanni.lua", "armman
 	movementclass = "T4TANK9",
 	turn = 0.8,
 })
+starlight.sightdistance = 1800 -- sight close to the main weapon's reach
 units.armt4starlight = T4.hero(starlight, 2.2)
 
 ------------------------------------------------------------------------------------------------ 10. Hive Mother
@@ -370,6 +378,7 @@ local hive = T4.derive(hiveBase, {
 for _, k in ipairs({ "inheritxpratemultiplier", "childreninheritxp", "parentsinheritxp" }) do
 	hive.customparams[k] = nil
 end
+hive.sightdistance = 1300 -- sight close to the main weapon's reach
 units.armt4hive = T4.hero(hive, 2.0, {
 	-- a3 Kamikaze Run: only the blast (the diving drone is a unit; damage from the ability)
 	hero_dronebomb = abilityShell({ name = "Kamikaze drone", aoe = 200, damage = 1, size = 4, velocity = 600,

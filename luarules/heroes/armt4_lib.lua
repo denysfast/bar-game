@@ -61,7 +61,8 @@ for udid, ud in pairs(UnitDefs) do
 	mobile[udid] = (ud.speed or 0) > 0 and not ud.canFly
 	air[udid] = ud.canFly or false
 	local tl = tonumber(ud.customParams and ud.customParams.techlevel) or 1
-	bot[udid] = mobile[udid] and ud.modCategories and ud.modCategories.bot and tl <= 2 or false
+	local kbot = Game.speedModClasses and Game.speedModClasses.KBot or 1
+	bot[udid] = mobile[udid] and ud.moveDef and ud.moveDef.smClass == kbot and tl <= 2 and not ud.customParams.t4_hero or false
 end
 function L.isStructure(uid)
 	return structure[spGetUnitDefID(uid) or -1] or false

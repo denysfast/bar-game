@@ -124,9 +124,14 @@ local function jump(api, unitID, h, r, tx, tz)
 	return api.dash(unitID, h, tx, tz, { seconds = 1, arc = 120 + d * 0.25, untargetable = true,
 		onLand = function(lx, lz)
 			local hits = api.area(lx, lz, radius, dmg, unitID, { dtype = "plasma" })
-			for _, uid in ipairs(hits) do
-				api.push(uid, lx, lz, 160, 0.4)
-			end
+			-- next frame: onLand runs inside the core's movement loop, a new movement must not start in it
+			L.after(h, 1, function()
+				for _, uid in ipairs(hits) do
+					if L.alive(uid) then
+						api.push(uid, lx, lz, 160, 0.4)
+					end
+				end
+			end)
 			local f2 = api.fx
 			if f2 then
 				f2.ring(lx, lz, { kind = "shock", r0 = 0, r1 = 330, color = { 0.5, 0.8, 1, 0.9 }, ttl = 0.45, width = 40 })

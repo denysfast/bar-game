@@ -146,7 +146,7 @@ local function cloakFrame(api, unitID, h, f)
 		return
 	end
 	local target = api.target(unitID)
-	if target and Spring.GetUnitAllyTeam(target) ~= h.ally and L.unitDist(unitID, target) <= api.weaponReach(h) then
+	if target and Spring.GetUnitAllyTeam(target) ~= h.ally and L.unitDist(unitID, target) <= api.weaponReach(h) + L.radius(target) + 60 then
 		cloakOff(api, unitID, h, "attack")
 		return
 	end
@@ -210,7 +210,7 @@ local function shellTick(api, unitID, h, f)
 	local frac = ab.left / math.max(1, cap)
 	if fx and st.shellFx and math.abs(frac - (st.shellFrac or -1)) > 0.04 then
 		st.shellFrac = frac
-		fx.set(st.shellFx, { alpha = frac > 0.01 and (0.25 + 0.75 * frac) or 0, time = 0.3 })
+		fx.set(st.shellFx, { alpha = frac > 0.01 and (0.2 + 0.45 * frac) or 0, time = 0.3 })
 	end
 	if f % 15 == 0 then
 		Spring.SetUnitRulesParam(unitID, "hero_absorb", math.floor(ab.left), { allied = true })
@@ -278,6 +278,9 @@ end
 function M.hit(api, unitID, h, victimID, victimDefID, damage, weaponDefID, isParalyzer)
 	local f = api.frame()
 	local st = h.store
+	if st.cloak then
+		cloakOff(api, unitID, h, "fired") -- a shot out of the cloak (attack order): this is the Ambush
+	end
 	if (st.ambushUntil or 0) > f and not isParalyzer then
 		local r = api.rank(h, "a1")
 		local mult = 1 + api.val(b(h, "a1").ambush, r)

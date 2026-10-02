@@ -16,7 +16,7 @@ local M = {}
 
 local GOLD = { 1, 0.95, 0.7, 1 }
 local SUNDER = { 1, 0.55, 0.2, 0.6 }
-local SHIELD = { 0.6, 0.8, 1, 0.35 }
+local SHIELD = { 0.5, 0.7, 1, 0.18 }
 
 local function b(h, key)
 	return h.def.cfg[key]
@@ -87,7 +87,7 @@ local function bulwark(api, unitID, h, r)
 	local fx = api.fx
 	local st = { untilFrame = api.frame() + math.floor(dur * 30), lastFx = 0 }
 	if fx then
-		fx.ring(x, z, { kind = "hex", r0 = 0, r1 = radius, color = { 0.4, 0.7, 1, 0.8 }, ttl = 0.5, width = 40 })
+		fx.ring(x, z, { kind = "hex", r0 = radius * 0.6, r1 = radius, color = { 0.4, 0.7, 1, 0.6 }, ttl = 0.5, width = 30 })
 		fx.ring(x, z, { kind = "rune", r0 = radius * 0.7, r1 = radius, color = "orange", ttl = 0.8, width = 30 })
 		st.sphere = fx.attach(unitID, "sphere", { radius = 200, color = SHIELD, hex = true, fresnel = 1, height = 90, ttl = dur })
 	end
@@ -139,7 +139,7 @@ local function charge(api, unitID, h, r, tx, tz)
 	local last, steps, stepHits = api.frame(), 0, 0
 	local trail
 	if fx then
-		trail = fx.attach(unitID, "trail", { color = GOLD, width = 30, length = 0.7, ttl = d / speed + 0.5 })
+		trail = fx.attach(unitID, "trail", { color = { 1, 0.8, 0.4, 0.8 }, width = 14, length = 0.6, ttl = d / speed + 0.5 })
 		fx.ring(x, z, { kind = "shock", r0 = 30, r1 = 260, color = { 1, 0.75, 0.4, 0.8 }, ttl = 0.4, width = 30 })
 	end
 	local ok = api.dash(unitID, h, tx, tz, { speed = speed, untargetable = false,
@@ -237,8 +237,8 @@ local function lanceFrame(api, unitID, h, f)
 	local ty = L.gy(tx, tz)
 	local fx = api.fx
 	if fx then
-		fx.beam(ex, ey, ez, tx, ty + 10, tz, { color = GOLD, width = 40, ttl = 0.13, pulse = 8, ground = true, flare = 2 })
-		fx.flash(tx, ty + 20, tz, { radius = 100, color = { 1, 0.8, 0.5, 1 }, ttl = 0.15 })
+		fx.beam(ex, ey, ez, tx, ty + 10, tz, { color = { 1, 0.85, 0.45, 1 }, width = 16, ttl = 0.13, pulse = 8, ground = true, flare = 1.6 })
+		fx.flash(tx, ty + 20, tz, { radius = 70, color = { 1, 0.7, 0.3, 0.8 }, ttl = 0.15 })
 	end
 	-- 3 frames of damage on the line; the units it kills burst
 	local hits = api.line(x, z, tx, tz, st.width, 0, unitID)
