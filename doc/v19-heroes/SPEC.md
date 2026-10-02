@@ -197,3 +197,36 @@ GG.HeroFX.hit(id, x, y, z)                  -- ripple on a sphere
 | content-arm/cor/leg | `luarules/configs/heroes/<faction>.lua`, `luarules/heroes/<hero>.lua`, `units/*T4*/<faction>t4units.lua`, models, portraits, ability icons (wave 2) |
 | ui | `luaui/Widgets/gui_t4_heroes.lua` (+ new widgets) (wave 2) |
 | ai | AI hero picks, upgrades, learning, item buying (wave 2) |
+
+## 4b. API additions requested from core (wave 1 designers; core implements, exact signatures in the header of unit_t4_heroes.lua once landed)
+
+Movement: `api.dash(unitID, h, x, z, {seconds|speed, arc, untargetable, onStep, onLand})`, `api.blink(unitID, x, z)`,
+`api.push/pull/throw` (enemy units; heroes half; buildings immune), `api.orbitAround(unitID, h, targetID, radius, seconds)`.
+Debuffs: `api.mark(uid, id, seconds, {stacks, max, vuln, from, slow, root, reveal})`, `api.marks(uid, id)`,
+`api.slow(uid, frac, seconds)`, `api.unitBuff(uid, id, seconds, mods)` (non-hero allies), `api.taunt(victimID, byID, seconds)`,
+`api.forceTarget(unitID, targetID, seconds)`. Buff mods also `unstoppable`, `reflect`, `hidden` (burrow), `turretTurn`.
+Hooks also: `impact(api, unitID, h, weaponDefID, x, y, z, projectileID)`, `fired(api, unitID, h, weaponNum)`,
+`unitDied(api, unitID, h, deadID, deadDefID, x, z, allied)` (deaths within ~1500), `damaged` gets the attacker position.
+Helpers: `api.line`, `api.target`, `api.reloadNow`, `api.piecePos`, `api.turretSpin`, `api.consume(uid, {credit})`,
+`api.reveal`, `api.intercept`, `api.shieldDrain`, `api.damageType`, `api.downed(unitID, h, seconds, onRise)`.
+Summon opts: owner credit, `respawn={max, every}`, `guard`, `cap`, `build`, `expire`, `leash`, `scaleWithLevel`; `api.order`.
+Toggle actives: ability `toggle = true`. Absorb params `hero_absorb`, `hero_absorb_max`. Never spawn/copy StarburstLauncher.
+Movedefs: T4ATANK8, T4HOVER8, T4HOVER10, T4ATBOT9. Ability command ids: Armada 36101–36199, Cortex 36201–36299,
+Legion 36301–36399, core ≥ 36400.
+Damage rules (dmgfix findings): heroes keep 0 engine experience; on-hit extras once per projectile; splash grows AREA
+(radius × sqrt(1 + bonus)); Firepower and items are pure damage (no salvo/pellets/reload); penetration is a per-shot budget.
+
+## 5b. FX library as implemented (v19-fx, merged)
+
+Usage doc at the top of `luarules/gadgets/fx_t4_heroes.lua`. Deltas vs §5: every call returns an id (`detach(id)` cuts
+any effect early); `GG.HeroFX.hit(id, x, y, z)` for shield ripples; `orbPos(unitID, opts, frame, index)` and
+`orbPointPos(x, z, opts, frame, index)` (pure, synced-safe); `set(id, {radius, color, alpha, stacks, angle, …, time})`;
+`zone(x, z, opts)`, `attachPoint(x, z, kind, opts)`; `opts.visible = "los"|"ally"|"all"`; attach kinds also `mark`,
+`link` (beam/bolt/drain tether), `tint` (rim/stone/heat/electric/ice/shadow on the model); ring kinds also
+glow/sweep/fog/web/fire/swirl/mark; `opts.arc/angle/rot` for cones and sweeps. `cloak` is cosmetic — real cloak via api.
+Showcase: `/mnt/data/bar-bench/out/fx/showcase/`, scene kit `tools/heroes/fx_showcase/`.
+
+## 6b. Items as implemented (v19-items, merged)
+
+Protocol and params in the header of `luarules/gadgets/unit_t4_hero_items.lua`; data and helpers (`I.decode`, `I.lines`,
+`I.icon`) in `luarules/configs/t4_hero_items.lua`. Shops `armt4shop/cort4shop/legt4shop` (`units/other/t4shops.lua`).

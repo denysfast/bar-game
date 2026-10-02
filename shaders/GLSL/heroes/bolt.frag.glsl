@@ -23,7 +23,7 @@ void main() {
 		float g = exp(-x * x * 4.0);
 		g = max(g - 0.0183, 0.0) / 0.9817;
 		vec3 rgb = vColor.rgb * g * 0.55 * I;
-		fragColor = vec4(rgb, clamp(g * 0.2 * I, 0.0, 1.0));
+		fragColor = vec4(rgb, clamp(g * 0.12 * I, 0.0, 1.0));
 	} else {
 		float core = exp(-x * x * 26.0);
 		float halo = exp(-x * x * 3.2);
