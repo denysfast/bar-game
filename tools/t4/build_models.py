@@ -2,20 +2,31 @@
 """Regenerate the custom T4 models (objects3d/Units/T4/) from their T2/T3 sources.
 Run from the repo root after changing a scale here or updating an upstream model:
 
-    python3 tools/t4/build_models.py
+    python3 tools/t4/build_models.py [<t4 unit> ...]
 
 The scale factors must match `scale` in the units/*T4*/ files (collision volumes, footprints)."""
 import os
 import subprocess
 import sys
 
-# t4 unit      source model (objects3d/Units/<src>.s3o)   scale
+# t4 unit      source model (objects3d/Units/<src>.s3o)   scale   [wreck source, default <src>_dead]
 MODELS = [
     ("armt4gant",       "armshltx",        1.5),
     ("armt4atlas",      "armbanth",        2.0),
     ("armt4olympus",    "armvang",         2.2),
     ("armt4aegis",      "armraz",          2.0),
     ("armt4zeus",       "armthor",         1.8),
+    ("armt4peewee",     "scavboss/armpwt4",    1.8),
+    ("armt4prowler",    "armprowl",        2.6, "armmar_dead"),
+    ("armt4ratte",      "scavboss/armrattet4", 1.5),
+    ("armt4recluse",    "scavboss/armsptkt4",  1.6),
+    ("armt4starlight",  "armmanni",        2.4),
+    ("armt4hive",       "armdronecarryland", 1.5, "armdronecarry_dead"),
+    # summons of the Armada heroes (no wrecks)
+    ("armt4aegis_drone",        "armdrone",    1.6, None),
+    ("armt4hive_drone",         "armdrone",    1.8, None),
+    ("armt4hive_guardian",      "armdroneold", 2.5, None),
+    ("armt4recluse_spiderling", "armspid",     1.4, None),
     ("cort4gant",       "corgant",         1.5),
     ("cort4colossus",   "corkorg",         1.8),
     ("cort4bastion",    "corjugg",         1.6),
@@ -48,9 +59,16 @@ here = os.path.dirname(os.path.abspath(__file__))
 src_dir = "objects3d/Units"
 dst_dir = "objects3d/Units/T4"
 os.makedirs(dst_dir, exist_ok=True)
-for name, src, k in MODELS:
-    for suffix in ("", "_dead"):
-        s = f"{src_dir}/{src}{suffix}.s3o"
+only = set(sys.argv[1:])  # optional: build only these t4 units
+for entry in MODELS:
+    name, src, k = entry[:3]
+    if only and name not in only:
+        continue
+    dead = entry[3] if len(entry) > 3 else src + "_dead"
+    for suffix, model in (("", src), ("_dead", dead)):
+        if model is None:
+            continue
+        s = f"{src_dir}/{model}.s3o"
         if not os.path.exists(s):
             if suffix:
                 continue

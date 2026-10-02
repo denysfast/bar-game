@@ -6,6 +6,10 @@
       downscaled with a dark rounded frame so every icon of the set looks alike.
   art.py edit <out.png> <reference.png> "<instruction>" [--size 256] [--seed N]
       Qwen-Image-2.1 edit (content-controller platform home, image.qwen21.edit) of a real render.
+  art.py ref <out.png> <reference.png> "<prompt>" [--size 256] [--seed N]
+      Krea 2 Identity Edit through content-master (reference_to_image, content-controller/still.identity):
+      the same machine as in the render, restaged by the prompt. Used for the v19 Armada portraits
+      (peewee, prowler, ratte, recluse, starlight, hive) when the content-controller key was refused.
 
 Keys are never in the repo: CM_KEY_FILE (content-master owner key, knowledge-guardian
 `content-master-owner-api-key-cpu-b`) and CC_KEY_FILE (content-controller tools key,
@@ -147,6 +151,27 @@ def collect(a, h, tid):
     print(a.out)
 
 
+def ref(a):
+    import base64
+    k = key("CM_KEY_FILE")
+    h = {"Authorization": f"Bearer {k}"}
+    asset = http("POST", f"{CM}/v1/assets", h, {"base64": base64.b64encode(open(a.ref, "rb").read()).decode(),
+                                                 "mime": "image/png", "name": os.path.basename(a.ref)})
+    job = http("POST", f"{CM}/v1/jobs", h, {
+        "operation": "reference_to_image", "model": "content-controller/still.identity",
+        "input": {"prompt": a.prompt, "references": [{"asset": asset["id"]}]}, "params": {"seed": a.seed or 11, "size": 768},
+    })
+    for _ in range(400):
+        j = http("GET", f"{CM}/v1/jobs/{job['id']}", h)
+        if j["status"] in ("succeeded", "failed", "canceled"):
+            break
+        time.sleep(3)
+    if j["status"] != "succeeded":
+        sys.exit(f"{a.out}: {j['status']} {j.get('error')}")
+    frame(http("GET", j["artifacts"][0]["url"], h, raw=True), a.out, a.size, rounded=False)
+    print(a.out)
+
+
 p = argparse.ArgumentParser()
 sub = p.add_subparsers(dest="cmd", required=True)
 i = sub.add_parser("icon"); i.add_argument("out"); i.add_argument("subject")
@@ -154,5 +179,7 @@ i.add_argument("--size", type=int, default=128); i.add_argument("--seed", type=i
 e = sub.add_parser("edit"); e.add_argument("out"); e.add_argument("ref"); e.add_argument("instruction")
 e.add_argument("--size", type=int, default=256); e.add_argument("--seed", type=int); e.add_argument("--steps", type=int, default=40)
 e.add_argument("--wait", type=int, default=3600); e.add_argument("--task", help="collect an already submitted task")
+r = sub.add_parser("ref"); r.add_argument("out"); r.add_argument("ref"); r.add_argument("prompt")
+r.add_argument("--size", type=int, default=256); r.add_argument("--seed", type=int)
 a = p.parse_args()
-icon(a) if a.cmd == "icon" else edit(a)
+{"icon": icon, "edit": edit, "ref": ref}[a.cmd](a)
