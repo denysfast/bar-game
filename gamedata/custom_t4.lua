@@ -215,9 +215,10 @@ local function heroConfig()
 end
 
 -- v17: every T4 hero costs the same and is sized by its role (the cheap ones were paper, the expensive ones
--- tanks). T4.hero applies it before the visual step copies are made: cost, health, speed, and one damage
--- multiplier over its real weapons so their sustained DPS (damage x salvo x projectiles / reload; not
--- paralyzers, aiming dummies or melee kicks under 150 range) meets the target. Level 1 values.
+-- tanks). T4.hero applies it first: cost, health, speed, and one damage
+-- multiplier over its real weapons so their army DPS (damage x salvo x projectiles / reload x T4.armyFactor of the
+-- blast; not paralyzers, aiming dummies or melee kicks under 150 range) meets `dps`. Level 1 values. v19: the
+-- single-target DPS of a splash hero is lower than `dps` (Olympus ~2000, Starfall ~3200, Armageddon ~5100).
 T4.HERO_COST = { metal = 100000, energy = 2000000, buildtime = 2500000 }
 T4.heroBalance = {
 	--                  health     dps      speed (elmos/s)
@@ -235,19 +236,31 @@ T4.heroBalance = {
 	legt4starfall   = { hp = 220000, dps = 6500, speed = 26 },  -- back: orbital artillery ~7000
 }
 
--- sustained DPS of a unitdef's real weapons, and the weapondefs that count
+-- v19 (dmgfix): a blast hits more units the bigger it is - against an army a 480-radius shell did 10.9x its shown
+-- single-target DPS, a 130 one ~1x. The balance counts every weapon at its "army DPS": its DPS x
+-- max(1, aoe / AOE_REF) ^ AOE_EXP, so the long-range splash heroes come out ~2-4x lower than v18 (Olympus /4,
+-- Starfall /2, Armageddon /1.8) and their army damage is comparable to the front heroes'.
+T4.AOE_REF = 150
+T4.AOE_EXP = 1.2
+function T4.armyFactor(wd)
+	return math.max(1, (wd.areaofeffect or 0) / T4.AOE_REF) ^ T4.AOE_EXP
+end
+
+-- sustained DPS of a unitdef's real weapons, the weapondefs that count, and the army DPS (blast-weighted)
 function T4.weaponDps(ud, alt)
-	local total, counted = 0, {}
+	local total, counted, army = 0, {}, 0
 	for _, w in ipairs(ud.weapons or {}) do
 		local key = w.def and string.lower(w.def)
 		local wd = key and ud.weapondefs and ud.weapondefs[key]
 		local dmg = wd and wd.damage and wd.damage.default or 0
 		if wd and not (alt and alt[key]) and wd.weapontype ~= "Shield" and not wd.paralyzer and (wd.range or 0) >= 150 and dmg > 1 then
-			total = total + dmg * (wd.burst or 1) * (wd.projectiles or 1) / math.max(0.03, wd.reloadtime or 1)
+			local dps = dmg * (wd.burst or 1) * (wd.projectiles or 1) / math.max(0.03, wd.reloadtime or 1)
+			total = total + dps
+			army = army + dps * T4.armyFactor(wd)
 			counted[key] = wd
 		end
 	end
-	return total, counted
+	return total, counted, army
 end
 
 local function balanceHero(ud)
@@ -272,9 +285,9 @@ local function balanceHero(ud)
 			fd.metal = math.floor(c.metal * (fname == "dead" and 0.55 or 0.22))
 		end
 	end
-	local dps, counted = T4.weaponDps(ud, b.alt)
-	if dps > 0 then
-		local k = b.dps / dps
+	local _, counted, army = T4.weaponDps(ud, b.alt)
+	if army > 0 then
+		local k = b.dps / army -- the target is the army DPS (blast-weighted), see T4.armyFactor
 		-- the other arc of the same gun (b.alt) shoots with the same damage
 		for key in pairs(b.alt or {}) do
 			counted[key] = ud.weapondefs[key]
@@ -301,63 +314,57 @@ function T4.hero(ud, fx, extraWeapons)
 			ud.sfxtypes.explosiongenerators[i] = FX.ref(ref, fx)
 		end
 	end
-	-- v15 visual steps: every weapon of the hero's weapon trees gets <key>_s1.._s8 copies, each a little bigger
-	-- (x(1 + H.STEP_GROWTH * step), up to x2): thicker beams, bigger shells, scaled flashes/trails/blasts. The
-	-- hero gadget swaps a shot to the step its tree's rank sum has reached (H.weaponSteps). Only the keys named
-	-- in the hero's `weapons` get copies (each copy is a weapondef); flamethrowers and shields none.
+	-- v19: no visual step copies any more (the per-weapon trees are gone; the engine damage of a hero weapon is its
+	-- base, the hero gadget applies ONE multiplier in UnitPreDamaged). The hero config (luarules/configs/heroes/*.lua)
+	-- may add weapondefs (`weaponDefs`, spawned by the ability modules) and copies of its weapons (`weaponCopies`,
+	-- swapped in by api.swapWeapons: a beam / lightning copy only draws - the engine dealt the shot's damage when it
+	-- fired; a projectile copy keeps the damage of the weapon it copies).
 	local H = heroConfig()
 	local name = ud.objectname and ud.objectname:match("([^/]+)%.s3o$")
 	local cfg = H and name and H.heroes[name]
-	local wanted
-	if cfg and cfg.weapons then
-		wanted = {}
-		for _, w in ipairs(cfg.weapons) do
-			for _, k in ipairs(w.keys or {}) do
-				wanted[k] = true
+	if cfg and cfg.weaponCopies then
+		local copies = {}
+		for suffix, c in pairs(cfg.weaponCopies) do
+			for _, key in ipairs(c.keys or {}) do
+				local wd = ud.weapondefs and ud.weapondefs[key]
+				-- never a starburst (a respawned one never turns to its target) nor an unguided rocket with a trajectory
+				-- height (a respawned one loses its target)
+				if wd and wd.weapontype ~= "StarburstLauncher" and not (wd.weapontype == "MissileLauncher" and (wd.trajectoryheight or 0) > 0) then
+					local w = deepcopy(wd)
+					w.name = (wd.name or key) .. " (" .. suffix .. ")"
+					for field, v in pairs(c.set or {}) do
+						w[field] = deepcopy(v)
+					end
+					if w.weapontype == "BeamLaser" or w.weapontype == "LightningCannon" then
+						w.damage = { default = 0 }
+						w.beamtime = w.beamtime or 0.1
+					end
+					w.collidefriendly = false
+					w.avoidfriendly = false
+					w.customparams = w.customparams or {}
+					w.customparams.t4_hero_weapon = 1
+					w.customparams.t4_copy_of = key
+					w.customparams.t4_copy = suffix
+					w.customparams.spark_forkdamage = nil -- the lightning splash gadget would add its sparks twice
+					copies[key .. "_" .. suffix] = w
+				end
 			end
 		end
-	end
-	local steps = H and #H.weaponSteps or 8
-	local growth = H and H.STEP_GROWTH or 0.125
-	local tiers = {}
-	-- no copies of starburst weapons: a starburst made by SpawnProjectile never turns to its target, climbs
-	-- forever, and its smoke trail left the map -> a dangling pointer that crashed every savegame (v15.1)
-	for key, wd in pairs(ud.weapondefs or {}) do
-		local wt = wd.weapontype
-		local dmg = wd.damage and (wd.damage.default or wd.damage.vtol) or 0
-		if (not wanted or wanted[key]) and wt ~= "Shield" and wt ~= "Flame" and wt ~= "StarburstLauncher" and (wd.range or 0) > 0 and dmg > 0 then
-			for step = 1, steps do
-				local m = 1 + growth * step
-				local c = deepcopy(wd)
-				c.name = (wd.name or key) .. " (+" .. step .. ")"
-				mulField(c, "size", m)
-				mulField(c, "thickness", m)
-				mulField(c, "laserflaresize", m)
-				mulField(c, "sizedecay", 1 / m)
-				mulField(c, "intensity", math.min(1.5, m ^ 0.5))
-				if c.explosiongenerator then
-					c.explosiongenerator = FX.ref(c.explosiongenerator, fx * m)
-				end
-				if c.cegtag then
-					c.cegtag = FX.ref(c.cegtag, fx * m)
-				end
-				if wt == "BeamLaser" or wt == "LightningCannon" then
-					-- the engine deals a beam's damage when it fires: the copy only draws it
-					c.damage = { default = 0 }
-					c.beamtime = c.beamtime or 0.1
-				end
-				c.collidefriendly = false
-				c.avoidfriendly = false
-				c.customparams = c.customparams or {}
-				c.customparams.t4_hero_weapon = 1
-				c.customparams.t4_step = step
-				c.customparams.t4_tier_of = key
-				tiers[key .. "_s" .. step] = c
-			end
+		for key, w in pairs(copies) do
+			ud.weapondefs[key] = w
 		end
 	end
-	for key, wd in pairs(tiers) do
-		ud.weapondefs[key] = wd
+	if cfg and type(cfg.weaponDefs) == "function" then
+		local ok, defs = pcall(cfg.weaponDefs, T4, ud)
+		if ok and type(defs) == "table" then
+			for key, wd in pairs(defs) do
+				wd.customparams = wd.customparams or {}
+				wd.customparams.t4_hero_weapon = 1
+				ud.weapondefs[key] = wd
+			end
+		elseif not ok and Spring and Spring.Echo then
+			Spring.Echo("[custom_t4] " .. tostring(name) .. ": weaponDefs failed: " .. tostring(defs))
+		end
 	end
 	-- the ability kit's projectiles every hero shares (gamedata/custom_t4_abilities.lua)
 	for key, wd in pairs(VFS.Include("gamedata/custom_t4_abilities.lua")(T4)) do
