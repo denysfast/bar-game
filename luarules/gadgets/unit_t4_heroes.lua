@@ -974,6 +974,23 @@ if gadgetHandler:IsSyncedCode() then
 
 		-- the AI's next hero at an altar (unit rules param hero_next, read by the BARb factory script): a dead hero first
 		-- (revive), else the heaviest aiPick that fits a free slot, "" when none (or the altar researches)
+		-- v19-ai2 (AI agent): each AI team rolls its own hero order once (weighted random by aiPick, Efraimidis-Spirakis
+		-- keys), so the AI rotates through all ten heroes of its faction across games instead of always the heaviest
+		local aiRoll = {} -- teamID -> hero name -> key
+		local function aiPickKey(teamID, d)
+			local t = aiRoll[teamID]
+			if not t then
+				t = {}
+				aiRoll[teamID] = t
+			end
+			local k = t[d.name]
+			if not k then
+				k = random() ^ (1 / max(0.1, d.cfg.aiPick or 1))
+				t[d.name] = k
+			end
+			return k
+		end
+
 		local function aiNextHero(teamID, altarID)
 			if research[teamID] then
 				return ""
@@ -988,7 +1005,7 @@ if gadgetHandler:IsSyncedCode() then
 				if d and not queued[d.name] then
 					local ok, why = canStartHero(teamID, d.name, queued)
 					if ok then
-						local w = why == "revive" and 1000 or (d.cfg.aiPick or 1) + random() * 0.01
+						local w = why == "revive" and 1000 or aiPickKey(teamID, d) -- v19-ai2: was (d.cfg.aiPick or 1) + random() * 0.01
 						if not bestW or w > bestW then
 							best, bestW = d.name, w
 						end

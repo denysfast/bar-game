@@ -49,7 +49,7 @@
 		"fac_t4": {                        // custom T4 foundry, 18x18 (gantry x1.5), titans up to footprint 11
 			"type": ["rectangle", "factory"],
 			"offset": [0, 9],
-			"yard": [22, 44],
+			"yard": [8, 20],  // v19: was [22, 44] - an 18x18 foundry plus that yard found no site near a grown base (altars came after minute 25)
 			"ignore": ["none"]
 		},
 		"solar": {
