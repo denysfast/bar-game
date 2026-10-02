@@ -703,9 +703,14 @@ if gadgetHandler:IsSyncedCode() then
 			if proj ~= w.projectiles then
 				spSetUnitWeaponState(unitID, n, "projectiles", proj)
 			end
-			local aoe = w.aoe * (1 + m.splash)
-			if t.splash > 0 then
-				aoe = aoe + ((b.aoe or 0) > 0 and t.splash * w.aoe / b.aoe or t.splash)
+			-- v19 dmgfix: a splash bonus grows the blast AREA by its share, not the radius. The radius share
+			-- squared the number of units a shell hits in an army: 10 splash ranks (+120% radius) = x4.84 area,
+			-- and the long-range heroes are the ones with the big base blasts (bench: Olympus vs a blob 47x its
+			-- shown DPS at level 60, 11x at level 1). Now +120% = x2.2 area (x1.48 radius).
+			local splashFrac = m.splash + ((t.splash > 0 and (b.aoe or 0) > 0) and t.splash / b.aoe or 0)
+			local aoe = w.aoe * sqrt(max(0.2, 1 + splashFrac))
+			if t.splash > 0 and (b.aoe or 0) <= 0 then
+				aoe = aoe + t.splash -- no base blast: the small absolute amount as before
 			end
 			if aoe ~= w.aoe and spSetUnitWeaponDamages then
 				spSetUnitWeaponDamages(unitID, n, "damageAreaOfEffect", aoe)
@@ -1433,12 +1438,35 @@ if gadgetHandler:IsSyncedCode() then
 
 	-- v15 weapon tree effects of one hit: amounts collected per victim, dealt every 6 frames (weaponEffects).
 	-- A paralyzer weapon (EMP) arcs, blasts and pierces paralysis.
-	local function weaponHit(h, attackerID, unitID, weaponDefID, damage, para)
+	-- v19 dmgfix: pierce / arc / blast are per SHOT (as the tracks say), not per victim. A splash shell or a rail
+	-- that passes through hits many units in one shot, and every victim used to start its own pierce line / arc /
+	-- blast - quadratic in a blob (bench, level 60 vs a 9x9 grid: Longinus extras 4.8x its direct damage,
+	-- Starfall +60%, Olympus +16%). Now only the victim that took the most damage of a projectile starts them;
+	-- burn and paralysis stay per victim (they are a share of that victim's own damage, linear).
+	local shotBest = {} -- projectileID -> { h, attackerID, unitID, weaponDefID, damage, para } until weaponEffects
+	local weaponHitShot
+
+	local function weaponHit(h, attackerID, unitID, weaponDefID, damage, para, projectileID)
 		local fx = h.wfx and h.wfx[tierBase[weaponDefID] or weaponDefID]
 		if not fx or (para and not fx.para) then
 			return
 		end
-		if fx.pierce > 0 then
+		if projectileID and projectileID >= 0 and (fx.pierce > 0 or fx.chain > 0 or fx.blast > 0) then
+			local s = shotBest[projectileID]
+			if not s then
+				shotBest[projectileID] = { h, attackerID, unitID, weaponDefID, damage, para }
+			elseif damage > s[5] then
+				s[1], s[2], s[3], s[4], s[5], s[6] = h, attackerID, unitID, weaponDefID, damage, para
+			end
+			weaponHitShot(h, attackerID, unitID, fx, damage, para, false, true) -- burn, paralysis, perk effects now
+			return
+		end
+		weaponHitShot(h, attackerID, unitID, fx, damage, para, true, true) -- no projectile: everything per hit, as before
+	end
+
+	-- `shot`: the per-shot part (pierce / arc / blast), `victim`: the per-victim part (burn, paralysis, perk effects)
+	function weaponHitShot(h, attackerID, unitID, fx, damage, para, shot, victim)
+		if shot and fx.pierce > 0 then
 			local key = attackerID .. ":" .. unitID
 			local p = pierceHits[key]
 			if not p then
@@ -1455,7 +1483,7 @@ if gadgetHandler:IsSyncedCode() then
 				p.dmg = p.dmg + damage * fx.pierce
 			end
 		end
-		if fx.burn > 0 and not para then
+		if victim and fx.burn > 0 and not para then
 			local b = burning[unitID]
 			if not b then
 				b = { owner = attackerID, pool = 0 }
@@ -1463,7 +1491,7 @@ if gadgetHandler:IsSyncedCode() then
 			end
 			b.pool = b.pool + damage * fx.burn
 		end
-		if fx.discharge > 0 then
+		if victim and fx.discharge > 0 then
 			local d = discharge[unitID]
 			if not d then
 				d = { owner = attackerID, dmg = 0 }
@@ -1471,7 +1499,7 @@ if gadgetHandler:IsSyncedCode() then
 			end
 			d.dmg = d.dmg + damage * fx.discharge
 		end
-		if fx.chain > 0 then
+		if shot and fx.chain > 0 then
 			local c = chainHits[unitID]
 			if not c then
 				c = { owner = attackerID, dmg = 0, jumps = fx.chainJumps, radius = fx.chainRadius, para = para }
@@ -1479,7 +1507,7 @@ if gadgetHandler:IsSyncedCode() then
 			end
 			c.dmg = c.dmg + damage * fx.chain
 		end
-		if fx.blast > 0 then
+		if shot and fx.blast > 0 then
 			local b = blastHits[unitID]
 			if not b then
 				b = { owner = attackerID, dmg = 0, radius = fx.blastRadius, para = para, big = fx.step >= 5 }
@@ -1488,7 +1516,7 @@ if gadgetHandler:IsSyncedCode() then
 			b.dmg = b.dmg + damage * fx.blast
 		end
 		-- perk hit effects, at most one set per victim every half second
-		if #fx.perkFx > 0 then
+		if victim and #fx.perkFx > 0 then
 			local f = frameNow()
 			if f - (perkFxAt[unitID] or -100) >= 15 then
 				perkFxAt[unitID] = f
@@ -1536,7 +1564,7 @@ if gadgetHandler:IsSyncedCode() then
 			return
 		end
 		if paralyzer then
-			weaponHit(h, attackerID, unitID, weaponDefID, damage, true)
+			weaponHit(h, attackerID, unitID, weaponDefID, damage, true, projectileID)
 			return
 		end
 		abilityOnHit(attackerID, h, unitID) -- procs of the abilities, a hit ends a cloak
@@ -1548,12 +1576,20 @@ if gadgetHandler:IsSyncedCode() then
 			end
 		end
 		itemOnHit(attackerID, h, unitID) -- items: procs
-		weaponHit(h, attackerID, unitID, weaponDefID, damage, false)
+		weaponHit(h, attackerID, unitID, weaponDefID, damage, false, projectileID)
 	end
 
 	local lightningArc = { pos = { 0, 0, 0 }, ["end"] = { 0, 0, 0 }, ttl = 3, owner = -1, team = -1 }
 
 	local function weaponEffects(f)
+		-- v19 dmgfix: the per-shot effects of every projectile, from its most damaged victim
+		for pid, s in pairs(shotBest) do
+			shotBest[pid] = nil
+			local h, fx = s[1], s[1].wfx and s[1].wfx[tierBase[s[4]] or s[4]]
+			if fx and spValidUnitID(s[3]) then
+				weaponHitShot(h, s[2], s[3], fx, s[5], s[6], true, false)
+			end
+		end
 		for key, p in pairs(pierceHits) do
 			pierceHits[key] = nil
 			local vx, vy, vz = spGetUnitPosition(p.victim)
@@ -4711,6 +4747,14 @@ if gadgetHandler:IsSyncedCode() then
 			itemPassives(f)
 			aiEquip(f)
 			for unitID, h in pairs(heroes) do
+				-- v19 dmgfix: heroes keep no ENGINE experience. modrules.experience (reloadScale 1.25, healthScale
+				-- 2.5) made a veteran hero fire up to 2.25x faster and gain up to 3.5x max HP, unseen by hero_dps and
+				-- the levels (bench, Olympus level 30: engine xp 1 -> 1.60x its shown DPS, 3 -> 2.00x, 10 -> 2.13x).
+				-- Hero levels are the only growth; the engine xp builds with damage dealt, so the long-range heroes
+				-- (xpRate 0.25 / 0.15: 4-7x the damage per hero level) carried the most of it.
+				if (Spring.GetUnitExperience(unitID) or 0) > 0 then
+					Spring.SetUnitExperience(unitID, 0)
+				end
 				if isAITeam[h.team] then
 					aiHero(unitID, h, f)
 				end

@@ -159,7 +159,9 @@ H.weaponKinds = {
 	} },
 	rockets = { label = "Rocket Salvo", tracks = { "damage", "salvo", "splash" }, track = {
 		damage = t("Warheads", "damage", 0.06, { unit = "damage per rocket" }),
-		salvo = t("Extra Tubes", "salvo", 0.12),
+		-- v19 dmgfix: 0.06 (was 0.12: +5 of Armageddon's 40 rockets a rank, x2.25 DPS at 10 ranks - twice the
+		-- damage track; its shown DPS at level 60 was 9.9x level 1, the other heroes 4.4x)
+		salvo = t("Extra Tubes", "salvo", 0.06),
 		splash = t("Fragmentation", "splash", 0.12),
 		reload = t("Rack Reloader", "reload", 0.05),
 	}, perks = {
