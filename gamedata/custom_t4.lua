@@ -235,6 +235,21 @@ T4.heroBalance = {
 	cort4armageddon = { hp = 200000, dps = 9000, speed = 36 },  -- back: rocket artillery 2700+
 	legt4starfall   = { hp = 220000, dps = 6500, speed = 26 },  -- back: orbital artillery ~7000
 }
+-- Armada (v19, doc/v19-heroes/roster_arm.md; content-arm owns these rows)
+for name, b in pairs({
+	armt4zeus      = { hp = 420000, dps = 9500, speed = 38 },  -- front: Thor, chain lightning vs packs (EMP not counted)
+	armt4atlas     = { hp = 480000, dps = 10000, speed = 34 }, -- front: Atlas, anchor, anti-big
+	armt4peewee    = { hp = 360000, dps = 12000, speed = 58 }, -- front: Peewee Prime, brawler, army leader
+	armt4aegis     = { hp = 260000, dps = 10000, speed = 72 }, -- center: Razor, assassin (plus its absorb shell)
+	armt4prowler   = { hp = 330000, dps = 11000, speed = 52 }, -- center: Prowler, amphibious hunter
+	armt4ratte     = { hp = 500000, dps = 9000, speed = 24 },  -- center: Ratte, siege landship
+	armt4recluse   = { hp = 300000, dps = 9000, speed = 40 },  -- center: Recluse, zone control, all-terrain
+	armt4olympus   = { hp = 220000, dps = 8000, speed = 30, alt = { shocker_high = true } }, -- back: artillery 3300+
+	armt4starlight = { hp = 240000, dps = 8500, speed = 40 },  -- back: Starlight, tachyon sniper 2090
+	armt4hive      = { hp = 280000, dps = 3000, speed = 34 },  -- back: Hive Mother, own laser only (drones: a1)
+}) do
+	T4.heroBalance[name] = b
+end
 
 -- v19 (dmgfix): a blast hits more units the bigger it is - against an army a 480-radius shell did 10.9x its shown
 -- single-target DPS, a 130 one ~1x. The balance counts every weapon at its "army DPS": its DPS x
