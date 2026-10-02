@@ -88,7 +88,9 @@ end
 --   dying(api, unitID, h) -> true                keep it alive (UnitPreDamaged, lethal damage): the module heals it
 --                                                or calls api.downed
 --   destroyed(api, unitID, h)
---   projectile(api, unitID, h, proID, weaponDefID)   one of its projectiles was created (after a swap)
+--   projectile(api, unitID, h, proID, weaponDefID, originalWeaponDefID)   one of its projectiles was created
+--                                                (after a swap: the copy's weaponDefID, the swapped-out one last)
+--   summonHit(api, unitID, h, summonID, victimID, victimDefID, damage, weaponDefID) -> damage   a summon of the hero hit
 --   impact(api, unitID, h, weaponDefID, x, y, z, projectileID)   one of its weapons / extra weapondefs exploded
 --   fired(api, unitID, h, weaponNum)             a weapon fired (once per shot / salvo; reload start)
 --   victimDestroyed(api, unitID, h, victimID, victimDefID)   it killed a unit
@@ -106,7 +108,7 @@ end
 --   heal(uid, hp) -> healed (effective HP for heroes)
 --   enemiesIn(x, z, r, ally), alliesIn(x, z, r, ally), nearestEnemies(x, z, r, ally, n) -> sorted by distance
 --   buff(unitID, h, id, seconds | nil, mods), unbuff(unitID, h, id)   mods: damage, reload, speed, turn, range, armor,
---       regen (HP/s), immobile, cloak (engine cloak when the unitdef can cloak), hidden, unstoppable, reflect, scale,
+--       (reload may be { [weaponKey | weaponNum] = frac } for single weapons), regen (HP/s), immobile, cloak (engine cloak when the unitdef can cloak), hidden, unstoppable, reflect (half vs heroes), scale,
 --       turretTurn (calls the COB function SetTurretTurnMult(x1000) when the script has it - no stock script does)
 --   setScale(unitID, s)                          model scale: unit rules param hero_scale + GG.HeroFX.scale(unitID, s)
 --                                                (Recoil cannot scale a COB unit's model at runtime; the fx draws it)
@@ -116,7 +118,8 @@ end
 --       the engine damage counts as a hero weapon hit. Beams / lightning hit at once. Never a starburst.
 --   swapWeapons(unitID, h, suffix | nil)         projectiles drawn with the <key>_<suffix> copies (config weaponCopies)
 --   summon(unitID, h, unitName, count, opts) -> ids   opts {expire, leash, guard = heroID (attack the hero's target,
---       stay in leash), spread, cap, respawn = {max, every}, build = seconds (still and stunned under a print effect), credit (default true: damage
+--       stay in leash), spread, cap, respawn = {max, every} (+ group = id: a later call with the same id resizes it;
+--       api.summonGroupSize(heroID, id, n)), build = seconds (still and stunned under a print effect), credit (default true: damage
 --       counts as the hero's: XP, damage type), scaleWithLevel (HP / damage x ability power), persist (outlive the hero)}
 --   order(uids, cmd, params, opts)
 --   cooldown(unitID, h, key, seconds), ready(h, key), active(unitID, key, seconds), K.toggleOff(unitID, h, key)
@@ -128,14 +131,14 @@ end
 --       (emulated: the whole unit turns in place, MoveCtrl; the module deals the beam damage in onStep)
 --   downed(unitID, h, seconds, onRise)           invulnerable, untargetable, still, weapons off, slumped
 --   mark(uid, id, seconds, opts) / marks(uid, id) -> stacks   opts {stacks = 1, max, vuln (damage taken + per stack,
---       every attacker), from = heroID, slow, root, reveal}
+--       every attacker), from = heroID, slow, root, reveal, noDash (no dash / leap / blink / push for it)}
 --   slow(uid, frac, seconds) (heroes half)   unitBuff(uid, id, seconds, {speed, damage, armor, regen, cloak})
 --   taunt(victimID, byUnitID, seconds) (heroes half)   forceTarget(unitID, targetID, seconds)
 --   target(unitID) -> targetID | nil, x, y, z   reloadNow(unitID, weaponNum | key)   piecePos(unitID, pieceName)
 --   weaponNum(h, key), disableWeapon(unitID, h, key, off)
 --   consume(uid, opts) -> info   destroy a unit without wreck / explosion; opts.credit = heroID gives the kill (XP);
 --       commanders, altars and heroes are refused
---   reveal(x, z, r, seconds, ally)   intercept(x, z, r, ally, maxCount) -> n   shieldDrain(uid) -> drained
+--   reveal(x, z, r, seconds, ally)  (ground LOS through an invisible legt4skyeye sensor unit + units decloaked)   intercept(x, z, r, ally, maxCount) -> n   shieldDrain(uid) -> drained
 --   cast(unitID, h, kitAbility, rank, tx, tz, targetID)   any generic kit ability, no cooldown
 --   also: seenBy(uid, ally), caster(unitID, h, key), blast(caster, x, z, r, dmg, stun, emp, dtype),
 --   bestCluster(x, z, range, radius, ally) -> metal, x, z, mostValuableEnemy(x, z, range, ally) -> uid, metal,
@@ -297,7 +300,9 @@ if gadgetHandler:IsSyncedCode() then
 			-- the behaviour module (luarules/heroes/<name>.lua)
 			local path = H.modulePath(ud.name)
 			if path and VFS.FileExists(path) then
-				local ok, mod = pcall(VFS.Include, path, nil, VFS.ZIP_FIRST)
+				-- the module runs in its own environment over the gadget's (GG, Spring, UnitDefs ... visible; its globals stay its own)
+				local env = setmetatable({}, { __index = getfenv(1) })
+				local ok, mod = pcall(VFS.Include, path, env, VFS.ZIP_FIRST)
 				if ok and type(mod) == "table" then
 					def.mod = mod
 				else
@@ -349,6 +354,7 @@ if gadgetHandler:IsSyncedCode() then
 	local consumed = {}    -- unitID -> { credit = heroID | nil } (api.consume)
 	local marks = {}       -- unitID -> id -> { stacks, expire, vuln, from, slow, root, reveal, max }
 	local ctl = {} -- control state (api: slows, unit buffs, taunts, forced targets, reveals)
+	ctl.eyes = {}      -- unitID of a sensor unit (api.reveal) -> frame it goes
 	ctl.timedSlow = {}   -- unitID -> { frac, expire }
 	ctl.unitBuffs = {}   -- unitID (non-hero) -> id -> { expire, mods }
 	local ub = { damage = {}, armor = {}, speed = {}, regen = {}, cloak = {} } -- merged unit buffs per unitID
@@ -461,6 +467,20 @@ if gadgetHandler:IsSyncedCode() then
 	---------------------------------------------------------------- hooks: modules and items
 
 	local hookErrors = {}
+	-- FX owner context (fx_t4_heroes.lua: effects made inside are "team" visible for the owner's allies)
+	local function fxOwner(o)
+		local F = GG.HeroFX
+		if F and F.owner then
+			return F.owner(o)
+		end
+	end
+	-- the current owner context (to restore it later in a callback)
+	local function fxContext()
+		local cur = fxOwner(nil)
+		fxOwner(cur)
+		return cur
+	end
+
 	-- call hook `name` of a hero module (pcall: a broken content module must not take the gadget down)
 	local function modHook(h, name, ...)
 		local mod = h.def.mod
@@ -468,7 +488,9 @@ if gadgetHandler:IsSyncedCode() then
 		if not fn then
 			return nil
 		end
+		local prev = fxOwner(h.unitID)
 		local ok, a, b, c, d = pcall(fn, ...)
+		fxOwner(prev)
 		if not ok then
 			local k = h.def.name .. "." .. name
 			hookErrors[k] = (hookErrors[k] or 0) + 1
@@ -712,7 +734,8 @@ if gadgetHandler:IsSyncedCode() then
 					h.offState = h.offState or {}
 					h.offState[n] = true
 				else
-					local reload = w.reload / rate
+					local rw = bf.reloadW
+					local reload = w.reload / (rw and max(0.2, rate + (rw[w.key] or rw[n] or 0)) or rate)
 					if h.offState and h.offState[n] then
 						h.offState[n] = nil
 						Spring.SetUnitWeaponState(unitID, n, "reloadState", f + floor(reload * GAME_SPEED))
@@ -1506,9 +1529,23 @@ if gadgetHandler:IsSyncedCode() then
 	end
 
 	---------------------------------------------------------------- damage
-	local pierceTick
+	local pierceTick, slugTick
 	do
 
+		local slugHits = {}    -- projectileID * 65536 + victimID -> frame (pass-through slugs: one hit per victim)
+		local passThrough = {} -- weaponDefID -> true: noexplode projectiles
+		for wdid, wd in pairs(WeaponDefs) do
+			if wd.noExplode then
+				passThrough[wdid] = true
+			end
+		end
+		function slugTick(f)
+			for k, fr in pairs(slugHits) do
+				if f - fr > 150 then
+					slugHits[k] = nil
+				end
+			end
+		end
 		local pierceShots = {} -- projectileID (beams: "b<owner>:<weapon>") -> { owner, ally, len, share, dmg = {uid = dmg}, best, bestDmg }
 		local inThorns = false
 
@@ -1543,7 +1580,7 @@ if gadgetHandler:IsSyncedCode() then
 		end
 
 		function gadget:UnitPreDamaged(unitID, unitDefID, unitTeam, damage, paralyzer, weaponDefID, projectileID, attackerID, attackerDefID, attackerTeam)
-			if invuln[unitID] then
+			if invuln[unitID] or ctl.eyes[unitID] then
 				return 0, 0
 			end
 			local v = heroes[unitID]
@@ -1569,6 +1606,14 @@ if gadgetHandler:IsSyncedCode() then
 			end
 			local m = (guardMult[unitID] or 1) * (1 - (auraArmor[unitID] or 0)) * (1 + vulnOf(unitID, f))
 			local a = attackerID and heroes[attackerID]
+			-- a pass-through slug (noexplode: Gauss, rails, disintegrators) hits a unit on several frames: once counts
+			if a and not ability and projectileID and projectileID >= 0 and passThrough[weaponDefID] then
+				local key = projectileID * 65536 + unitID
+				if slugHits[key] then
+					return 0, 0
+				end
+				slugHits[key] = f
+			end
 			if a and not ability then
 				-- a hero's own weapon hit: the ONE multiplier (level, Firepower, damage mods, buffs) and the item bonus of
 				-- the weapon's damage type
@@ -1600,9 +1645,16 @@ if gadgetHandler:IsSyncedCode() then
 					if s.scale then
 						m = m * s.scale
 					end
-					local oh = s.credit and heroes[s.owner]
-					if oh then
+					local oh = heroes[s.owner]
+					if oh and s.credit then
 						m = m * (1 + dtypeBonus(oh, wdType[weaponDefID]))
+					end
+					-- the owner's module sees its summons' hits (Hive: per-hit slow)
+					if oh and oh.def.mod and oh.def.mod.summonHit and damage > 0 then
+						local nd = modHook(oh, "summonHit", api, s.owner, oh, attackerID, unitID, unitDefID, damage * m, weaponDefID)
+						if type(nd) == "number" then
+							m = max(0, nd) / damage
+						end
 					end
 				end
 				if auraDamage[attackerID] then
@@ -1707,7 +1759,7 @@ if gadgetHandler:IsSyncedCode() then
 				end
 				-- thorns / reflect: part of the damage goes back to the attacker
 				local bf = victim.buff and victim.buff.fx
-				local th = (victim.mods and victim.mods.thorns or 0) + (bf and bf.reflect or 0)
+				local th = (victim.mods and victim.mods.thorns or 0) + (bf and bf.reflect or 0) * (heroes[attackerID] and 0.5 or 1)
 				if th > 0 and not paralyzer and not inThorns and attackerID and spValidUnitID(attackerID)
 					and attackerTeam and not Spring.AreTeamsAllied(attackerTeam, unitTeam) then
 					inThorns = true
@@ -1891,15 +1943,20 @@ if gadgetHandler:IsSyncedCode() then
 					Spring.SetProjectileTimeToLive(proID, math.ceil(ttl * tm))
 				end
 			end
+			local wdid = weaponDefID
 			if h.swap and not noCopy[weaponDefID] then
 				local map = h.def.copies[h.swap]
 				local to = map and map[weaponDefID]
 				if to then
-					proID = replaceProjectile(proID, ownerID, weaponDefID, to, h)
+					local newID = replaceProjectile(proID, ownerID, weaponDefID, to, h)
+					if newID ~= proID then
+						proID, wdid = newID, to
+					end
 				end
 			end
 			if proID and h.def.mod and h.def.mod.projectile then
-				modHook(h, "projectile", api, ownerID, h, proID, weaponDefID)
+				-- after a swap: the copy's weaponDefID, the original one as the extra argument
+				modHook(h, "projectile", api, ownerID, h, proID, wdid, weaponDefID)
 			end
 		end
 
@@ -2194,8 +2251,19 @@ if gadgetHandler:IsSyncedCode() then
 					expire = max(expire, e.expire)
 					nextEnd = nextEnd and min(nextEnd, e.expire) or e.expire
 					for k, v in pairs(e.fx) do
-						v = val(v, e.r)
-						if BUFF_SUM[k] and type(v) == "number" then
+						-- reload may be per weapon: { [weaponKey | weaponNum] = frac } (an api.buff table, or string keys)
+						if k == "reload" and type(v) == "table" and (e.r == nil or type(next(v)) == "string") then
+							merged.reloadW = merged.reloadW or {}
+							for wk, wv in pairs(v) do
+								merged.reloadW[wk] = (merged.reloadW[wk] or 0) + wv
+							end
+							v = nil
+						else
+							v = val(v, e.r)
+						end
+						if v == nil then
+							-- (per-weapon reload, done)
+						elseif BUFF_SUM[k] and type(v) == "number" then
 							merged[k] = (merged[k] or 0) + v
 						elseif k == "shieldRegen" or k == "scale" then
 							merged[k] = max(merged[k] or 1, v)
@@ -2686,7 +2754,7 @@ if gadgetHandler:IsSyncedCode() then
 
 		-- the kit dash: api.dash with damage along the way
 		cast.active_dash = function(unitID, h, key, b, r, tx, tz)
-			if not tx or movers[unitID] then
+			if not tx or movers[unitID] or api.pinned(unitID) then
 				return false
 			end
 			local x, y, z = heroPos(unitID)
@@ -3149,6 +3217,7 @@ if gadgetHandler:IsSyncedCode() then
 				endMover(uid, true)
 			end
 			m.start = frameNow()
+			m.ctx = m.ctx or fxContext()
 			movers[uid] = m
 			MoveCtrl.Enable(uid)
 			if m.untargetable then
@@ -3176,7 +3245,9 @@ if gadgetHandler:IsSyncedCode() then
 					applyHeroSpeed(uid, h)
 				end
 				if m.onLand and not quiet then
+					local prev = fxOwner(m.ctx)
 					local ok, err = pcall(m.onLand, x, z)
+					fxOwner(prev)
 					if not ok then
 						Spring.Echo("[t4heroes] movement onLand error: " .. tostring(err))
 					end
@@ -3186,8 +3257,16 @@ if gadgetHandler:IsSyncedCode() then
 
 		-- every frame: ctl.forced movement
 		local function moversTick(f)
+			-- a snapshot: onStep / onLand may start or end movements and kill units
+			local list = {}
 			for uid, m in pairs(movers) do
-				if not alive(uid) then
+				list[#list + 1] = uid
+			end
+			for _, uid in ipairs(list) do
+				local m = movers[uid]
+				if not m then
+					-- ended meanwhile
+				elseif not alive(uid) then
 					movers[uid] = nil
 				elseif m.step then
 					local t = (f - m.start) / max(1, m.frames)
@@ -3202,7 +3281,9 @@ if gadgetHandler:IsSyncedCode() then
 								MoveCtrl.SetRotation(uid, m.pitch or 0, yaw, m.roll or 0)
 							end
 							if m.onStep and (f - m.start) % 2 == 0 then
+								local prev = fxOwner(m.ctx)
 								local ok2, err = pcall(m.onStep, x, z)
+								fxOwner(prev)
 								if not ok2 then
 									Spring.Echo("[t4heroes] movement onStep error: " .. tostring(err))
 									m.onStep = nil
@@ -3217,7 +3298,25 @@ if gadgetHandler:IsSyncedCode() then
 			end
 		end
 
+		-- a mark with noDash (Web Field): no dash, leap, blink, push / pull / throw for that unit
+		local function pinned(uid)
+			local ms = marks[uid]
+			if ms then
+				local f = frameNow()
+				for _, mk in pairs(ms) do
+					if mk.noDash and mk.expire > f then
+						return true
+					end
+				end
+			end
+			return false
+		end
+		api.pinned = pinned
+
 		local function canDisplace(uid)
+			if pinned(uid) then
+				return false
+			end
 			local udid = spGetUnitDefID(uid)
 			if not udid or structureDefs[udid] or airDefs[udid] or foundryDefs[udid] then
 				return false
@@ -3227,6 +3326,9 @@ if gadgetHandler:IsSyncedCode() then
 
 		function api.dash(unitID, h, x, z, opts)
 			opts = opts or {}
+			if pinned(unitID) then
+				return false
+			end
 			local x0, y0, z0 = spGetUnitPosition(unitID)
 			if not x0 then
 				return false
@@ -3250,6 +3352,9 @@ if gadgetHandler:IsSyncedCode() then
 		-- blink: to the nearest pathable point around x, z (ground snap); clears orders
 		function api.blink(unitID, x, z)
 			local udid = spGetUnitDefID(unitID)
+			if pinned(unitID) then
+				return false
+			end
 			if not udid then
 				return false
 			end
@@ -3504,6 +3609,14 @@ if gadgetHandler:IsSyncedCode() then
 		end
 
 		revealTick = function(f)
+			for uid, untilF in pairs(ctl.eyes) do
+				if untilF <= f then
+					ctl.eyes[uid] = nil
+					if alive(uid) then
+						Spring.DestroyUnit(uid, false, true)
+					end
+				end
+			end
 			local keep = {}
 			for _, rv in ipairs(ctl.reveals) do
 				if rv.expire > f then
@@ -3540,9 +3653,31 @@ if gadgetHandler:IsSyncedCode() then
 			end
 		end
 
+		-- reveal: real line of sight over the area (an invisible, invulnerable sensor unit - legt4skyeye - of a team of
+		-- `ally`: ground, units, radar, air) plus the units inside forced visible and decloaked
+		local EYE = UnitDefNames.legt4skyeye
 		function api.reveal(x, z, r, seconds, ally)
-			ctl.reveals[#ctl.reveals + 1] = { x = x, z = z, r = r, expire = frameNow() + floor(seconds * GAME_SPEED), ally = ally }
-			revealTick(frameNow())
+			local f = frameNow()
+			ctl.reveals[#ctl.reveals + 1] = { x = x, z = z, r = r, expire = f + floor(seconds * GAME_SPEED), ally = ally }
+			local team = ally and Spring.GetTeamList(ally)
+			team = team and team[1]
+			if EYE and team then
+				x, z = clampX(x), clampZ(z)
+				local uid = Spring.CreateUnit(EYE.id, x, spGetGroundHeight(x, z), z, 0, team)
+				if uid then
+					Spring.SetUnitNoDraw(uid, true)
+					Spring.SetUnitNoSelect(uid, true)
+					Spring.SetUnitNoMinimap(uid, true)
+					Spring.SetUnitNeutral(uid, true)
+					Spring.SetUnitStealth(uid, true)
+					Spring.SetUnitBlocking(uid, false, false, false, false, false, false, false)
+					for _, sn in ipairs({ "los", "airLos", "radar" }) do
+						Spring.SetUnitSensorRadius(uid, sn, r)
+					end
+					ctl.eyes[uid] = f + floor(seconds * GAME_SPEED)
+				end
+			end
+			revealTick(f)
 		end
 
 		function api.mark(uid, id, seconds, opts)
@@ -3565,6 +3700,7 @@ if gadgetHandler:IsSyncedCode() then
 			mk.slow = opts.slow or mk.slow
 			mk.root = opts.root or mk.root
 			mk.reveal = opts.reveal or mk.reveal
+			mk.noDash = opts.noDash or mk.noDash
 			return mk.stacks
 		end
 
@@ -3738,9 +3874,31 @@ if gadgetHandler:IsSyncedCode() then
 			end
 			local group
 			if opts.respawn then
-				group = { owner = unitID, h = h, ud = ud, opts = opts, ids = {}, max = opts.respawn.max or count,
-					every = floor((opts.respawn.every or 10) * GAME_SPEED), nextAt = frameNow() }
-				summonGroups[#summonGroups + 1] = group
+				-- a group id (opts.group) is reused by a later call: it resizes the group (max, every, opts) instead
+				local gid = opts.group or opts.respawn.group
+				if gid then
+					for _, g in ipairs(summonGroups) do
+						if g.owner == unitID and g.id == gid then
+							group = g
+						end
+					end
+				end
+				if group then
+					group.max = opts.respawn.max or count
+					group.every = floor((opts.respawn.every or 10) * GAME_SPEED)
+					group.opts, group.ud = opts, ud
+					local n = 0
+					for uid in pairs(group.ids) do
+						if alive(uid) then
+							n = n + 1
+						end
+					end
+					count = max(0, min(count or 1, group.max - n))
+				else
+					group = { id = gid, owner = unitID, h = h, ud = ud, opts = opts, ids = {}, max = opts.respawn.max or count,
+						every = floor((opts.respawn.every or 10) * GAME_SPEED), nextAt = frameNow() }
+					summonGroups[#summonGroups + 1] = group
+				end
 			end
 			local have = 0
 			if opts.cap then
@@ -3761,6 +3919,17 @@ if gadgetHandler:IsSyncedCode() then
 				end
 			end
 			return ids
+		end
+
+		-- a respawn group's size: n (units over it are not killed, just not replaced); returns false without the group
+		function api.summonGroupSize(heroID, groupId, n)
+			for _, g in ipairs(summonGroups) do
+				if g.owner == heroID and g.id == groupId then
+					g.max = n
+					return true
+				end
+			end
+			return false
 		end
 
 		-- every frame: nanoframe summons grow; every 0.5 s: leash, guard, expiry, respawn
@@ -3881,8 +4050,11 @@ if gadgetHandler:IsSyncedCode() then
 		api.ceg = ceg
 		api.toUI = toUI
 		function api.delay(frames, fn)
+			local ctx = fxContext()
 			delayed[#delayed + 1] = { frame = frameNow() + max(1, floor(frames)), fn = function()
+				local prev = fxOwner(ctx)
 				local ok, err = pcall(fn)
+				fxOwner(prev)
 				if not ok then
 					Spring.Echo("[t4heroes] api.delay error: " .. tostring(err))
 				end
@@ -5459,6 +5631,9 @@ if gadgetHandler:IsSyncedCode() then
 			if f % 6 == 3 then
 				K.processEvents(f)
 				pierceTick(f)
+			if f % 300 == 3 then
+				slugTick(f)
+			end
 				speedTick(f)
 				marksTick(f)
 			end
