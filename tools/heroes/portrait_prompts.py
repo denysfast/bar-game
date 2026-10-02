@@ -1,6 +1,6 @@
 import sys
-VEH = set("armbull armmanni armmerl corgol correap corban cortrem legaskirmtank legaheattank legvcarry legmed armt4zeus legt4longinus".split())
-LOW = set("armspid armsptk armt4olympus legt4starfall legsrail leghrk cortermite armfido corhrk cort4armageddon cort4bastion corsumo corcan".split())
+VEH = set("cort4vesuvius cort4printer cort4cataphract armbull armmanni armmerl corgol correap corban cortrem legaskirmtank legaheattank legvcarry legmed armt4zeus legt4longinus".split())
+LOW = set("cort4deadeye cort4karganeth armspid armsptk armt4olympus legt4starfall legsrail leghrk cortermite armfido corhrk cort4armageddon cort4bastion corsumo corcan".split())
 COL = {"arm": "Armada blue", "cor": "Cortex red and orange", "leg": "Legion green and gold"}
 def prompt(u):
     kind = "vehicle" if u in VEH else "robot"

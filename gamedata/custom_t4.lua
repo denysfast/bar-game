@@ -215,39 +215,81 @@ local function heroConfig()
 end
 
 -- v17: every T4 hero costs the same and is sized by its role (the cheap ones were paper, the expensive ones
--- tanks). T4.hero applies it before the visual step copies are made: cost, health, speed, and one damage
--- multiplier over its real weapons so their sustained DPS (damage x salvo x projectiles / reload; not
--- paralyzers, aiming dummies or melee kicks under 150 range) meets the target. Level 1 values.
+-- tanks). T4.hero applies it first: cost, health, speed, and one damage
+-- multiplier over its real weapons so their army DPS (damage x salvo x projectiles / reload x T4.armyFactor of the
+-- blast; not paralyzers, aiming dummies or melee kicks under 150 range) meets `dps`. Level 1 values. v19: the
+-- single-target DPS of a splash hero is lower than `dps` (Olympus ~2000, Starfall ~3200, Armageddon ~5100).
 T4.HERO_COST = { metal = 100000, energy = 2000000, buildtime = 2500000 }
 T4.heroBalance = {
 	--                  health     dps      speed (elmos/s)
 	armt4atlas      = { hp = 420000, dps = 11000, speed = 36 }, -- front: assault anchor
 	armt4zeus       = { hp = 400000, dps = 10000, speed = 40 }, -- front: lightning + EMP (not counted)
-	cort4colossus   = { hp = 420000, dps = 11000, speed = 34 }, -- front: flagship
-	cort4bastion    = { hp = 520000, dps = 8500, speed = 28 },  -- front: walking fortress (was 1.07M HP at 13 speed)
+	cort4colossus   = { hp = 440000, dps = 13500, speed = 34 }, -- front: initiator, crowd control
+	cort4bastion    = { hp = 520000, dps = 9000, speed = 30 },  -- front: Juggernaut, killer tank that gets up again
 	cort4hellwalker = { hp = 400000, dps = 12000, speed = 50 }, -- front: flame brawler (800 range)
-	legt4tempest    = { hp = 380000, dps = 12000, speed = 58 }, -- front: melee assault (670 range)
+	legt4tempest    = { hp = 380000, dps = 14500, speed = 58 }, -- front: melee assault (670 range)
+	legt4keres      = { hp = 480000, dps = 9500, speed = 40 },  -- front: anti-swarm brawler (v19 Legion)
+	legt4mukade     = { hp = 360000, dps = 14500, speed = 52 }, -- front: burrowing assassin (v19 Legion)
 	armt4aegis      = { hp = 320000, dps = 8000, speed = 48 },  -- center: shield bearer (plus its deflector)
-	legt4helios     = { hp = 340000, dps = 11000, speed = 34 }, -- center: heat / support
-	legt4longinus   = { hp = 300000, dps = 11000, speed = 45 }, -- center: titan hunter
+	legt4helios     = { hp = 340000, dps = 10500, speed = 34 }, -- center: heat / support
+	legt4longinus   = { hp = 300000, dps = 8800, speed = 45 }, -- center: titan hunter
+	legt4charybdis  = { hp = 320000, dps = 4850, speed = 60 },  -- center: crowd control hover (v19 Legion): real ~9000, the
+	                                                             -- sweepfire heat ray counts once per 3 s (units/Legion/T4)
+	legt4apollyon   = { hp = 440000, dps = 14500, speed = 30 }, -- center: suppression / siege (v19 Legion)
 	armt4olympus    = { hp = 220000, dps = 8000, speed = 30, alt = { shocker_high = true } }, -- back: artillery 3300+ (high/low arc: one fires)
-	cort4armageddon = { hp = 200000, dps = 9000, speed = 36 },  -- back: rocket artillery 2700+
-	legt4starfall   = { hp = 220000, dps = 6500, speed = 26 },  -- back: orbital artillery ~7000
+	cort4armageddon = { hp = 220000, dps = 8000, speed = 34 },  -- back: rocket artillery 2700+
+	legt4starfall   = { hp = 220000, dps = 7800, speed = 26 },  -- back: orbital artillery ~7000
+	legt4myrmidon   = { hp = 260000, dps = 6500, speed = 32, alt = { plasma_high = true } }, -- back: hive mother (+drones; v19 Legion)
+	legt4medusa     = { hp = 230000, dps = 7500, speed = 34 },  -- back: petrify rocket artillery (v19 Legion)
+	-- v19 Cortex roster (doc/v19-heroes/roster_cor.md)
+	cort4vesuvius   = { hp = 380000, dps = 8500, speed = 34 }, -- center: twin-barrel siege tank
+	cort4printer    = { hp = 300000, dps = 9000, speed = 42 },  -- center: drone carrier (+ drones)
+	cort4commando   = { hp = 240000, dps = 6500, speed = 70 }, -- front: cloaked assassin (+ EMP, not counted)
+	cort4deadeye    = { hp = 220000, dps = 9000, speed = 30 },  -- back: sniper 1870
+	cort4karganeth  = { hp = 340000, dps = 10000, speed = 40 }, -- center: missiles + AA (vtol only, not counted)
+	cort4cataphract = { hp = 300000, dps = 10000, speed = 64, alt = { depthcharge = true } }, -- front: hover lancer
 }
+-- Armada (v19, doc/v19-heroes/roster_arm.md; content-arm owns these rows)
+for name, b in pairs({
+	armt4zeus      = { hp = 420000, dps = 9500, speed = 38 },  -- front: Thor, chain lightning vs packs (EMP not counted)
+	armt4atlas     = { hp = 480000, dps = 10000, speed = 34 }, -- front: Atlas, anchor, anti-big
+	armt4peewee    = { hp = 360000, dps = 10800, speed = 58 }, -- front: Peewee Prime, brawler, army leader
+	armt4aegis     = { hp = 260000, dps = 10000, speed = 72 }, -- center: Razor, assassin (plus its absorb shell)
+	armt4prowler   = { hp = 330000, dps = 11000, speed = 52 }, -- center: Prowler, amphibious hunter
+	armt4ratte     = { hp = 500000, dps = 9000, speed = 24 },  -- center: Ratte, siege landship
+	armt4recluse   = { hp = 300000, dps = 9000, speed = 40 },  -- center: Recluse, zone control, all-terrain
+	armt4olympus   = { hp = 220000, dps = 8000, speed = 30, alt = { shocker_high = true } }, -- back: artillery 3300+
+	armt4starlight = { hp = 240000, dps = 7500, speed = 40 },  -- back: Starlight, tachyon sniper 2090
+	armt4hive      = { hp = 280000, dps = 3000, speed = 34 },  -- back: Hive Mother, own laser only (drones: a1)
+}) do
+	T4.heroBalance[name] = b
+end
 
--- sustained DPS of a unitdef's real weapons, and the weapondefs that count
+-- v19 (dmgfix): a blast hits more units the bigger it is - against an army a 480-radius shell did 10.9x its shown
+-- single-target DPS, a 130 one ~1x. The balance counts every weapon at its "army DPS": its DPS x
+-- max(1, aoe / AOE_REF) ^ AOE_EXP, so the long-range splash heroes come out ~2-4x lower than v18 (Olympus /4,
+-- Starfall /2, Armageddon /1.8) and their army damage is comparable to the front heroes'.
+T4.AOE_REF = 150
+T4.AOE_EXP = 1.2
+function T4.armyFactor(wd)
+	return math.max(1, (wd.areaofeffect or 0) / T4.AOE_REF) ^ T4.AOE_EXP
+end
+
+-- sustained DPS of a unitdef's real weapons, the weapondefs that count, and the army DPS (blast-weighted)
 function T4.weaponDps(ud, alt)
-	local total, counted = 0, {}
+	local total, counted, army = 0, {}, 0
 	for _, w in ipairs(ud.weapons or {}) do
 		local key = w.def and string.lower(w.def)
 		local wd = key and ud.weapondefs and ud.weapondefs[key]
 		local dmg = wd and wd.damage and wd.damage.default or 0
 		if wd and not (alt and alt[key]) and wd.weapontype ~= "Shield" and not wd.paralyzer and (wd.range or 0) >= 150 and dmg > 1 then
-			total = total + dmg * (wd.burst or 1) * (wd.projectiles or 1) / math.max(0.03, wd.reloadtime or 1)
+			local dps = dmg * (wd.burst or 1) * (wd.projectiles or 1) / math.max(0.03, wd.reloadtime or 1)
+			total = total + dps
+			army = army + dps * T4.armyFactor(wd)
 			counted[key] = wd
 		end
 	end
-	return total, counted
+	return total, counted, army
 end
 
 local function balanceHero(ud)
@@ -272,9 +314,9 @@ local function balanceHero(ud)
 			fd.metal = math.floor(c.metal * (fname == "dead" and 0.55 or 0.22))
 		end
 	end
-	local dps, counted = T4.weaponDps(ud, b.alt)
-	if dps > 0 then
-		local k = b.dps / dps
+	local _, counted, army = T4.weaponDps(ud, b.alt)
+	if army > 0 then
+		local k = b.dps / army -- the target is the army DPS (blast-weighted), see T4.armyFactor
 		-- the other arc of the same gun (b.alt) shoots with the same damage
 		for key in pairs(b.alt or {}) do
 			counted[key] = ud.weapondefs[key]
@@ -293,6 +335,9 @@ function T4.hero(ud, fx, extraWeapons)
 	local cp = ud.customparams
 	cp.t4_hero = 1
 	cp.t4_fx = fx
+	-- v19: every hero takes EMP alike - half the paralysis damage (unit_paralyze_damage_multiplier.lua); api.stun lasts
+	-- half as long on heroes (the base Juggernaut was immune, Bastion no longer is)
+	cp.paralyzemultiplier = 0.5
 	for _, wd in pairs(ud.weapondefs or {}) do
 		scaleCegRefs(wd, fx)
 	end
@@ -301,63 +346,66 @@ function T4.hero(ud, fx, extraWeapons)
 			ud.sfxtypes.explosiongenerators[i] = FX.ref(ref, fx)
 		end
 	end
-	-- v15 visual steps: every weapon of the hero's weapon trees gets <key>_s1.._s8 copies, each a little bigger
-	-- (x(1 + H.STEP_GROWTH * step), up to x2): thicker beams, bigger shells, scaled flashes/trails/blasts. The
-	-- hero gadget swaps a shot to the step its tree's rank sum has reached (H.weaponSteps). Only the keys named
-	-- in the hero's `weapons` get copies (each copy is a weapondef); flamethrowers and shields none.
+	-- v19: no visual step copies any more (the per-weapon trees are gone; the engine damage of a hero weapon is its
+	-- base, the hero gadget applies ONE multiplier in UnitPreDamaged). The hero config (luarules/configs/heroes/*.lua)
+	-- may add weapondefs (`weaponDefs`, spawned by the ability modules) and copies of its weapons (`weaponCopies`,
+	-- swapped in by api.swapWeapons: a beam / lightning copy only draws - the engine dealt the shot's damage when it
+	-- fired; a projectile copy keeps the damage of the weapon it copies).
 	local H = heroConfig()
 	local name = ud.objectname and ud.objectname:match("([^/]+)%.s3o$")
 	local cfg = H and name and H.heroes[name]
-	local wanted
-	if cfg and cfg.weapons then
-		wanted = {}
-		for _, w in ipairs(cfg.weapons) do
-			for _, k in ipairs(w.keys or {}) do
-				wanted[k] = true
+	if cfg and cfg.weaponCopies then
+		local copies = {}
+		for suffix, c in pairs(cfg.weaponCopies) do
+			for _, key in ipairs(c.keys or {}) do
+				local wd = ud.weapondefs and ud.weapondefs[key]
+				-- never a starburst (a respawned one never turns to its target) nor an unguided rocket with a trajectory
+				-- height (a respawned one loses its target)
+				if wd and wd.weapontype ~= "StarburstLauncher" and not (wd.weapontype == "MissileLauncher" and (wd.trajectoryheight or 0) > 0) then
+					local w = deepcopy(wd)
+					w.name = (wd.name or key) .. " (" .. suffix .. ")"
+					for field, v in pairs(c.set or {}) do
+						w[field] = deepcopy(v)
+					end
+					if w.weapontype == "LightningCannon" and c.set and c.set.rgbcolor then
+						-- the GL4 lightning gadget (gfx_lightning_cannon_gl4.lua) reads these overrides
+						local r, g, bl = tostring(c.set.rgbcolor):match("([%d%.]+)%s+([%d%.]+)%s+([%d%.]+)")
+						w.customparams = w.customparams or {}
+						w.customparams.lightning_color_r, w.customparams.lightning_color_g, w.customparams.lightning_color_b = r, g, bl
+						w.customparams.lightning_core_color_r = "1"
+						w.customparams.lightning_core_color_g = tostring(math.min(1, (tonumber(g) or 0) + 0.35))
+						w.customparams.lightning_core_color_b = tostring(math.min(1, (tonumber(bl) or 0) + 0.25))
+					end
+					if w.weapontype == "BeamLaser" or w.weapontype == "LightningCannon" then
+						w.damage = { default = 0 }
+						w.beamtime = w.beamtime or 0.1
+					end
+					w.collidefriendly = false
+					w.avoidfriendly = false
+					w.customparams = w.customparams or {}
+					w.customparams.t4_hero_weapon = 1
+					w.customparams.t4_copy_of = key
+					w.customparams.t4_copy = suffix
+					w.customparams.spark_forkdamage = nil -- the lightning splash gadget would add its sparks twice
+					copies[key .. "_" .. suffix] = w
+				end
 			end
 		end
-	end
-	local steps = H and #H.weaponSteps or 8
-	local growth = H and H.STEP_GROWTH or 0.125
-	local tiers = {}
-	-- no copies of starburst weapons: a starburst made by SpawnProjectile never turns to its target, climbs
-	-- forever, and its smoke trail left the map -> a dangling pointer that crashed every savegame (v15.1)
-	for key, wd in pairs(ud.weapondefs or {}) do
-		local wt = wd.weapontype
-		local dmg = wd.damage and (wd.damage.default or wd.damage.vtol) or 0
-		if (not wanted or wanted[key]) and wt ~= "Shield" and wt ~= "Flame" and wt ~= "StarburstLauncher" and (wd.range or 0) > 0 and dmg > 0 then
-			for step = 1, steps do
-				local m = 1 + growth * step
-				local c = deepcopy(wd)
-				c.name = (wd.name or key) .. " (+" .. step .. ")"
-				mulField(c, "size", m)
-				mulField(c, "thickness", m)
-				mulField(c, "laserflaresize", m)
-				mulField(c, "sizedecay", 1 / m)
-				mulField(c, "intensity", math.min(1.5, m ^ 0.5))
-				if c.explosiongenerator then
-					c.explosiongenerator = FX.ref(c.explosiongenerator, fx * m)
-				end
-				if c.cegtag then
-					c.cegtag = FX.ref(c.cegtag, fx * m)
-				end
-				if wt == "BeamLaser" or wt == "LightningCannon" then
-					-- the engine deals a beam's damage when it fires: the copy only draws it
-					c.damage = { default = 0 }
-					c.beamtime = c.beamtime or 0.1
-				end
-				c.collidefriendly = false
-				c.avoidfriendly = false
-				c.customparams = c.customparams or {}
-				c.customparams.t4_hero_weapon = 1
-				c.customparams.t4_step = step
-				c.customparams.t4_tier_of = key
-				tiers[key .. "_s" .. step] = c
-			end
+		for key, w in pairs(copies) do
+			ud.weapondefs[key] = w
 		end
 	end
-	for key, wd in pairs(tiers) do
-		ud.weapondefs[key] = wd
+	if cfg and type(cfg.weaponDefs) == "function" then
+		local ok, defs = pcall(cfg.weaponDefs, T4, ud)
+		if ok and type(defs) == "table" then
+			for key, wd in pairs(defs) do
+				wd.customparams = wd.customparams or {}
+				wd.customparams.t4_hero_weapon = 1
+				ud.weapondefs[key] = wd
+			end
+		elseif not ok and Spring and Spring.Echo then
+			Spring.Echo("[custom_t4] " .. tostring(name) .. ": weaponDefs failed: " .. tostring(defs))
+		end
 	end
 	-- the ability kit's projectiles every hero shares (gamedata/custom_t4_abilities.lua)
 	for key, wd in pairs(VFS.Include("gamedata/custom_t4_abilities.lua")(T4)) do

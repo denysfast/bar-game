@@ -511,6 +511,46 @@ local moveDatas = {
 		depthModParams = depthModGeneric,
 		speedModClass = SPEED_CLASS.Tank,
 	},
+	-- v19 hero rosters: an amphibious T4 tank (footprint 8), T4 hovers (8 / 10), an amphibious all-terrain walker
+	T4ATANK8 = {
+		crushstrength = CRUSH.MAXIMUM,
+		depthMod = 0,
+		footprint = 8,
+		maxslope = SLOPE.MODERATE,
+		slopeMod = SLOPE_MOD.GLACIAL,
+		maxwaterdepth = DEPTH.AMPHIBIOUS,
+		maxwaterslope = SLOPE.MAXIMUM,
+		speedModClass = SPEED_CLASS.Tank,
+	},
+	T4HOVER8 = {
+		badslope = SLOPE.MODERATE,
+		badwaterslope = SLOPE.MAXIMUM,
+		crushstrength = CRUSH.MAXIMUM,
+		footprint = 8,
+		maxslope = SLOPE.MODERATE,
+		slopeMod = SLOPE_MOD.MODERATE,
+		maxwaterslope = SLOPE.MAXIMUM,
+		speedModClass = SPEED_CLASS.Hover,
+	},
+	T4HOVER10 = {
+		badslope = SLOPE.MODERATE,
+		badwaterslope = SLOPE.MAXIMUM,
+		crushstrength = CRUSH.MAXIMUM,
+		footprint = 10,
+		maxslope = SLOPE.MODERATE,
+		slopeMod = SLOPE_MOD.MODERATE,
+		maxwaterslope = SLOPE.MAXIMUM,
+		speedModClass = SPEED_CLASS.Hover,
+	},
+	T4ATBOT9 = {
+		crushstrength = CRUSH.MAXIMUM,
+		depthMod = 0,
+		footprint = 9,
+		maxslope = SLOPE.MAXIMUM,
+		maxwaterdepth = DEPTH.AMPHIBIOUS,
+		maxwaterslope = SLOPE.MAXIMUM,
+		speedModClass = SPEED_CLASS.KBot,
+	},
 
 	-- armpwt4 corakt4 armmeatball armassimilator armlunchbox
 	EPICBOT = {
