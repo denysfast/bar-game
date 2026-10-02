@@ -328,7 +328,9 @@ function M.autocast(api, unitID, h, key, rank)
 	elseif key == "ult" then
 		local near = #L.enemies(api, x, z, 1800, h.ally, true)
 		local heroes = #L.enemyHeroes(api, x, z, 1800, h.ally)
-		if (near >= 8 or heroes > 0) and #api.alliesIn(x, z, 1500, h.ally) >= 6 then
+		-- v19-balance: 6 allies within 1500 of a back-line hero was rare; a big fight alone justifies rooting
+		local allies = #api.alliesIn(x, z, 1500, h.ally)
+		if (near >= 8 or heroes > 0) and (allies >= 3 or near >= 12) then
 			return x, y, z
 		end
 	end

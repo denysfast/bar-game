@@ -365,7 +365,8 @@ function M.autocast(api, unitID, h, key, rank)
 			end
 		end
 		local _, enemies = api.enemyCostNear(x, z, R, h.ally)
-		if hpf > 0.5 and allies >= 8 and enemies >= 6 then
+		-- v19-balance: the AI never met 8 allies + 6 enemies around its front hero; the taunt alone is worth it
+		if hpf > 0.35 and enemies >= 5 and (allies >= 3 or enemies >= 8) then
 			return x, y, z
 		end
 	elseif key == "ult" then
