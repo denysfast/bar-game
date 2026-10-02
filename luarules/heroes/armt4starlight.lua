@@ -120,7 +120,8 @@ end
 local function prism(api, unitID, h, r, allyID)
 	local a2 = b(h, "a2")
 	if not allyID or allyID == unitID or not L.alive(allyID) or Spring.GetUnitAllyTeam(allyID) ~= h.ally then
-		api.log("armt4starlight a2 prism: no ally target (%s)", tostring(allyID))
+		api.log("armt4starlight a2 prism: no ally target (%s alive=%s ally=%s/%s)", tostring(allyID), tostring(L.alive(allyID)),
+			tostring(allyID and Spring.GetUnitAllyTeam(allyID)), tostring(h.ally))
 		return false
 	end
 	if L.unitDist(unitID, allyID) > (a2.range or 1500) * 1.1 then
@@ -190,9 +191,9 @@ local function phase(api, unitID, h, r, tx, tz)
 	local R = a3.radius or 250
 	local fx = api.fx
 	if fx then
-		fx.flash(x, y + 40, z, { radius = 120, color = { 0.85, 0.75, 1, 1 }, ttl = 0.35 })
-		fx.flash(nx, ny + 40, nz, { radius = 120, color = { 0.85, 0.75, 1, 1 }, ttl = 0.35 })
-		fx.beam(x, y + 40, z, nx, ny + 40, nz, { color = { 0.85, 0.75, 1, 1 }, width = 20, ttl = 0.15 })
+		fx.flash(x, y + 40, z, { radius = 80, color = { 0.8, 0.65, 1, 0.9 }, ttl = 0.35 })
+		fx.flash(nx, ny + 40, nz, { radius = 80, color = { 0.8, 0.65, 1, 0.9 }, ttl = 0.35 })
+		fx.beam(x, y + 40, z, nx, ny + 40, nz, { color = { 0.8, 0.65, 1, 1 }, width = 7, ttl = 0.2 })
 		fx.ring(x, z, { kind = "rune", r0 = R * 0.9, r1 = R, color = VIOLET, ttl = 1, width = 20, rot = 2 })
 	end
 	local ally = h.ally
@@ -235,7 +236,7 @@ local function lanceOn(api, unitID, h, r, x, z, targetID)
 		local ex, ey, ez = flare(api, unitID)
 		st.orb = fx.attach(unitID, "orb", { color = SOLAR, radius = 10, height = ey - select(2, api.pos(unitID)), orbit = 0, crackle = 4, ttl = charge + 0.2 })
 		fx.set(st.orb, { radius = 40, time = charge })
-		fx.flash(ex, ey, ez, { radius = 140, color = SOLAR, ttl = charge })
+		fx.flash(ex, ey, ez, { radius = 90, color = { 0.85, 0.75, 1, 0.8 }, ttl = charge })
 		fx.ring(x, z, { kind = "rune", r0 = 280, r1 = 300, color = SOLAR, ttl = charge + dur, width = 20, rot = 1 })
 	end
 	h.store.lance = st
@@ -276,11 +277,11 @@ local function lanceFrame(api, unitID, h, f)
 	end
 	local fx = api.fx
 	if fx then
-		fx.beam(ex, ey, ez, st.x, ty + 25, st.z, { color = SOLAR, width = 60, ttl = 0.13, pulse = 6, flare = 2 })
+		fx.beam(ex, ey, ez, st.x, ty + 25, st.z, { color = { 0.85, 0.75, 1, 1 }, width = 28, ttl = 0.13, pulse = 2, flare = 1.5 })
 		if f >= st.nextFx then
 			st.nextFx = f + 15
-			fx.pillar(st.x, st.z, { radius = 120, height = 1200, color = SOLAR, ttl = 0.6 })
-			fx.ring(st.x, st.z, { kind = "shock", r0 = 20, r1 = 300, color = SOLAR, ttl = 0.4, width = 30 })
+			fx.pillar(st.x, st.z, { radius = 55, height = 1200, color = { 0.8, 0.65, 1, 0.6 }, ttl = 0.6, ring = false })
+			fx.ring(st.x, st.z, { kind = "shock", r0 = 20, r1 = 220, color = { 0.8, 0.65, 1, 0.7 }, ttl = 0.4, width = 22 })
 		end
 	end
 end
