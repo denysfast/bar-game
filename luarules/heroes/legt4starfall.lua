@@ -179,6 +179,12 @@ local function gravityLens(api, unitID, h, r, x, z)
 	local fx = L.fx(api)
 	local y = L.groundY(x, z)
 	placeEye(api, h, x, z, R + 150, dur + 1)
+	-- the well draws the next salvo: the cannon reloads at once (its 14 s cycle would miss the 6 s window half the time)
+	for n, w in pairs(h.def.weapons) do
+		if w.key == "shocker_low" then
+			api.reloadNow(unitID, n)
+		end
+	end
 	local l = { x = x, z = z, radius = R, bonus = api.val(a2.bonus, r), untilF = api.frame() + floor(dur * 30), pulled = 0 }
 	h.store.lenses[#h.store.lenses + 1] = l
 	l.zone = fx.zone(x, z, { radius = R, pattern = "swirl", color = L.a(C.VOID, 0.5), rot = 2.5, ttl = dur })
@@ -237,7 +243,7 @@ local function skyEye(api, unitID, h, r, x, z)
 				seen = seen + 1
 			end
 			if i <= 40 then
-				L.markOn(api, observed, uid, "aura", { radius = max(40, L.radius(uid) * 0.7), color = L.a(C.STAR, 0.5), pattern = "runes" }, 1.2)
+				L.markOn(api, observed, uid, "aura", { radius = max(40, L.radius(uid) * 0.7), color = L.a(C.STAR, 0.3), pattern = "runes" }, 1.2)
 			end
 		end
 		L.markSweep(api, observed, f)

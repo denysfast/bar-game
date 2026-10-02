@@ -62,7 +62,7 @@ local heroes = {
 		},
 		a2 = {
 			name = "Gravity Lens", kind = "custom", cmd = 36304, action = "hero_gravitylens", target = "map", icon = "ab_legt4starfall_a2",
-			desc = "A gravity well for 6 s pulls the enemies to its centre; Starfall's shells landing inside hit harder",
+			desc = "A gravity well for 6 s pulls the enemies to its centre; the cannon reloads at once and its shells landing inside hit harder",
 			range = 7000, radius = lin(400, 650, 10), pull = lin(50, 140, 5), bonus = lin(0.25, 0.6, 0.01), duration = 6,
 			cooldown = lin(40, 24, 1),
 			text = tf("{radius} radius, pull {pull}/s, +{bonus%} shell damage inside, cd {cooldown} s"),

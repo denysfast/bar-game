@@ -98,8 +98,10 @@ local function ignite(api, unitID, h, uid, scale)
 	e.immune = f + floor((a1.immune or 5) * 30)
 	L.markOff(api, h.store.heatFx, uid)
 	local total, n = 0, 0
+	-- the blast: flat + a share of the IGNITED unit's max HP (capped), the same for everyone in the radius
+	local blast = min(cap, flat + pct * L.effMaxHp(api, uid)) * power * scale
 	for _, vid in ipairs(api.enemiesIn(x, z, radius, h.ally)) do
-		local d = min(cap, flat + pct * L.effMaxHp(api, vid)) * power * scale
+		local d = blast
 		if api.isHero(vid) then
 			d = d * 0.5
 		end
