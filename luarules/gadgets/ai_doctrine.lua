@@ -77,6 +77,7 @@ local LAUNCH_SHARE = 0.85                     -- launch at this share of the pla
 local LAUNCH_BY_TACTIC = { raid = 0.6, assault = 0.85, siege = 0.8, skirmish = 0.8, air = 0.7, defend = 0.5 }
 local LAUNCH_LATE = 0.6                       -- ... or this after LAUNCH_WAIT
 local LAUNCH_WAIT = 4 * 60 * GAME_SPEED
+local LAUNCH_HERO = 0.4                       -- v19: launch share while a hero of the team has no army to march with
 local RETREAT_STRENGTH = 0.35                 -- fall back below this share of the launch strength
 local RETREAT_ODDS = 2.2                      -- or when the enemy around is this many times stronger
 local REFILL_SHARE = 0.8                      -- a beaten army goes again at this share of its plan
@@ -1004,7 +1005,9 @@ local function driveArmy(army, f)
 		local share = st.cost / max(1, army.planMetal)
 		local waited = f - army.since
 		local want = army.state == "regroup" and REFILL_SHARE or (LAUNCH_BY_TACTIC[t] or LAUNCH_SHARE)
-		local ready = share >= want or (waited > LAUNCH_WAIT and share >= LAUNCH_LATE) or (army.state == "regroup" and waited > LAUNCH_WAIT * 1.5 and share >= 0.4)
+		-- v19: a hero waits for an army to march with (heroArmy): go at a smaller share, the hero makes up for it
+		local heroWaits = army.heroWait and f - army.heroWait < 10 * GAME_SPEED and share >= LAUNCH_HERO
+		local ready = heroWaits or share >= want or (waited > LAUNCH_WAIT and share >= LAUNCH_LATE) or (army.state == "regroup" and waited > LAUNCH_WAIT * 1.5 and share >= 0.4)
 		-- a beaten army waits at least a minute, and nobody launches into a stronger enemy at the doorstep
 		if army.state == "regroup" and waited < 60 * GAME_SPEED then
 			ready = false
@@ -1246,6 +1249,16 @@ function gadget:Initialize()
 				end
 			end
 			if not best then
+				-- v19: no army out - the biggest forming one launches early (LAUNCH_HERO) so the hero has one to lead
+				local wait, waitCost
+				for _, a in ipairs(t.armies) do
+					if (a.state == "forming" or a.state == "regroup") and a.last and a.last.cost > (waitCost or 0) then
+						wait, waitCost = a, a.last.cost
+					end
+				end
+				if wait then
+					wait.heroWait = Spring.GetGameFrame()
+				end
 				return nil
 			end
 			best.heroes = best.heroes or {}
