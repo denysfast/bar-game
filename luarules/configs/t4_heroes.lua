@@ -158,7 +158,7 @@ function H.val(v, r)
 end
 
 -- ability power (damage / healing / absorb of abilities): ABILITY_POWER_BASE, +ABILITY_POWER_PER_LEVEL per level
-H.ABILITY_POWER_BASE = 1.5
+H.ABILITY_POWER_BASE = 1.0 -- v19 integration: roster anchors are at power 1 (L100 = 1.99)
 H.ABILITY_POWER_PER_LEVEL = 0.01
 
 -- text of an ability rank: `text` is a function(r, H, b), an array of 10 strings, or nil (the description)
