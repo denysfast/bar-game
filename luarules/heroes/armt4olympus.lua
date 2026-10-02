@@ -212,9 +212,9 @@ local function ionLance(api, unitID, h, r, tx, tz)
 		end
 		local gy = L.gy(tx, tz)
 		if api.fx then
-			api.fx.pillar(tx, tz, { radius = R * 0.6, height = 3000, color = { 0.8, 0.95, 1, 1 }, ttl = 1.2 })
-			api.fx.flash(tx, gy + 60, tz, { radius = R, color = { 0.8, 0.95, 1, 1 }, ttl = 0.5 })
-			api.fx.ring(tx, tz, { kind = "shock", r0 = 0, r1 = R * 1.5, color = { 0.8, 0.95, 1, 1 }, ttl = 0.7, width = 60 })
+			api.fx.pillar(tx, tz, { radius = R * 0.3, height = 3000, color = { 0.6, 0.85, 1, 0.9 }, ttl = 1.2 })
+			api.fx.flash(tx, gy + 60, tz, { radius = R * 0.45, color = { 0.6, 0.85, 1, 0.8 }, ttl = 0.45 })
+			api.fx.ring(tx, tz, { kind = "shock", r0 = R * 0.2, r1 = R * 1.25, color = { 0.6, 0.85, 1, 0.8 }, ttl = 0.6, width = 40 })
 			api.fx.ring(tx, tz, { kind = "electric", r0 = R * 0.3, r1 = R, color = "electric", ttl = 0.8, width = 30 })
 		end
 		api.log("armt4olympus ult ion lance rank=%d dmg=%d radius=%d hits=%d", r, dmg, R, #hits)
