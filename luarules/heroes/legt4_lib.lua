@@ -211,7 +211,7 @@ end
 function L.task(h, every, seconds, fn, done, startIn)
 	h.store.tasks = h.store.tasks or {}
 	local f = Spring.GetGameFrame()
-	local t = { at = f + (startIn or 0), every = max(1, every), stop = seconds and (f + floor(seconds * 30)) or nil,
+	local t = { at = f + (startIn or 0), every = max(1, every), stop = seconds and (f + (startIn or 0) + floor(seconds * 30)) or nil,
 		fn = fn, done = done, start = f }
 	h.store.tasks[#h.store.tasks + 1] = t
 	return t
