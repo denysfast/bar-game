@@ -3,9 +3,6 @@
 -- doc/v19-heroes/SPEC.md section 6.
 --
 -- Load it standalone:   local I = VFS.Include("luarules/configs/t4_hero_items.lua")
--- (luarules/configs/t4_heroes.lua may still `part()` it with H as `...`: then the old slot tables
--- H.INVENTORY / H.STASH_SIZE / H.itemCategories / H.slotCategory / H.categoryOrder are filled too and
--- H.itemData = I. Nothing else of H is touched.)
 --
 -- Items, like Diablo 2:
 --   * 12 base types, 4 per category (weapon / defense / utility, 3 slots each = 9 slots). A base has an
@@ -38,7 +35,6 @@
 -- I.decode(str) -> item table, I.encode(item) -> str, I.name(item), I.lines(item) (tooltip lines with colors),
 -- I.stats(item), I.powers(item), I.icon(item, faction), I.price(item), I.salvage(item), I.score(...).
 
-local H = ...
 local I = {}
 
 I.SLOTS = 9
@@ -1051,30 +1047,6 @@ function I.score(it, role, heroTypes)
 		s = s + 0.5
 	end
 	return s
-end
-
----------------------------------------------------------------------------------------------------- legacy H
-if type(H) == "table" then
-	H.itemData = I
-	H.INVENTORY = I.SLOTS
-	H.STASH_SIZE = I.STASH_SIZE
-	H.ITEM_PICKUP_RADIUS = I.PICKUP_RADIUS
-	H.ITEM_LIFETIME = I.GROUND_LIFETIME
-	H.categoryOrder = I.categoryOrder
-	H.itemCategories = I.categories
-	H.slotCategory = I.slotCategory
-	-- TRANSITION ONLY (remove once unit_t4_heroes.lua no longer has the v15 item code): the v15 item tables
-	-- are gone; one inert item and zero drop odds keep the old code paths (randomItem, drops) from erroring.
-	-- The v19 items gadget publishes its own rules params (items_*), so the old hero_item_* / hero_stash_* stay unused.
-	H.ITEM_DROP_CHANCE = 0
-	H.ITEM_DROP_MAX = 0
-	H.ITEM_PROC_ICD = I.PROC_ICD
-	H.items = H.items or { legacy_scrap = { id = "legacy_scrap", name = "Scrap", category = "utility", rarity = "common",
-		tags = {}, stats = {}, short = "", desc = "" } }
-	H.itemOrder = H.itemOrder or { "legacy_scrap" }
-	H.itemIndex = H.itemIndex or { legacy_scrap = 1 }
-	H.rarities = H.rarities or { common = { color = { 0.85, 0.85, 0.85 }, weight = 1, score = 0, scrap = 0, rank = 1 } }
-	H.rarityOrder = H.rarityOrder or { "common" }
 end
 
 return I
