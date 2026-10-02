@@ -16,7 +16,7 @@ S.stations = {
 	{ name = "drones", dx = 1400, dz = 0, shots = { 22, 57 }, height = 620 },
 	{ name = "zones", dx = -1300, dz = 900, shots = { 40, 95 }, height = 1300 },
 	{ name = "misc", dx = -400, dz = 900, shots = { 30, 80 }, height = 800 },
-	{ name = "los", dx = 500, dz = 900, shots = { 25 }, height = 2600 },
+	{ name = "los", dx = 500, dz = 900, shots = { 25 }, height = 3000, camDz = 600 },
 	{ name = "stress", dx = 1400, dz = 900, shots = { 40, 120 }, height = 1900 },
 }
 S.quit = S.first + #S.stations * S.window + 10

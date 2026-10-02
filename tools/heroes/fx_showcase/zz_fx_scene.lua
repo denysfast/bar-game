@@ -152,6 +152,7 @@ if gadgetHandler:IsSyncedCode() then
 		if t == 20 then GG.HeroFX.set(ids.mark, { stacks = 3 }) end
 		if t == 50 then GG.HeroFX.set(ids.mark, { stacks = 5 }) end
 		if t == 30 then GG.HeroFX.set(ids.psphere, { radius = 150, time = 1.0 }) end
+		if t == 40 then GG.HeroFX.set(ids.porb, { count = 5 }) end
 	end
 	function act.los(t, f)
 		if t == 5 then
@@ -161,6 +162,14 @@ if gadgetHandler:IsSyncedCode() then
 			-- out of our LOS: must not be drawn
 			GG.HeroFX.pillar(x + 500, z + 650, { radius = 35, height = 700, color = "red", ttl = 4 })
 			GG.HeroFX.ring(x + 500, z + 650, { kind = "rune", r1 = 140, ttl = 4, color = "red" })
+			-- out of LOS, owned by our ally team (opts.ally -> "team" default): must be drawn
+			GG.HeroFX.ring(x + 950, z - 150, { kind = "electric", r1 = 150, ttl = 4, color = "emp", ally = 0 })
+			-- out of LOS, owner context set to one of our units: must be drawn
+			local prev = GG.HeroFX.owner(U.misc)
+			GG.HeroFX.pillar(x + 950, z + 350, { radius = 30, height = 600, color = "green", ttl = 4 })
+			GG.HeroFX.owner(prev)
+			-- out of LOS, owned by the enemy: must NOT be drawn
+			GG.HeroFX.ring(x + 1100, z + 650, { kind = "hex", r1 = 150, ttl = 4, color = "red", ally = 1 })
 			-- out of LOS but visible = "all": must be drawn
 			GG.HeroFX.ring(x + 200, z - 650, { kind = "hex", r1 = 160, ttl = 4, color = "cyan", visible = "all" })
 			log("los: in-LOS at", x - 700, z, "hidden at", x + 500, z + 650, "visible=all at", x + 200, z - 650,
@@ -213,7 +222,7 @@ if gadgetHandler:IsSyncedCode() then
 			FX.attach(U.misc, "link", { target = U.miscE1, style = "bolt", color = "purple", width = 2.5 })
 			FX.attach(U.miscE3, "tint", { pattern = "stone" })
 			local x, z = stationPos("misc")
-			FX.attachPoint(x + 260, z - 170, "orb", { color = "purple", radius = 18, height = 60, orbit = 40, count = 2 })
+			ids.porb = FX.attachPoint(x + 260, z - 170, "orb", { color = "purple", radius = 14, height = 60, orbit = 55, count = 2 })
 			ids.psphere = FX.attachPoint(x - 250, z - 160, "sphere", { radius = 100, color = "gold" })
 			FX.attachPoint(x - 250, z - 160, "aura", { pattern = "heal", radius = 110 })
 			FX.attachPoint(x + 280, z + 260, "electric", { color = "electric", radius = 50 })

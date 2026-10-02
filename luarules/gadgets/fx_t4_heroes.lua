@@ -10,8 +10,14 @@
 -- green, heal, toxic, purple, void, shield, cloak, white, stone, ice, shadow, fog, cyan).
 -- Every call returns an id; detach(id) ends any effect early (soft fade), set(id, {...}) changes it.
 --
--- PRIMITIVES (one-shot unless noted; all accept opts.visible = "los"(default)|"ally"|"all" and
--- opts.ally = allyTeamID (owner team for "ally"; defaults to the attached unit's ally team)):
+-- VISIBILITY (every call): opts.visible = "team" | "los" | "ally" | "all".
+--   "team" = the owner's ally team always sees it, everyone else only inside their LOS. It is the DEFAULT whenever
+--            the owner is known: opts.ally = allyTeamID, opts.owner = unitID, or the synced owner context
+--            GG.HeroFX.owner(unitID) (set it around hero hooks; returns the previous context to restore).
+--   "los"  = default without an owner: drawn only where the local player has LOS.
+--   "ally" = only the owner's ally team (hidden mines / marks);  "all" = everyone.
+--   Attachments follow their unit: allies always, enemies while the unit is in their LOS ("cloak": allies only).
+-- PRIMITIVES (one-shot unless noted):
 --   bolt(x1,y1,z1, x2,y2,z2, {color, width=3, ttl=0.35, branches=auto, seed, jitter=auto,
 --        grow=0.07 (leader travel time s), intensity=1, impact=true (flash at the end)})
 --   chain({x,y,z, x,y,z, ...}, {bolt opts..., delay=0.05 s per hop, flash=true})
@@ -43,7 +49,8 @@
 --   scale(unitID, s, time=0.6)  grow/shrink the unit's RENDERED model around its origin (s = 1 normal, 1.35 rage),
 --                               smooth over `time` s; all passes incl. shadows (CUS GL4 slot userDefined[3].w);
 --                               attached auras/spheres/arcs/tints follow. Collision/selection are unchanged.
---   set(id, {radius=, color=, alpha=, stacks=, max=, angle=, rot=, arc=, intensity=, scale=, target=, time=})
+--   set(id, {radius=, color=, alpha=, stacks=, max=, angle=, rot=, arc=, intensity=, scale=, target=, count=, time=})
+--                               count = number of orbs of an "orb" group (re-spread evenly, tendrils rebuilt)
 --                               change a running effect; radius/alpha/scale animate over opts.time seconds
 --
 -- TYPICAL VALUES
@@ -100,6 +107,35 @@ if gadgetHandler:IsSyncedCode() then
 	end
 
 	local FX = { synced = true, palette = Shared.palette, orbPos = Shared.orbPos, orbPointPos = Shared.orbPointPos }
+
+	-- owner context: while set, every call without opts.ally / opts.owner is tagged with this ally team, so the
+	-- caster's allies see it even outside their LOS (visible = "team" default). Core sets it around hero hooks.
+	local ctxAlly = nil
+	local rawEncode = encode
+	encode = function(opts)
+		local str = rawEncode(opts)
+		if opts and opts.owner and opts.ally == nil then
+			local a = Spring.GetUnitAllyTeam(opts.owner)
+			if a then
+				str = str .. (str ~= "" and ";" or "") .. "ally=" .. a
+			end
+		elseif ctxAlly and (opts == nil or opts.ally == nil) then
+			str = str .. (str ~= "" and ";" or "") .. "ally=" .. ctxAlly
+		end
+		return str
+	end
+	-- FX.owner(unitID | {ally = allyTeamID} | nil): set / clear the owner context; returns the previous one
+	function FX.owner(o)
+		local prev = ctxAlly
+		if type(o) == "number" then
+			ctxAlly = Spring.GetUnitAllyTeam(o)
+		elseif type(o) == "table" then
+			ctxAlly = o.ally
+		else
+			ctxAlly = nil
+		end
+		return prev and { ally = prev } or nil
+	end
 	function FX.bolt(x1, y1, z1, x2, y2, z2, opts)
 		local id = newID()
 		SendToUnsynced("herofx", "bolt", id, x1, y1, z1, x2, y2, z2, encode(opts))
@@ -498,14 +534,20 @@ local unitRecs = {} -- unitID -> { [rec] = true }
 local perFrame = { links = {}, nLinks = 0, trails = {}, nTrails = 0 }
 local unsyncedNextID = 10000000
 
-local VIS_LOS, VIS_ALLY, VIS_ALL = 0, 1, 2
+local VIS_LOS, VIS_ALLY, VIS_ALL, VIS_TEAM = 0, 1, 2, 3
 
+-- "los": local LOS only; "ally": owner's ally team only; "all": everyone; "team" (default when the owner is
+-- known through opts.ally / opts.owner / the synced owner context): owner's allies always, others in their LOS
 local function visModeOf(o)
 	local v = o.visible
-	if v == "ally" or v == "allies" or v == "team" then
+	if v == "ally" or v == "allies" then
 		return VIS_ALLY
 	elseif v == "all" or v == "always" then
 		return VIS_ALL
+	elseif v == "los" then
+		return VIS_LOS
+	elseif v == "team" or o.ally ~= nil then
+		return VIS_TEAM
 	end
 	return VIS_LOS
 end
@@ -529,6 +571,12 @@ end
 local function recVisible(r)
 	if r.visMode == VIS_ALLY and not fullView and r.ally ~= myAlly then
 		return false
+	end
+	if r.visMode == VIS_TEAM and r.ally == myAlly then
+		if r.unitID then
+			return spValidUnitID(r.unitID) and true or false
+		end
+		return true
 	end
 	if fullView or r.visMode == VIS_ALL then
 		if r.unitID then
@@ -705,6 +753,9 @@ local function put4(d, i, a, b, c, e)
 end
 
 local function newRec(o, ninst)
+	if o.owner and o.ally == nil then
+		o.ally = spGetUnitAllyTeam(o.owner)
+	end
 	return { o = o, ninst = ninst, data = {}, visMode = visModeOf(o), ally = o.ally, endF = FOREVER }
 end
 
@@ -1223,6 +1274,37 @@ local function orbData(rec)
 	end
 end
 
+-- crackling tendrils for every orb of an orb group (children of r; rebuilt by set(id, {count=}))
+local function orbTendrils(gid, r, now)
+	local o = r.o
+	local count = r.ninst
+	local point = r.point
+	local crackle = o.crackle or 3
+	r.children = {}
+	if crackle <= 0 then
+		return
+	end
+	for k = 0, count - 1 do
+		local t = newRec({ color = o.color, alpha = o.alpha, width = (o.radius or 14) * 0.09, intensity = o.intensity, period = 5, glow = 6, visible = o.visible, ally = o.ally }, crackle)
+		t.mode = 1
+		t.seed = r.seed * 3 + k * 11
+		t.orbRadius = o.radius or 14
+		t.orb = { o.orbit or 0, o.height or Shared.ORB_HEIGHT, o.speed or Shared.ORB_SPEED, (o.phase or 0) + k * TAU / count }
+		t.start, t.endF = now, r.endF
+		if point then
+			t.anchor, t.point, t.lp = r.anchor, true, r.lp
+		else
+			t.unitID = r.unitID
+			t.ally = r.ally
+		end
+		t.make = arcsData
+		arcsData(t)
+		t.orbChild = true
+		r.children[#r.children + 1] = t
+		addRec(point and B.arcs or B.arcsU, t, gid)
+	end
+end
+
 function attachKinds.orb(gid, unitID, o, now, point)
 	local count = mathMax(1, mathFloor(o.count or 1))
 	local r = newRec(o, count)
@@ -1239,26 +1321,8 @@ function attachKinds.orb(gid, unitID, o, now, point)
 	r.make = orbData
 	orbData(r)
 	addRec(point and B.billboard or B.billboardU, r, gid)
-	-- crackling tendrils per orb
-	local crackle = o.crackle or 3
-	if crackle > 0 then
-		for k = 0, count - 1 do
-			local t = newRec({ color = o.color, alpha = o.alpha, width = (o.radius or 14) * 0.09, intensity = o.intensity, period = 5, glow = 6, visible = o.visible, ally = o.ally }, crackle)
-			t.mode = 1
-			t.seed = r.seed * 3 + k * 11
-			t.orbRadius = o.radius or 14
-			t.orb = { o.orbit or 0, o.height or Shared.ORB_HEIGHT, o.speed or Shared.ORB_SPEED, (o.phase or 0) + k * TAU / count }
-			if point then
-				t.start, t.endF, t.anchor, t.point, t.lp = r.start, r.endF, r.anchor, true, r.lp
-			else
-				attachCommon(t, unitID, o, now)
-			end
-			t.make = arcsData
-			arcsData(t)
-			t.orbChild = true
-			addRec(point and B.arcs or B.arcsU, t, gid)
-		end
-	end
+	r.unitID0, r.point = unitID, point
+	orbTendrils(gid, r, now)
 	return r
 end
 
@@ -1480,6 +1544,21 @@ function impl.set(gid, s)
 			local t = unitRecs[s.target] or {}
 			unitRecs[s.target] = t
 			t[r] = true
+		end
+		if s.count and r.make == orbData then
+			local count = mathMax(1, mathFloor(s.count))
+			if count ~= r.ninst then
+				o.count = count
+				r.ninst = count
+				r.data = {}
+				for _, c in ipairs(r.children or {}) do
+					c.dead = true
+					if c.vis and c.batch then
+						c.batch.dirty = true
+					end
+				end
+				orbTendrils(gid, r, now)
+			end
 		end
 		if r.make then
 			r.make(r)
