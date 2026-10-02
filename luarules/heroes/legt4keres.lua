@@ -374,7 +374,10 @@ function M.autocast(api, unitID, h, key, rank)
 	elseif key == "ult" then
 		local cap = api.rank(h, "a1") > 0 and api.val(cfg(h, "a1").cap, api.rank(h, "a1")) or 1
 		local near = #L.enemies(api, x, z, 1200, h.ally, true)
-		if (near >= 8 and h.store.souls >= cap * 0.5) or (L.hpFrac(unitID) < 0.4 and near >= 3) then
+		-- v19-balance: half the Soul cap was rarely reached; the spirits also grow with the kills during the dance
+		local souls = h.store.souls
+		if (near >= 6 and souls >= math.min(12, cap * 0.3)) or near >= 12 or (L.hpFrac(unitID) < 0.4 and near >= 3)
+			or (souls >= 10 and #L.enemyHeroes(api, x, z, 900, h.ally) > 0) then
 			return x, y, z
 		end
 	end

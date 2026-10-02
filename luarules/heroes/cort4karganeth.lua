@@ -318,7 +318,11 @@ function M.autocast(api, unitID, h, key, rank)
 			end
 		end
 		local R = api.val(b(h, "a2").radius, rank)
-		if air >= 3 or #incoming(h, x, z, R, 3) >= 3 then
+		-- v19-balance: 3 shells in the air at one instant almost never happened; keep a decaying count of the shells
+		-- seen over the last seconds (checked once a second)
+		local n = #incoming(h, x, z, R, 6)
+		h.store.flakSeen = (h.store.flakSeen or 0) * 0.6 + n
+		if air >= 3 or n >= 3 or h.store.flakSeen >= 2.5 then
 			return x, y, z
 		end
 	elseif key == "ult" then
