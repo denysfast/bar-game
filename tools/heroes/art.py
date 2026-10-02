@@ -11,6 +11,13 @@ Keys are never in the repo: CM_KEY_FILE (content-master owner key, knowledge-gua
 `content-master-owner-api-key-cpu-b`) and CC_KEY_FILE (content-controller tools key,
 `content-controller-tools-key`, platform home) name files that hold them.
 Qwen jobs wait while the lab holds the cards (availability "degraded"); they run when freed.
+
+v19 UI set (--style track --seed 21 --size 128; key: knowledge-guardian `content-master-owner-api-key-cpu-b`,
+project "beyond-all-reason"): stat_vit "a glowing green armored heart inside a hexagonal plate, health and
+regeneration", stat_mob "cyan double chevron arrows with a glowing scanner eye, speed and vision", stat_dmg "an
+orange blazing explosion burst behind a crossed cannon barrel, firepower", stat_rng "a violet long-range targeting
+reticle with distance rings, weapon reach", stat_imp "a golden shockwave blast piercing through a cracked armor
+plate, impact and penetration"; ui/ab_generic (--style ability), ui/ui_stash, ui_shop, ui_salvage, ui_altar.
 """
 import argparse, json, os, sys, time, urllib.request, io, subprocess
 
