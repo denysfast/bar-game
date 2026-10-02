@@ -1373,6 +1373,117 @@ local function summary(f)
 	end
 end
 
+---------------------------------------------------------------------------- hero altar assist
+-- v19: the hero altar (T4 foundry) has a 496k build time; BARb leaves it to the one T2 constructor that started it
+-- (40+ minutes). While a team's altar is a nanoframe, its nearest mobile constructors are taken from the AI
+-- ("detach") and help build it, then handed back ("attach").
+local ALTAR_HELPERS_MIN = 4
+local ALTAR_HELPERS_MAX = 14
+local ALTAR_HELPER_PER_INCOME = 120   -- one more helper per this much metal income
+local ALTAR_HELPER_RADIUS = 3500
+local altarDefs, mobileBuilder = {}, {}
+for udid, ud in pairs(UnitDefs) do
+	if ud.name:find("t4gant", 1, true) then
+		altarDefs[#altarDefs + 1] = udid
+	end
+	if ud.isBuilder and ud.canMove and not ud.isFactory and (ud.buildSpeed or 0) > 0
+		and not (ud.customParams and ud.customParams.iscommander) then
+		mobileBuilder[udid] = true
+	end
+end
+local altarHelp = {} -- teamID -> { altar = uid, units = { uid = true }, n }
+
+local function altarRelease(teamID, why)
+	local a = altarHelp[teamID]
+	if not a then
+		return
+	end
+	local ids = {}
+	for uid in pairs(a.units) do
+		if spValidUnitID(uid) and not spGetUnitIsDead(uid) and spGetUnitTeam(uid) == teamID then
+			spGiveOrderToUnit(uid, CMD.STOP, {}, 0)
+			ids[#ids + 1] = uid
+		end
+	end
+	if #ids > 0 then
+		toAI(teamID, "attach " .. table.concat(ids, ","))
+	end
+	log("t=%d team=%d altar helpers released: %d (%s)", floor(frameNow() / 1800), teamID, #ids, why)
+	altarHelp[teamID] = nil
+end
+
+local function altarAssist(teamID, f)
+	local frame
+	for _, uid in ipairs(Spring.GetTeamUnitsByDefs(teamID, altarDefs) or {}) do
+		local _, _, _, _, bp = spGetUnitHealth(uid)
+		if bp and bp < 1 then
+			frame = uid
+		end
+	end
+	local a = altarHelp[teamID]
+	if not frame then
+		if a then
+			altarRelease(teamID, "altar done or gone")
+		end
+		return
+	end
+	if a and a.altar ~= frame then
+		altarRelease(teamID, "new frame")
+		a = nil
+	end
+	if not a then
+		a = { altar = frame, units = {}, n = 0 }
+		altarHelp[teamID] = a
+	end
+	local n = 0
+	for uid in pairs(a.units) do
+		if spValidUnitID(uid) and not spGetUnitIsDead(uid) and spGetUnitTeam(uid) == teamID then
+			n = n + 1
+			if spGetUnitCommands(uid) == 0 then
+				spGiveOrderToUnit(uid, CMD.REPAIR, { frame }, 0)
+			end
+		else
+			a.units[uid] = nil
+		end
+	end
+	a.n = n
+	local _, _, _, income = spGetTeamResources(teamID, "metal")
+	local want = min(ALTAR_HELPERS_MAX, ALTAR_HELPERS_MIN + floor((income or 0) / ALTAR_HELPER_PER_INCOME))
+	if n >= want then
+		return
+	end
+	local ax, _, az = spGetUnitPosition(frame)
+	if not ax then
+		return
+	end
+	local taken = GG.AICommanderUnits or {}
+	local cands = {}
+	for _, uid in ipairs(spGetUnitsInCylinder(ax, az, ALTAR_HELPER_RADIUS, teamID)) do
+		if mobileBuilder[spGetUnitDefID(uid)] and not a.units[uid] and not owns[uid] and not taken[uid] then
+			local _, _, _, _, bp = spGetUnitHealth(uid)
+			local ux, _, uz = spGetUnitPosition(uid)
+			if bp and bp >= 1 and ux then
+				cands[#cands + 1] = { uid = uid, d = (ux - ax) ^ 2 + (uz - az) ^ 2 }
+			end
+		end
+	end
+	table.sort(cands, function(p, q) return p.d < q.d end)
+	local ids = {}
+	for i = 1, min(#cands, want - n) do
+		local uid = cands[i].uid
+		a.units[uid] = true
+		ids[#ids + 1] = uid
+	end
+	if #ids > 0 then
+		toAI(teamID, "detach " .. table.concat(ids, ","))
+		for _, uid in ipairs(ids) do
+			spGiveOrderToUnit(uid, CMD.REPAIR, { frame }, 0)
+		end
+		local _, _, _, _, bp = spGetUnitHealth(frame)
+		log("t=%d team=%d altar %.0f%% built: +%d helpers -> %d (want %d)", floor(f / 1800), teamID, (bp or 0) * 100, #ids, n + #ids, want)
+	end
+end
+
 function gadget:GameFrame(f)
 	if f % 30 ~= 17 then
 		return
@@ -1415,6 +1526,9 @@ function gadget:GameFrame(f)
 			t.armies = keep
 			if not forming and #t.armies < MAX_ARMIES then
 				newArmy(teamID, t, f)
+			end
+			if f % 150 == 47 then
+				altarAssist(teamID, f)
 			end
 			updateProduction(teamID, t)
 			for _, a in ipairs(t.armies) do

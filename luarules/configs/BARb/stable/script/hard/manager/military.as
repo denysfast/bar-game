@@ -85,6 +85,7 @@ int lastScoutPulseFrame = 0;
 int lastEcoFrame = 0;
 int lastProdFrame = 0;
 int lastAltarFrame = -10 * MINUTE;
+int altarTries = -1;
 
 // v19 heroes: the hero altar (T4 foundry) is ordered on its own once the economy is late-T2 / T3 - before, it
 // came only as one of the many factory picks of UpdateProduction (behind a T3 gantry and 700 m/s income) and
@@ -450,8 +451,10 @@ void UpdateAltar()
 	if (repr is null)
 		return;
 	lastAltarFrame = ai.frame;
-	const AIFloat3 pos = Base::positions[0];
-	aiBuilderMgr.Enqueue(TaskB::Factory(Task::Priority::HIGH, altar, pos, repr, SQUARE_SIZE * 64));
+	// a different base anchor each try, wide shake: the foundry is 18x18 and needs open ground
+	++altarTries;
+	const AIFloat3 pos = Base::positions[uint(altarTries) % Base::positions.length()];
+	aiBuilderMgr.Enqueue(TaskB::Factory(Task::Priority::HIGH, altar, pos, repr, SQUARE_SIZE * 96));
 	AiLog("[custom] altar: +" + altar.GetName() + " m-income=" + int(income) + " t=" + int(ai.frame / MINUTE) + "min");
 }
 
