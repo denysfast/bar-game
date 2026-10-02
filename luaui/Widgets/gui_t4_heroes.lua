@@ -972,8 +972,8 @@ local function drawAltar(altarID)
 			K.lock(sx + ss / 2, sy + ss / 2, ss * 0.6, researching and rLevel == i - 1 and GOLD or { 0.5, 0.45, 0.38, 1 })
 		elseif inSlot[i] then
 			local c = inSlot[i]
-			local k = c.kind == "dead" and 0.45 or 1
-			tex(portraitOf(c.name), sx + 1, sy + 1, sx + ss - 1, sy + ss - 1, k, c.kind == "dead" and 0.25 or 1, c.kind == "dead" and 0.2 or 1, 1)
+			local dead = c.kind == "dead"
+			tex(portraitOf(c.name), sx + 1, sy + 1, sx + ss - 1, sy + ss - 1, dead and 0.85 or 1, dead and 0.4 or 1, dead and 0.35 or 1, 1)
 		elseif i <= used then
 			text("H", sx + ss / 2, sy + ss * 0.22, ss * 0.6, GOLD, "co")
 		end
@@ -1357,6 +1357,7 @@ function widget:Initialize()
 		selectedHero = function() return selectedHero end,
 		learnOpen = function() return showLearn end,
 		rect = function(name) return rects[name] end,
+		heroTitle = heroTitle,
 	}
 	refreshTracked()
 	refreshCards()

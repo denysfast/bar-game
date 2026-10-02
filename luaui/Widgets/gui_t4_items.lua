@@ -400,12 +400,15 @@ local function drawSlots(a)
 			if w then
 				local act = activePower(w.it)
 				itemCell({ it = w.it }, bx1, by, is, faction)
-				local extra = {}
-				if act then
-					extra[#extra + 1] = { "Click: use " .. I.powerInfo[act.key].label, GREEN }
-				end
-				if own then
-					extra[#extra + 1] = { (act and "" or "Click: swap from the stash.  ") .. "Right click: back to the stash", GREY }
+				local tipFn = function()
+					local extra = {}
+					if act then
+						extra[#extra + 1] = { "Click: use " .. I.powerInfo[act.key].label, GREEN }
+					end
+					if own then
+						extra[#extra + 1] = { (act and "" or "Click: swap from the stash.  ") .. "Right click: back to the stash", GREY }
+					end
+					return itemTip(w.it, worn, "slot" .. (own and 1 or 0), extra)
 				end
 				addBox(bx1, by, bx2, ry2, own and function()
 					if act then
@@ -413,7 +416,7 @@ local function drawSlots(a)
 					else
 						openStash(catId, slot)
 					end
-				end or nil, itemTip(w.it, worn, "slot" .. (own and 1 or 0), extra),
+				end or nil, tipFn,
 					own and function() sendUnequip(uid, slot) end or nil)
 				-- active cooldown
 				local ready = spGetUnitRulesParam(uid, "items_cd_" .. slot) or 0
@@ -550,15 +553,18 @@ local function drawStash(x1, yBottom)
 					tex(ART .. "ui/ui_salvage.png", cx + c * 0.55, cy + c * 0.55, cx + c, cy + c, 1, 1, 1, 0.95)
 				end
 			end
-			local extra = { { string.format("Salvage value: %s metal", I.fmtNum(I.salvage(e.it))), { 0.85, 0.75, 0.5 } } }
-			if own and uid and not dim then
-				extra[#extra + 1] = { stashSlot and string.format("Click: equip into %s slot %d", I.categories[e.it.cat].label:lower(), stashSlot) or "Click: equip on the hero.  Drag: into a slot", GREEN }
-			end
-			if own then
-				extra[#extra + 1] = { "Right click: mark it for salvage", GREY }
+			local tipFn = function()
+				local extra = { { string.format("Salvage value: %s metal", I.fmtNum(I.salvage(e.it))), { 0.85, 0.75, 0.5 } } }
+				if own and uid and not dim then
+					extra[#extra + 1] = { stashSlot and string.format("Click: equip into %s slot %d", I.categories[e.it.cat].label:lower(), stashSlot) or "Click: equip on the hero.  Drag: into a slot", GREEN }
+				end
+				if own then
+					extra[#extra + 1] = { "Right click: mark it for salvage", GREY }
+				end
+				return itemTip(e.it, uid and readWorn(uid) or nil, "stash" .. (own and 1 or 0) .. (stashSlot or 0) .. (dim and "d" or ""), extra)
 			end
 			local box = addBox(cx, cy, cx + c, cy + c, (own and uid and not dim) and function() equipAuto(uid, e, stashSlot) end or nil,
-				itemTip(e.it, uid and readWorn(uid) or nil, "stash" .. (own and 1 or 0) .. (stashSlot or 0) .. (dim and "d" or ""), extra),
+				tipFn,
 				own and function()
 					if isSel then
 						salvageSel = nil
@@ -679,10 +685,12 @@ local function drawShop(x1, yBottom)
 			addBox(cx, cy, cx + cw, cy + ch, can and function()
 				Spring.SendLuaRulesMsg(string.format("t4hero:shopbuy:%d_%d", e.idx, it.uid or 0))
 				sound("beep6.wav", 0.6)
-			end or nil, itemTip(it, uid and readWorn(uid) or nil, "shop" .. (afford and 1 or 0) .. (stashN < I.STASH_SIZE and 1 or 0), {
-				{ string.format("Price: %s metal", I.fmtNum(price)), afford and GOLD or RED, 1 },
-				{ afford and (stashN < I.STASH_SIZE and "Click: buy into the team stash" or "The team stash is full") or "Not enough metal", afford and GREEN or RED },
-			}))
+			end or nil, function()
+				return itemTip(it, uid and readWorn(uid) or nil, "shop" .. (afford and 1 or 0) .. (stashN < I.STASH_SIZE and 1 or 0), {
+					{ string.format("Price: %s metal", I.fmtNum(price)), afford and GOLD or RED, 1 },
+					{ afford and (stashN < I.STASH_SIZE and "Click: buy into the team stash" or "The team stash is full") or "Not enough metal", afford and GREEN or RED },
+				})
+			end)
 		else
 			rect(cx, cy, cx + cw, cy + ch, { 0.04, 0.04, 0.05, 0.9 })
 			frame(cx, cy, cx + cw, cy + ch, { 0.18, 0.16, 0.12, 1 }, 1)
@@ -787,11 +795,12 @@ local function drawGround()
 				text(name, sx, sy + s * 0.7 + ts * 0.38, ts, { c[1], c[2], c[3], 1 }, "co")
 			end
 			if it then
-				local gb = groundBoxes[#groundBoxes]
-				gb.tip = itemTip(it, nil, "ground", {
-					{ "A hero walking over it puts it into its team stash", GREY },
-					{ "Right click with a hero selected: go get it", GREY },
-				})
+				groundBoxes[#groundBoxes].tip = function()
+					return itemTip(it, nil, "ground", {
+						{ "A hero walking over it puts it into its team stash", GREY },
+						{ "Right click with a hero selected: go get it", GREY },
+					})
+				end
 			end
 		end
 	end
@@ -842,6 +851,9 @@ end
 local function heroName(uid)
 	local name = uid and uid >= 0 and spValidUnitID(uid) and heroDefs[spGetUnitDefID(uid) or -1]
 	local ud = name and UnitDefNames[name]
+	if name and WG.T4HeroesUI and WG.T4HeroesUI.heroTitle then
+		return (WG.T4HeroesUI.heroTitle(name):gsub(",.*$", ""))
+	end
 	return ud and (ud.translatedHumanName or ud.humanName) or "A hero"
 end
 
