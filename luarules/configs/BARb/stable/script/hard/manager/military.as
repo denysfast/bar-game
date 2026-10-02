@@ -84,6 +84,16 @@ int lastShieldFrame = 0;
 int lastScoutPulseFrame = 0;
 int lastEcoFrame = 0;
 int lastProdFrame = 0;
+int lastAltarFrame = -10 * MINUTE;
+
+// v19 heroes: the hero altar (T4 foundry) is ordered on its own once the economy is late-T2 / T3 - before, it
+// came only as one of the many factory picks of UpdateProduction (behind a T3 gantry and 700 m/s income) and
+// landed after minute 25, when one side was usually gone already.
+const int   ALTAR_SINCE    = 10 * MINUTE;  // never before this
+const float ALTAR_INCOME   = 250.f;        // m-income (AI bonus included) for the altar ...
+const float ALTAR_INCOME_LATE = 120.f;     // ... or this from ALTAR_LATE on
+const int   ALTAR_LATE     = 16 * MINUTE;
+const int   ALTAR_STEP     = 90 * SECOND;  // re-order (a cancelled / destroyed frame) at most this often
 int attackTasks = 0;  // ATTACK tasks added since the last status line (diagnostics)
 int shieldsOrdered = 0;
 int knownNukesHandled = -1;
@@ -425,8 +435,29 @@ void UpdateProduction()
 	}
 }
 
+void UpdateAltar()
+{
+	if (ai.frame < ALTAR_SINCE || ai.frame - lastAltarFrame < ALTAR_STEP || Base::positions.length() == 0)
+		return;
+	CCircuitDef@ altar = SideDef(Factory::armt4gant, Factory::cort4gant, Factory::legt4gant);
+	if (altar is null || !altar.IsAvailable(ai.frame) || altar.count >= altar.maxThisUnit)
+		return;
+	const float income = aiEconomyMgr.metal.income;
+	const float need = ai.frame >= ALTAR_LATE ? ALTAR_INCOME_LATE : ALTAR_INCOME;
+	if (income < need || !HasT2Builder())
+		return;
+	CCircuitDef@ repr = ReprDef(altar);
+	if (repr is null)
+		return;
+	lastAltarFrame = ai.frame;
+	const AIFloat3 pos = Base::positions[0];
+	aiBuilderMgr.Enqueue(TaskB::Factory(Task::Priority::HIGH, altar, pos, repr, SQUARE_SIZE * 64));
+	AiLog("[custom] altar: +" + altar.GetName() + " m-income=" + int(income) + " t=" + int(ai.frame / MINUTE) + "min");
+}
+
 void AiCustomUpdate()
 {
+	UpdateAltar();
 	UpdateProduction();
 	UpdateArmySize();
 	UpdateEcoExpansion();

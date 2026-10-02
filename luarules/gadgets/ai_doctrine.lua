@@ -376,13 +376,44 @@ local function teamHasUnit(teamID, name)
 	return udid and Spring.GetTeamUnitDefCount(teamID, udid) > 0
 end
 
+-- the hero a T4 composition is led by: its own hero when the team has it, else (v19: ten heroes per side, the
+-- compositions name four of them) any living hero of the team, the ones not leading another army first
+local function compHero(teamID, t, name)
+	if teamHasUnit(teamID, name) then
+		return name
+	end
+	local all = GG.T4Heroes and GG.T4Heroes.heroes
+	if not all then
+		return nil
+	end
+	local leading = {}
+	for _, a in ipairs(t and t.armies or {}) do
+		if a.hero then
+			leading[a.hero] = true
+		end
+	end
+	local pick, spare
+	for uid, h in pairs(all) do
+		if h.team == teamID and h.def and h.def.name and not spGetUnitIsDead(uid) then
+			if not leading[h.def.name] then
+				if not pick or h.def.name < pick then
+					pick = h.def.name
+				end
+			elseif not spare or h.def.name < spare then
+				spare = h.def.name
+			end
+		end
+	end
+	return pick or spare
+end
+
 -- share of the composition (by count weight) the current factories can build
-local function feasibility(comp, facs, teamID)
+local function feasibility(comp, facs, teamID, t)
 	local total, ok = 0, 0
 	for _, e in ipairs(comp.units) do
 		local udid = defID(e[1])
 		if e.hero then
-			if not (udid and teamHasUnit(teamID, e[1])) then
+			if not (udid and compHero(teamID, t, e[1])) then
 				return 0
 			end
 		elseif udid and (e[2] or 0) > 0 then
@@ -466,7 +497,7 @@ local function makePlan(t, comp, tier, facs, income)
 	local hero
 	for _, e in ipairs(comp.units) do
 		if e.hero then
-			hero = e[1]
+			hero = compHero(t.team, t, e[1]) or e[1]
 		end
 	end
 	return { want = want, metal = metal, count = count, roleOver = roleOver, hero = hero }
@@ -485,7 +516,7 @@ local function newArmy(teamID, t, f)
 		local list = comps[t.side]["t" .. tier] or {}
 		local cands, sum = {}, 0
 		for _, comp in ipairs(list) do
-			local feas = feasibility(comp, facs, teamID)
+			local feas = feasibility(comp, facs, teamID, t)
 			if feas >= 0.75 and not recentlyUsed(t, comp.id) then
 				-- tactics the situation calls for weigh more
 				local w = feas
@@ -1181,7 +1212,7 @@ function gadget:Initialize()
 	for _, teamID in ipairs(Spring.GetTeamList()) do
 		if isAITeam(teamID) then
 			local _, _, _, _, _, ally = Spring.GetTeamInfo(teamID, false)
-			teams[teamID] = { ally = ally, armies = {}, factories = {}, used = {} }
+			teams[teamID] = { team = teamID, ally = ally, armies = {}, factories = {}, used = {} }
 		end
 	end
 	local n = 0
