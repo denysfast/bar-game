@@ -12,7 +12,7 @@ S.stations = {
 	{ name = "sweep", dx = 1400, dz = -900, shots = { 30, 62, 96 } },
 	{ name = "shield", dx = -1300, dz = 0, shots = { 22, 52 }, height = 560 },
 	{ name = "resurrect", dx = -400, dz = 0, shots = { 16, 36, 70 }, height = 1100 },
-	{ name = "cloak", dx = 500, dz = 0, shots = { 40, 75 }, height = 650 },
+	{ name = "cloak", dx = 500, dz = 0, shots = { 40, 75 }, height = 520, follow = true },
 	{ name = "drones", dx = 1400, dz = 0, shots = { 22, 57 }, height = 620 },
 	{ name = "zones", dx = -1300, dz = 900, shots = { 40, 95 }, height = 1300 },
 	{ name = "misc", dx = -400, dz = 900, shots = { 30, 80 }, height = 800 },

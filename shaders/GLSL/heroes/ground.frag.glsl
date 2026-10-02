@@ -18,8 +18,8 @@ in DataVS {
 
 out vec4 fragColor;
 
-float now;
-float px;   // elmos per pixel around this fragment
+float now = 0.0;
+float px = 1.0;   // elmos per pixel around this fragment
 
 float lineG(float dist, float th) {
 	th = max(th, px * 0.9);
@@ -85,8 +85,8 @@ void main() {
 		float n = fbm2lo(p * 0.025 + seed);
 		float front = ed > 0.0 ? exp(-(ed * ed) / (w * w * 0.1)) : exp(ed / (w * 0.9));
 		front *= 0.65 + 0.7 * n;
-		float wake = ed < 0.0 ? exp(ed / (w * 3.5)) * (0.5 + 0.5 * sin(ed / w * 6.5 + now * 0.5)) : 0.0;
-		float inner = (1.0 - smoothstep(0.0, max(rc, 1.0), d)) * 0.3 * (1.0 - life);
+		float wake = ed < 0.0 ? exp(ed / (w * 3.0)) * (0.7 + 0.3 * sin(ed / w * 4.0 + n * 3.0)) : 0.0;
+		float inner = (1.0 - smoothstep(0.0, max(rc, 1.0), d)) * 0.12 * (1.0 - life);
 		float fade = pow(1.0 - life, 1.2);
 		I = (front * 1.25 + wake * 0.4 + inner) * fade;
 		hot = pow(front, 3.0) * 0.8 * fade;
@@ -251,9 +251,9 @@ void main() {
 		float edgeN = (n - 0.5) * r * 0.35;
 		float disc = 1.0 - smoothstep(r * 0.55, r + edgeN, d);
 		float dens = disc * smoothstep(0.25, 0.75, n * 0.7 + n2 * 0.5);
-		I = dens * 0.35;
+		I = dens * 0.8;
 		hot = 0.0;
-		occ = dens * 0.75;
+		occ = dens * 0.8;
 	} else if (kind < 9.5) {
 		// ---- web: radial spokes + sagging polygonal threads, a pulse running along the threads
 		float r = r1;
@@ -300,9 +300,9 @@ void main() {
 		float tick = lineG(abs(bq) * d, 1.0) * step(r * 1.05, d) * step(d, r * 1.3);
 		// inner dot
 		float core = exp(-d * d / (r * r * 0.02)) * 0.4;
-		I = segLight + bracket * 0.9 + tick * 0.6 + core;
+		I = (segLight + bracket * 0.9 + tick * 0.6 + core) * 1.4;
 		hot = seg * lit * 0.5;
-		occ = I * 0.45;
+		occ = min(I, 1.0) * 0.8;
 	} else if (kind < 11.5) {
 		// ---- fire: flame tongues licking outward from the centre (use with arc for cones)
 		float r = r1;
@@ -310,8 +310,8 @@ void main() {
 		float rn = d / r;
 		float fl = fbm2(vec2(ang * 3.0 + seed, d * 0.035 - now * 0.11));
 		float fl2 = fbm2(vec2(ang * 7.0 - seed, d * 0.07 - now * 0.19));
-		float tongue = smoothstep(rn - 0.1, rn + 0.45, fl * 0.9 + fl2 * 0.5);
-		float body = tongue * (1.0 - smoothstep(0.75, 1.1, rn));
+		float tongue = smoothstep(rn * 0.55 - 0.05, rn * 0.55 + 0.3, fl * 0.75 + fl2 * 0.35);
+		float body = tongue * (1.0 - smoothstep(0.8, 1.08, rn));
 		float coreF = body * (1.0 - smoothstep(0.0, 0.6, rn));
 		float fade = timed ? 1.0 - smoothstep(0.7, 1.0, life) : 1.0;
 		I = (body * 1.1 + coreF * 0.6) * fade;
@@ -355,5 +355,5 @@ void main() {
 	hot *= env * vColor.a;
 	vec3 rgb = vColor.rgb * I + vec3(1.0, 0.97, 0.92) * hot;
 	if (max(rgb.r, max(rgb.g, rgb.b)) < 0.003) discard;
-	fragColor = vec4(rgb, clamp(occ * env * vColor.a, 0.0, 0.85));
+	fragColor = vec4(rgb, clamp(occ * 1.5 * env * vColor.a, 0.0, 0.85));
 }

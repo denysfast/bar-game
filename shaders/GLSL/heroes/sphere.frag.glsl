@@ -22,7 +22,7 @@ in DataVS {
 
 out vec4 fragColor;
 
-float now;
+float now = 0.0;
 
 // triplanar hex edge mask + cell id hash
 vec2 hexTri(vec3 n, float scale) {

@@ -240,6 +240,8 @@ void main() {
 	}
 
 	vec3 world = pHere + right * tv.y * w;
+	// the wide glow is pulled towards the camera so terrain does not slice it with a hard edge
+	if (!full) world += toCam * min(w * 0.9, 40.0);
 	gl_Position = cameraViewProj * vec4(world, 1.0);
 	vColor = vec4(i_color.rgb, intensity * i_color.a * cover);
 	vUV = vec2(t, tv.y);

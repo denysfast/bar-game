@@ -26,6 +26,11 @@ function widget:GameFrame(f)
 		if f == w0 - 8 then
 			setCam(cx + s.dx, cz + s.dz + (s.camDz or 220), s.height or 800, s.angle)
 		end
+		local fu = s.follow and Spring.GetGameRulesParam("fx_follow_" .. s.name)
+		if fu and f > w0 - 8 and f < w0 + S.window - 10 then
+			local ux, _, uz = Spring.GetUnitPosition(fu)
+			if ux then setCam(ux, uz + (s.camDz or 160), s.height or 800, s.angle) end
+		end
 		for _, off in ipairs(s.shots or {}) do
 			if f == w0 + off then
 				Spring.SendCommands("screenshot png")

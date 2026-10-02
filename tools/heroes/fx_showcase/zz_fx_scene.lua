@@ -70,13 +70,13 @@ if gadgetHandler:IsSyncedCode() then
 	function act.rage(t, f)
 		if t > 0 and t % 12 == 0 then
 			local ox, oy, oz = GG.HeroFX.orbPos(U.rage, orbOpts, f)
-			local e = U.rageE[(t / 12) % #U.rageE + 1]
+			local e = U.rageE[math.floor(t / 12) % #U.rageE + 1]
 			local ex, ey, ez = mid(e)
 			GG.HeroFX.bolt(ox, oy, oz, ex, ey, ez, { color = "rage", width = 4, ttl = 0.3 })
 		end
 		if t > 0 and t % 18 == 9 then
 			local x, y, z = mid(U.rage)
-			local e = U.rageE[(t / 18) % #U.rageE + 1]
+			local e = U.rageE[math.floor(t / 18) % #U.rageE + 1]
 			local ex, ey, ez = mid(e)
 			GG.HeroFX.bolt(x, y + 20, z, ex, ey, ez, { color = "rage", width = 5, ttl = 0.35 })
 		end
@@ -108,7 +108,7 @@ if gadgetHandler:IsSyncedCode() then
 	function act.shield(t, f)
 		if t >= 5 and t % 6 == 5 then
 			local x, y, z = mid(U.shield)
-			local e = U.shieldE[(t / 6) % #U.shieldE + 1]
+			local e = U.shieldE[math.floor(t / 6) % #U.shieldE + 1]
 			local ex, ey, ez = mid(e)
 			local dx, dy, dz = ex - x, ey - y + 10, ez - z
 			local l = math.sqrt(dx * dx + dy * dy + dz * dz)
@@ -125,11 +125,16 @@ if gadgetHandler:IsSyncedCode() then
 		end
 	end
 	function act.cloak(t, f)
+		-- drive the unit on a fast circle with MoveCtrl so the trail has something to follow
 		local x, z = stationPos("cloak")
-		if t == -5 then
-			Spring.GiveOrderToUnit(U.cloak, CMD.MOVE, { x + 380, gy(x + 380, z), z }, 0)
-		elseif t == 55 then
-			Spring.GiveOrderToUnit(U.cloak, CMD.MOVE, { x - 380, gy(x - 380, z), z + 100 }, 0)
+		if t == -10 then
+			Spring.MoveCtrl.Enable(U.cloak)
+		end
+		if t >= -10 and t < 140 then
+			local a = (t + 10) * 0.045
+			local px, pz = x + math.cos(a) * 260, z + math.sin(a) * 260
+			Spring.MoveCtrl.SetPosition(U.cloak, px, gy(px, pz), pz)
+			Spring.MoveCtrl.SetRotation(U.cloak, 0, -a, 0)
 		end
 	end
 	function act.drones(t, f)
@@ -181,7 +186,7 @@ if gadgetHandler:IsSyncedCode() then
 			x, z = stationPos("shield"); U.shield = spawn("armraz", x, z, 0, 0)
 			U.shieldE = ring("shield", 4, 260, 300, 0.5, 2.6, 1, "corak")
 			x, z = stationPos("resurrect"); U.res = spawn("corjugg", x, z, 0, 0)
-			x, z = stationPos("cloak"); U.cloak = spawn("armraz", x - 380, z, 0, 0)
+			x, z = stationPos("cloak"); U.cloak = spawn("armraz", x - 380, z, 0, 0); Spring.SetGameRulesParam("fx_follow_cloak", U.cloak)
 			x, z = stationPos("drones"); U.drones = spawn("armraz", x, z, 0, 0)
 			U.dronesE = ring("drones", 3, 230, 260, 0.4, 2.7, 1, "corak")
 			x, z = stationPos("zones")
@@ -232,17 +237,17 @@ if gadgetHandler:IsSyncedCode() then
 				local py = gy(px, pz)
 				local k = i % 6
 				if k == 0 then
-					FX.bolt(px, py + 200, pz, px + 60, py, pz + 40, { color = "electric", ttl = 4, visible = "all", impact = false })
+					FX.bolt(px, py + 200, pz, px + 60, py, pz + 40, { color = "electric", ttl = 4.5, visible = "all", impact = false })
 				elseif k == 1 then
-					FX.ring(px, pz, { kind = (i % 2 == 0) and "electric" or "shock", r1 = 70, width = 12, ttl = 4, visible = "all" })
+					FX.ring(px, pz, { kind = (i % 2 == 0) and "electric" or "shock", r1 = 70, width = 12, ttl = 4.5, visible = "all" })
 				elseif k == 2 then
-					FX.beam(px, py + 40, pz, px + 90, py + 10, pz, { color = "laser", width = 3, ttl = 4, visible = "all" })
+					FX.beam(px, py + 40, pz, px + 90, py + 10, pz, { color = "laser", width = 3, ttl = 4.5, visible = "all" })
 				elseif k == 3 then
-					FX.flash(px, py + 20, pz, { radius = 30, ttl = 4, color = "orange", ground = false, visible = "all" })
+					FX.flash(px, py + 20, pz, { radius = 30, ttl = 4.5, color = "orange", ground = false, visible = "all" })
 				elseif k == 4 then
 					FX.attachPoint(px, pz, "orb", { color = "purple", radius = 8, height = 40, visible = "all", crackle = 1, ttl = 5 })
 				else
-					FX.zone(px, pz, { pattern = "hex", radius = 60, ttl = 4, visible = "all" })
+					FX.zone(px, pz, { pattern = "hex", radius = 60, ttl = 4.5, visible = "all" })
 				end
 				n = n + 1
 			end

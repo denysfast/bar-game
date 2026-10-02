@@ -220,7 +220,7 @@ local GROUND_RES = 48
 local fullView = false
 local myAlly = spGetLocalAllyTeamID()
 local debugStats = false
-local statTime, statFrames, statMax = 0, 0, 0
+local statLua, statGL, statSim, statSimN, statFrames, statMax = 0, 0, 0, 0, 0, 0
 
 --------------------------------------------------------------------------------
 -- GL setup
@@ -763,7 +763,7 @@ function impl.flash(gid, x, y, z, o, start)
 	if o.ground ~= false and radius >= 25 then
 		local gy = spGetGroundHeight(x, z)
 		if y - gy < radius * 2.5 then
-			impl.ring(gid, x, z, { kind = "glow", r1 = radius * 1.9, ttl = (o.ttl or 0.5) * 1.3, color = o.color or "holy", alpha = 0.8 * (o.alpha or 1),
+			impl.ring(gid, x, z, { kind = "glow", r1 = radius * 1.9, ttl = (o.ttl or 0.5) * 1.3, color = o.color or "holy", alpha = 0.45 * (o.alpha or 1),
 				visible = o.visible, ally = o.ally }, now)
 		end
 	end
@@ -1015,7 +1015,11 @@ local function groundAttach(gid, unitID, o, now, kindName, point)
 		endF = attachCommon(r, unitID, o, now)
 		r.cx, r.cz = 0, 0
 	end
-	local radius = o.radius or (unitID and (spGetUnitRadius(unitID) or 40) * (kindName == "mark" and 0.9 or 1.6)) or 150
+	local radius = o.radius
+	if not radius then
+		local ur = unitID and (spGetUnitRadius(unitID) or 40)
+		radius = ur and (kindName == "mark" and mathMax(ur * 1.15, 26) or ur * 1.6) or 150
+	end
 	local go = r.o
 	go.r1 = radius
 	if kindName == "rune" and not go.width then
@@ -1344,7 +1348,7 @@ function impl.attach(gid, unitID, kind, o)
 		Spring.Echo("[HeroFX] unknown attach kind " .. tostring(kind))
 		return gid
 	end
-	f(gid, unitID, o, spGetGameFrame())
+	f(gid, unitID, o, (spGetGameFrame()))
 	return gid
 end
 
@@ -1354,7 +1358,7 @@ function impl.attachPoint(gid, x, z, kind, o)
 		Spring.Echo("[HeroFX] unknown attachPoint kind " .. tostring(kind))
 		return gid
 	end
-	f(gid, nil, o, spGetGameFrame(), { x, z })
+	f(gid, nil, o, (spGetGameFrame()), { x, z })
 	return gid
 end
 
@@ -1630,7 +1634,7 @@ local function buildTrails(now)
 				local cr, cg, cb, ca = colorOf(o.color, "electric")
 				local env = mathMin(1, (now - r.start) / 10) * mathMin(1, mathMax(0, (r.endF - now) / DETACH_FADE))
 				ca = ca * (o.alpha or 1) * env
-				local w = o.width or 8
+				local w = o.width or 10
 				local pts = r.pts
 				local px, py, pz, pAge = hx, hy, hz, 0
 				local dist = 0
@@ -1745,7 +1749,10 @@ function gadget:Shutdown()
 		GG.HeroFX = nil
 	end
 	for _, b in ipairs(batches) do
-		if b.vbo then
+		if b.tint then
+			b.vbo.instanceVBO:Delete()
+			b.vbo.VAO:Delete()
+		elseif b.vbo then
 			b.vbo:Delete()
 		end
 	end
@@ -1780,12 +1787,17 @@ function gadget:UnitDestroyed(unitID)
 end
 
 function gadget:GameFrame(n)
+	local t0 = debugStats and spGetTimer()
 	sweep(n)
 	if n % 3 == 0 then
 		updateVisibility()
 	end
 	if perFrame.nTrails > 0 and n % 2 == 0 then
 		sampleTrails(n)
+	end
+	if t0 then
+		statSim = statSim + spDiffTimers(spGetTimer(), t0, true)
+		statSimN = statSimN + 1
 	end
 end
 
@@ -1817,6 +1829,10 @@ function gadget:DrawWorldPreUnit()
 	end
 	local t0 = debugStats and spGetTimer()
 	rebuildDirty()
+	local t1 = t0 and spGetTimer()
+	if t0 then
+		statLua = statLua + spDiffTimers(t1, t0, true)
+	end
 	if B.ground.vbo.usedElements + B.groundU.vbo.usedElements == 0 then
 		return
 	end
@@ -1834,8 +1850,8 @@ function gadget:DrawWorldPreUnit()
 	end
 	glTexture(0, false)
 	endFX()
-	if t0 then
-		statTime = statTime + spDiffTimers(spGetTimer(), t0, true)
+	if t1 then
+		statGL = statGL + spDiffTimers(spGetTimer(), t1, true)
 	end
 end
 
@@ -1864,6 +1880,7 @@ function gadget:DrawWorld()
 	if perFrame.nTrails > 0 or B.trail.vbo.usedElements > 0 then
 		buildTrails(now)
 	end
+	local t1 = t0 and spGetTimer()
 
 	-- model overlays first (depth-tested against the model they cover)
 	if B.tint.vbo.usedElements > 0 then
@@ -1905,15 +1922,17 @@ function gadget:DrawWorld()
 	endFX()
 
 	if t0 then
-		local dt = spDiffTimers(spGetTimer(), t0, true)
-		statTime = statTime + dt
+		local dl = spDiffTimers(t1, t0, true)
+		statLua = statLua + dl
+		statGL = statGL + spDiffTimers(spGetTimer(), t1, true)
 		statFrames = statFrames + 1
-		if dt > statMax then statMax = dt end
-		if statFrames >= 150 then
+		if dl > statMax then statMax = dl end
+		if statFrames >= 30 then
 			local inst = 0
 			for _, b in ipairs(batches) do inst = inst + b.vbo.usedElements end
-			Spring.Echo(string.format("[HeroFX] lua %.3f ms/frame avg, %.3f max, %d instances", statTime / statFrames, statMax, inst))
-			statTime, statFrames, statMax = 0, 0, 0
+			Spring.Echo(string.format("[HeroFX] per draw frame: lua %.3f ms (max %.3f), gl submit %.3f ms; per sim frame lua %.3f ms; %d instances",
+				statLua / statFrames, statMax, statGL / statFrames, statSim / mathMax(1, statSimN), inst))
+			statLua, statGL, statSim, statSimN, statFrames, statMax = 0, 0, 0, 0, 0, 0
 		end
 	end
 end

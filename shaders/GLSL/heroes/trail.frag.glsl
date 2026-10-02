@@ -21,7 +21,7 @@ void main() {
 	float core = exp(-x * x * 16.0);
 	float glow = exp(-x * x * 2.5) - exp(-2.5);
 	float flow = 0.75 + 0.5 * vnoise2(vec2(vT.z * 0.03 + now * 0.2, x * 1.5 + vT.w));
-	vec3 rgb = (vColor.rgb * glow * 0.9 * flow + vec3(1.0, 0.97, 0.94) * core * (1.0 - age) * 0.9) * fade * vColor.a;
+	vec3 rgb = (vColor.rgb * glow * 1.3 * flow + vec3(1.0, 0.97, 0.94) * core * (1.0 - age) * 0.9) * fade * vColor.a;
 	if (max(rgb.r, max(rgb.g, rgb.b)) < 0.003) discard;
-	fragColor = vec4(rgb, clamp(glow * 0.3 * fade * vColor.a, 0.0, 1.0));
+	fragColor = vec4(rgb, clamp(glow * 0.5 * fade * vColor.a, 0.0, 1.0));
 }

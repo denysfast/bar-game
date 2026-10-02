@@ -35,13 +35,14 @@ void main() {
 	vec3 rgb;
 	float a;
 	if (vPass < 0.5) {
-		float I = pow(ndv, 1.6) * vert * (0.45 + 0.9 * streak) * spiral + base * pow(ndv, 0.8) * 0.9;
-		rgb = vColor.rgb * I * 0.9 + hotC * base * ndv * 0.4;
-		a = I * 0.3;
+		float sharp = smoothstep(0.35, 0.75, streak);
+		float I = pow(ndv, 1.4) * vert * (0.25 + 0.95 * sharp) * spiral + base * pow(ndv, 0.8) * 0.6;
+		rgb = vColor.rgb * I * 0.75 + hotC * base * ndv * 0.25;
+		a = I * 0.35;
 	} else {
-		float I = pow(ndv, 2.5) * vert * (0.8 + 0.4 * streak) + base * 0.6;
-		rgb = mix(hotC, vColor.rgb, 0.2) * I * 1.4;
-		a = I * 0.15;
+		float I = pow(ndv, 3.0) * vert * (0.6 + 0.5 * streak) + base * 0.4;
+		rgb = mix(hotC, vColor.rgb, 0.35) * I * 0.9;
+		a = I * 0.1;
 	}
 	float k = env * vColor.a * (1.0 - life * 0.35);
 	rgb *= k;

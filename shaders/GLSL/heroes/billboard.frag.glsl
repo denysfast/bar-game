@@ -56,7 +56,8 @@ void main() {
 		float inBall = 1.0 - smoothstep(0.92, 1.0, rn);
 		float limb = pow(clamp(rn, 0.0, 1.0), 4.0);
 		float core = exp(-rn * rn * 6.0);
-		vec3 ball = mix(col, hotC, 0.35 + 0.4 * plasma) * (0.55 + 0.9 * plasma * plasma2) + hotC * (core * 1.4 + limb * 0.7);
+		float swirl = smoothstep(0.3, 0.8, plasma * 0.7 + plasma2 * 0.5);
+		vec3 ball = col * (0.35 + 1.1 * swirl) + mix(col, hotC, 0.6) * limb * 0.55 + hotC * core * 0.85;
 		float halo = exp(-max(rn - 1.0, 0.0) * 2.4) * (1.0 - inBall) * 0.75;
 		float outer = exp(-r * 2.6) * 0.35;
 		// tendrils: a few jagged arcs from the limb outward, re-rolled every tick
@@ -75,7 +76,7 @@ void main() {
 			tend = exp(-da * da / (th * th)) * on + exp(-abs(da) / 0.05) * on * 0.25;
 		}
 		rgb = ball * inBall + col * (halo + outer) + mix(col, hotC, 0.6) * tend * 1.3;
-		a = clamp(inBall * 0.55 + halo * 0.35 + tend * 0.3, 0.0, 1.0);
+		a = clamp(inBall * 0.85 + halo * 0.4 + tend * 0.3, 0.0, 1.0);
 		float edge = 1.0 - smoothstep(0.9, 1.0, r);
 		rgb *= edge;
 		a *= edge;
