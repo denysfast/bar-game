@@ -199,7 +199,20 @@ local function shadowstep(api, unitID, h, r, targetID)
 	local bx, bz = L.clampX(tx + dx / d * back), L.clampZ(tz + dz / d * back)
 	local fromCloak = h.store.cloaked
 	if not api.blink(unitID, bx, bz) then
-		return false
+		-- no room right behind it: anywhere around it
+		local ok = false
+		for k = 1, 7 do
+			local a = math.atan2(tz - z0, tx - x0) + k * 0.785
+			local px, pz = L.clampX(tx + math.cos(a) * back), L.clampZ(tz + math.sin(a) * back)
+			if api.blink(unitID, px, pz) then
+				ok = true
+				break
+			end
+		end
+		if not ok then
+			L.log(api, h, "a3 shadowstep: no room around the target")
+			return false
+		end
 	end
 	local x1, y1, z1 = api.pos(unitID)
 	Spring.SetUnitRotation(unitID, 0, math.atan2(tx - x1, tz - z1), 0)
@@ -416,6 +429,9 @@ function M.autocast(api, unitID, h, key, rank)
 		end
 		if not t then
 			t = L.mostValuable(api, h, x, z, range, nil, backline)
+		end
+		if Spring.GetGameRulesParam("cort4_debug") == 1 then
+			L.log(api, h, "a3 autocast target=%s guarded=%s hp=%.2f", tostring(t), t and tostring(guarded(api, h, t)) or "-", hpf)
 		end
 		if t and L.alive(t) and (guarded(api, h, t) <= 2 or hpf > 0.6) then
 			h.store.followUp = nil

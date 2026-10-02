@@ -33,6 +33,7 @@ end
 
 local function lava(api, unitID, h, x, z, r, dps, seconds)
 	local gy = L.gy(x, z)
+	L.log(api, h, "lava pool r=%d dps=%d for %d s", r, dps, seconds)
 	L.pool(api, h, unitID, x, z, r, dps, seconds, { pattern = "heat", color = { 1, 0.35, 0.05, 0.95 } })
 	L.flash(api, x, gy + 10, z, { radius = r, color = { 1, 0.3, 0, 0.5 }, ttl = seconds })
 	L.ring(api, x, z, { kind = "rune", r0 = r, r1 = r, width = 18, ttl = seconds, color = { 1, 0.45, 0.1, 0.6 }, rot = 0.4 })
@@ -79,7 +80,7 @@ local function shellImpact(api, unitID, h, magma, x, z)
 			h.store.lastImp = { f = f, x = x, z = z }
 		end
 	end
-	if magma and h.store.siege then
+	if magma then
 		local a3 = b(h, "a3")
 		local r = max(1, api.rank(h, "a3"))
 		lava(api, unitID, h, x, z, a3.poolRadius or 150, api.val(a3.pool, r) * api.power(h), a3.poolTime or 4)
