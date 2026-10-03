@@ -26,6 +26,12 @@ function gadget:GamePaused(playerID, isPaused)
 	paused = isPaused
 end
 
+-- a multiplayer save is written while paused and loads unpaused without a GamePaused call;
+-- frames only advance unpaused, so a frame clears a stale flag
+function gadget:GameFrame()
+	paused = false
+end
+
 function gadget:AllowCommand(
 	unitID,
 	unitDefID,

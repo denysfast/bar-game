@@ -229,6 +229,8 @@ local function updateButtons()
 	end
 	if isSinglePlayer and cfg.allowSavegame and WG.savegame then
 		addButton("save", BAR.I18N("ui.topbar.button.save"))
+	elseif not isSinglePlayer and cfg.allowSavegame and WG.mpsave and not spec and gameStarted and not gameIsOver then
+		addButton("save", BAR.I18N("ui.topbar.button.save"))
 	end
 
 	buttonsArea.buttons[lastbutton][1] = buttonsArea.buttons[lastbutton][1] - sidePadding
@@ -805,6 +807,8 @@ local function applyButtonAction(button)
 		if isSinglePlayer and cfg.allowSavegame and WG.savegame then
 			local time = os.date("%Y%m%d_%H%M%S")
 			Spring.SendCommands("savegame " .. time)
+		elseif not isSinglePlayer and WG.mpsave then
+			WG.mpsave.Request()
 		end
 	elseif button == "scavengers" then
 		toggleWindow("scavengerinfo")
