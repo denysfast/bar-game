@@ -43,12 +43,17 @@ H.FOUNTAIN_RADIUS = 1100
 H.FOUNTAIN_REGEN = 0.02
 
 -- v19 hero cap (SPEC section 3): at most MAX_HEROES per team, alive or dead (a dead hero keeps its slot until it is
--- revived), each hero type once. Slot 1 comes with the altar, slot N+1 with altar upgrade N (a command on the altar:
--- paid at once, `time` seconds of research during which the altar does not build). Losing the altar keeps them.
-H.MAX_HEROES = 3
+-- revived), each hero type once. Slot 1 comes with the altar, slot N+1 with altar upgrade N (a command on the altar).
+-- v20: an upgrade is built like a unit - it takes `buildtime` of build power (the altar's own plus the constructors
+-- that guard / assist the altar) and drains `metal` / `energy` along the way in proportion to its progress (a stall
+-- in storage slows it down); the altar does not build meanwhile. Losing the altar keeps the finished upgrades and the
+-- progress of a running one (the next altar of the team continues it).
+H.MAX_HEROES = 5
 H.SLOT_UPGRADES = {
-	{ name = "Altar Upgrade I", metal = 100000, energy = 1000000, time = 45 },
-	{ name = "Altar Upgrade II", metal = 200000, energy = 2000000, time = 45 },
+	{ name = "Altar Upgrade I", metal = 100000, energy = 1000000, buildtime = 1000000 },
+	{ name = "Altar Upgrade II", metal = 200000, energy = 2000000, buildtime = 1500000 },
+	{ name = "Altar Upgrade III", metal = 300000, energy = 3000000, buildtime = 2000000 },
+	{ name = "Altar Upgrade IV", metal = 400000, energy = 4000000, buildtime = 2500000 },
 }
 
 -- AI heroes are driven by the hero gadget, not by the skirmish AI: they march with the strongest group

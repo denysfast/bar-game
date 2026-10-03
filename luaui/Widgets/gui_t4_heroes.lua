@@ -528,12 +528,12 @@ local function drawHeroBar()
 			text(nm, (xa + xb) / 2, y1 + size * 0.12, size * 0.17, researching and GOLD or GREY, "co")
 			local t
 			if researching then
-				local total = (up.time or 45) * 30
-				bar(xa, y1 - 2 - barH, xb, y1 - 2, 1 - (rFrame - f) / total, { 1, 0.75, 0.2, 1 })
-				t = string.format("Hero slot %d: %s is being researched, %d s left", c.slot, up.name or "", math.ceil((rFrame - f) / 30))
+				local prog = spGetTeamRulesParam(team, "hero_slots_research_progress") or 0
+				bar(xa, y1 - 2 - barH, xb, y1 - 2, prog, { 1, 0.75, 0.2, 1 })
+				t = string.format("Hero slot %d: %s is being built, %d%%, ~%d s left", c.slot, up.name or "", math.floor(prog * 100), math.ceil((rFrame - f) / 30))
 			else
-				t = string.format("Hero slot %d is locked: needs %s\n(%s metal, %s energy, %d s of research at the altar)%s", c.slot, up.name or "an altar upgrade",
-					fmtNum(up.metal or 0), fmtNum(up.energy or 0), up.time or 45,
+				t = string.format("Hero slot %d is locked: needs %s\n(%s metal, %s energy, %s build time - drained while the altar builds it)%s", c.slot, up.name or "an altar upgrade",
+					fmtNum(up.metal or 0), fmtNum(up.energy or 0), fmtNum(up.buildtime or 0),
 					c.upgrade > (spGetTeamRulesParam(team, "hero_slots") or 1) and ("\nafter " .. ((H.SLOT_UPGRADES[c.upgrade - 1] or {}).name or "the previous one")) or "")
 			end
 			addBox(xa, y1, xb, y2, teamAltars[1] and function() focusUnit(teamAltars[1], true) end or nil, t .. (teamAltars[1] and "\nClick: select the altar" or ""))
@@ -985,21 +985,29 @@ local function drawAltar(altarID)
 	local by1, by2 = y1 + u(0.07), y1 + u(0.2)
 	if researching then
 		local rup = H.SLOT_UPGRADES[rLevel] or {}
-		local total = (rup.time or 45) * 30
-		bar(x1 + u(0.08), by1, x2 - u(0.08), by2, 1 - (rFrame - f) / total, { 1, 0.72, 0.2, 1 })
-		text(string.format("%s: researching, %d s left", rup.name or "Upgrade", math.ceil((rFrame - f) / 30)), (x1 + x2) / 2, by1 + (by2 - by1) * 0.25, (by2 - by1) * 0.5, WHITE, "co")
-		addBox(x1 + u(0.08), by1, x2 - u(0.08), by2, nil, "The altar does not build while it researches.\nLosing the altar keeps finished upgrades.")
+		local prog = spGetTeamRulesParam(team, "hero_slots_research_progress") or 0
+		local stall = (spGetTeamRulesParam(team, "hero_slots_research_stall") or 0) > 0
+		local bp = spGetTeamRulesParam(team, "hero_slots_research_bp") or 0
+		bar(x1 + u(0.08), by1, x2 - u(0.08), by2, prog, stall and { 0.85, 0.3, 0.15, 1 } or { 1, 0.72, 0.2, 1 })
+		text(string.format("%s: %d%%, ~%d s left%s", rup.name or "Upgrade", math.floor(prog * 100), math.ceil((rFrame - f) / 30), stall and " (short of resources)" or ""),
+			(x1 + x2) / 2, by1 + (by2 - by1) * 0.25, (by2 - by1) * 0.5, WHITE, "co")
+		addBox(x1 + u(0.08), by1, x2 - u(0.08), by2, own and function()
+				Spring.SendLuaRulesMsg("t4hero:altar:" .. altarID)
+				sound("beep6.wav", 0.5)
+			end or nil,
+			string.format("Build power %s (the altar + constructors that guard it). Metal and energy drain while it builds.\nThe altar does not build heroes meanwhile. Losing the altar keeps the progress.%s",
+				fmtNum(bp), own and "\nClick: cancel, the spent metal and energy come back" or ""))
 	elseif up then
 		local m = Spring.GetTeamResources(team, "metal") or 0
 		local e = Spring.GetTeamResources(team, "energy") or 0
 		local ok = own and m >= up.metal and e >= up.energy
-		K.button(string.format("%s:  %s M  %s E  (%d s)", up.name, fmtNum(up.metal), fmtNum(up.energy), up.time), x1 + u(0.08), by1, x2 - u(0.08), by2,
+		K.button(string.format("%s:  %s M  %s E  (%s BT)", up.name, fmtNum(up.metal), fmtNum(up.energy), fmtNum(up.buildtime)), x1 + u(0.08), by1, x2 - u(0.08), by2,
 			ok and GOLD or { 0.7, 0.2, 0.15, 1 }, own, function()
 				Spring.SendLuaRulesMsg("t4hero:altar:" .. altarID)
 				sound("beep6.wav", 0.5)
 			end,
-			string.format("%s opens hero slot %d of %d.\nPaid at once: %s metal (%s in storage), %s energy (%s).\n%d s of research; the altar does not build meanwhile.\nEach upgrade costs twice the previous one. Losing the altar keeps the upgrades.",
-				up.name, slots + 1, H.MAX_HEROES, fmtNum(up.metal), fmtNum(m), fmtNum(up.energy), fmtNum(e), up.time),
+			string.format("%s opens hero slot %d of %d.\nBuilt like a unit: %s metal (%s in storage), %s energy (%s), %s build time.\nResources drain while it builds; constructors that guard the altar add their build power.\nThe altar does not build heroes meanwhile. Losing the altar keeps the upgrades.",
+				up.name, slots + 1, H.MAX_HEROES, fmtNum(up.metal), fmtNum(m), fmtNum(up.energy), fmtNum(e), fmtNum(up.buildtime)),
 			{ textColor = ok and GOLD or RED, border = 2 })
 	else
 		text("All hero slots are open", (x1 + x2) / 2, by1 + (by2 - by1) * 0.25, (by2 - by1) * 0.5, GOLD, "co")
@@ -1086,8 +1094,9 @@ local function drawWorldLabels()
 				local ud = UnitDefs[spGetUnitDefID(aid) or -1]
 				local sx, sy, sz = spWorldToScreenCoords(x, y + (ud and ud.height or 100) + 40, z)
 				if sz < 1 then
-					bar(sx - size * 4, sy, sx + size * 4, sy + size * 0.5, 1 - (rFrame - f) / ((up.time or 45) * 30), { 1, 0.72, 0.2, 1 })
-					text(string.format("%s  %d s", up.name or "Upgrade", math.ceil((rFrame - f) / 30)), sx, sy + size * 0.8, size * 0.9, GOLD, "co")
+					local prog = spGetTeamRulesParam(team, "hero_slots_research_progress") or 0
+					bar(sx - size * 4, sy, sx + size * 4, sy + size * 0.5, prog, { 1, 0.72, 0.2, 1 })
+					text(string.format("%s  %d%%", up.name or "Upgrade", math.floor(prog * 100)), sx, sy + size * 0.8, size * 0.9, GOLD, "co")
 				end
 			end
 		end

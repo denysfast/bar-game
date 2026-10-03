@@ -18,9 +18,9 @@ end
 -- Protocol (LuaRules messages from the owner's UI; only from a non-spectator of the hero's / altar's team):
 --   t4hero:learn:<unitID>:<key>       spend a point (+ metal) on a rank: a1 | a2 | a3 | ult | vit | mob | dmg | rng | imp
 --   t4hero:buylevel:<unitID>          buy one level for metal (price H.levelPrice, one per H.BUY_COOLDOWN s)
---   t4hero:altar:<altarID>            start the next altar upgrade (same as the altar command CMD_ALTAR_UPGRADE)
+--   t4hero:altar:<altarID>            start the next altar upgrade, or cancel the running one (= CMD_ALTAR_UPGRADE)
 --   (item messages, e.g. t4hero:salvage:..., belong to the items gadget: this one never swallows them)
--- Commands: CMD_HERO_AUTOCAST 36100 (heroes, mode 0/1), CMD_ALTAR_UPGRADE 36400 (altars, instant), ability commands
+-- Commands: CMD_HERO_AUTOCAST 36100 (heroes, mode 0/1), CMD_ALTAR_UPGRADE 36400 (altars, instant: start / cancel), ability commands
 --   from the hero configs (Armada 36101-36199, Cortex 36201-36299, Legion 36301-36399, core 36400+).
 -- Unit rules params of a hero (INLOS = everyone who sees it, ALLIED = its allies):
 --   hero_level (INLOS), hero_xp (0..1 to the next level), hero_xp_abs, hero_xp_need, hero_points, hero_kills,
@@ -37,7 +37,9 @@ end
 -- Unit rules params of an altar: hero_next (AI teams only: the hero the skirmish AI should build next, "" = none).
 -- Team rules params (ALLIED): hero_dead_<name> (the level a revive brings back), hero_revive_<name> (revive metal),
 --   hero_built_<name>, hero_ai_bank, hero_ai_ebank (AI savings), hero_slots (1..H.MAX_HEROES), hero_slots_used,
---   hero_slots_research (frame the running altar upgrade ends, 0 = none), hero_slots_research_level (1 | 2).
+--   hero_slots_research (estimated frame the running altar upgrade ends, 0 = none), hero_slots_research_level (1..4),
+--   hero_slots_research_progress (0..1), hero_slots_research_bp (build power on it), hero_slots_research_stall (1 =
+--   short of metal / energy).
 -- Game rules param hero_ability_log = 1: "[ability]" infolog lines (benches).
 -- Events to LuaUI (Script.LuaUI.T4HeroEvent(kind, unitID, a, b)): learn (rank), levelup (level), nometal (price),
 --   bought (level, price), born / revived (level), died (level, revive level), cast (rank, index in H.abilityKeys),
@@ -247,6 +249,8 @@ if gadgetHandler:IsSyncedCode() then
 				health = ud.health, speed = ud.speed, turnRate = ud.turnRate or 0, sight = ud.losRadius or ud.sightDistance or 0,
 				airSight = ud.airLosRadius or 0, radar = ud.radarDistance or ud.radarRadius or 0, height = ud.height or 60,
 				canCloak = ud.canCloak, fx = cfg.fx or 2,
+				-- v20: a hero's whole damage scale (weapons and abilities; T4.heroBalance `dmgScale`, the artillery heroes)
+				dmgScale = tonumber(ud.customParams.t4_dmg_scale) or 1,
 				weapons = {}, keyNum = {}, numOf = {}, extra = {}, copies = {}, cmds = {},
 				altWeapon = {}, -- keys of the second arc of a gun (not counted in the DPS)
 			}
@@ -562,6 +566,13 @@ if gadgetHandler:IsSyncedCode() then
 		if ally and spGetUnitAllyTeam(uid) == ally then
 			return false
 		end
+		if not paraTime or paraTime <= 0 then
+			-- v20: the attacker hero's damage scale (artillery heroes); item powers keep their own numbers
+			local h = heroOf(ownerID)
+			if h and h.def.dmgScale ~= 1 and not itemDamage() then
+				dmg = dmg * h.def.dmgScale
+			end
+		end
 		local prev = inAbility
 		inAbility = true
 		Spring.AddUnitDamage(uid, dmg, paraTime or 0, (ownerID and spValidUnitID(ownerID)) and ownerID or nil)
@@ -761,7 +772,7 @@ if gadgetHandler:IsSyncedCode() then
 					end
 					-- the shown DPS counts what T4.weaponDps balances: no paralyzers, not the other arc of a gun
 					if w.damage > 0 and not def.altWeapon[w.key] and not w.paralyzer and w.range >= 150 then
-						dps = dps + w.damage * h.dmgMult * (w.projectiles or 1) * (w.burst or 1) / max(0.03, reload)
+						dps = dps + w.damage * h.dmgMult * def.dmgScale * (w.projectiles or 1) * (w.burst or 1) / max(0.03, reload)
 					end
 				end
 			end
@@ -955,6 +966,9 @@ if gadgetHandler:IsSyncedCode() then
 			local r = research[teamID]
 			Spring.SetTeamRulesParam(teamID, "hero_slots_research", r and r.finish or 0, ALLIED)
 			Spring.SetTeamRulesParam(teamID, "hero_slots_research_level", r and r.level or 0, ALLIED)
+			Spring.SetTeamRulesParam(teamID, "hero_slots_research_progress", r and r.progress or 0, ALLIED)
+			Spring.SetTeamRulesParam(teamID, "hero_slots_research_bp", r and r.bp or 0, ALLIED)
+			Spring.SetTeamRulesParam(teamID, "hero_slots_research_stall", r and r.stall or 0, ALLIED)
 		end
 
 		local altarTips = {} -- "<altar>:<cmd>" -> the original tooltip
@@ -1045,16 +1059,17 @@ if gadgetHandler:IsSyncedCode() then
 						local tip, name
 						if r then
 							name = (H.SLOT_UPGRADES[r.level] or {}).name or "Upgrade"
-							tip = string.format("%s: researching, %d s left (the altar does not build meanwhile)", name, max(0, floor((r.finish - frameNow()) / GAME_SPEED)))
+							tip = string.format("%s: %d%% built (the altar does not build meanwhile; constructors that guard the altar help).%s",
+								name, floor(r.progress * 100), r.prepaid and "" or "\nClick again: cancel, the spent metal and energy come back")
 						elseif nextUp then
 							name = nextUp.name
-							tip = string.format("%s: hero slot %d of %d for %d metal and %d energy, %d s of research (the altar does not build meanwhile)",
-								nextUp.name, slots + 1, H.MAX_HEROES, nextUp.metal, nextUp.energy, nextUp.time)
+							tip = string.format("%s: hero slot %d of %d. Built like a unit: %d metal, %d energy, %d build time - drained while it builds; constructors that guard the altar help (the altar does not build meanwhile)",
+								nextUp.name, slots + 1, H.MAX_HEROES, nextUp.metal, nextUp.energy, nextUp.buildtime)
 						else
 							name = "Altar upgraded"
 							tip = string.format("All %d hero slots are open", H.MAX_HEROES)
 						end
-						Spring.EditUnitCmdDesc(altarID, idx, { name = name, tooltip = tip, disabled = (r ~= nil) or nextUp == nil })
+						Spring.EditUnitCmdDesc(altarID, idx, { name = name, tooltip = tip, disabled = (r and r.prepaid) or (not r and nextUp == nil) })
 					end
 					if isAITeam[teamID] then
 						spSetUnitRulesParam(altarID, "hero_next", aiNextHero(teamID, altarID), ALLIED)
@@ -1074,35 +1089,70 @@ if gadgetHandler:IsSyncedCode() then
 			})
 		end
 
-		-- start the next altar upgrade at `altarID`: pays at once (paid = true: the AI paid from its bank).
-		-- Returns true, or false and why: "max", "busy", "metal", "energy"
+		-- v20: an altar upgrade is built like a unit (H.SLOT_UPGRADES: metal, energy, buildtime). Build power = the
+		-- altar's own + the constructors that guard (assist) it within their build range; metal and energy are drained in
+		-- proportion to the progress, a short storage slows it down. paid = true: the AI paid the whole price from its
+		-- bank at the start (no drain).
+		local function altarBuildPower(altarID)
+			if not alive(altarID) then
+				return 0
+			end
+			local ud = UnitDefs[spGetUnitDefID(altarID)]
+			local bp = ud and ud.buildSpeed or 0
+			local team = Spring.GetUnitTeam(altarID)
+			local ax, _, az = spGetUnitPosition(altarID)
+			local arad = Spring.GetUnitRadius(altarID) or 0
+			for _, uid in ipairs(Spring.GetTeamUnits(team) or {}) do
+				local bud = UnitDefs[spGetUnitDefID(uid)]
+				if uid ~= altarID and bud and bud.isBuilder and (bud.buildSpeed or 0) > 0 and not heroes[uid] then
+					local cmds = Spring.GetUnitCommands(uid, 1)
+					local c = cmds and cmds[1]
+					if c and c.id == CMD.GUARD and c.params and c.params[1] == altarID then
+						local _, bp2 = spGetUnitHealth(uid)
+						local ux, _, uz = spGetUnitPosition(uid)
+						local reach = (bud.buildDistance or 128) + arad + 250 -- a guarding builder idles near the altar, not at it
+						if ux and (ux - ax) ^ 2 + (uz - az) ^ 2 <= reach * reach then
+							bp = bp + bud.buildSpeed
+						end
+					end
+				end
+			end
+			return bp
+		end
+
+		local function setAltarBusy(altarID, busy)
+			if alive(altarID) then
+				local ud = UnitDefs[spGetUnitDefID(altarID)]
+				Spring.SetUnitBuildSpeed(altarID, busy and 0 or (ud and ud.buildSpeed or 1))
+			end
+		end
+
+		-- start the next altar upgrade at `altarID` (or cancel the running one: the spent resources come back).
+		-- Returns true, or false and why: "max", "busy", "cancelled"
 		function startResearch(teamID, altarID, paid)
 			local slots = teamSlots[teamID] or 1
+			local cur = research[teamID]
+			if cur then
+				if paid or cur.prepaid then
+					return false, "busy"
+				end
+				research[teamID] = nil
+				Spring.AddTeamResource(teamID, "metal", cur.spentM or 0)
+				Spring.AddTeamResource(teamID, "energy", cur.spentE or 0)
+				setAltarBusy(cur.altar, false)
+				Spring.Echo(string.format("[t4heroes] team %d cancels %s at %d%%", teamID, (H.SLOT_UPGRADES[cur.level] or {}).name or "?", floor(cur.progress * 100)))
+				refreshAltars(teamID)
+				return false, "cancelled"
+			end
 			local up = H.SLOT_UPGRADES[slots]
 			if not up then
 				return false, "max"
 			end
-			if research[teamID] then
-				return false, "busy"
-			end
-			if not paid then
-				local m = Spring.GetTeamResources(teamID, "metal") or 0
-				local e = Spring.GetTeamResources(teamID, "energy") or 0
-				if m < up.metal then
-					toUI("nometal", altarID, up.metal)
-					return false, "metal"
-				end
-				if e < up.energy then
-					toUI("noenergy", altarID, up.energy)
-					return false, "energy"
-				end
-				Spring.UseTeamResource(teamID, "metal", up.metal)
-				Spring.UseTeamResource(teamID, "energy", up.energy)
-			end
 			local f = frameNow()
-			research[teamID] = { level = slots, finish = f + floor(up.time * GAME_SPEED), altar = altarID }
+			research[teamID] = { level = slots, altar = altarID, progress = 0, spentM = 0, spentE = 0, prepaid = paid or nil,
+				bp = 0, stall = 0, finish = f + floor(up.buildtime / max(1, altarBuildPower(altarID)) * GAME_SPEED) }
+			setAltarBusy(altarID, true)
 			if alive(altarID) then
-				Spring.SetUnitBuildSpeed(altarID, 0)
 				local x, y, z = spGetUnitPosition(altarID)
 				ceg("hero-learn", x, y, z)
 			end
@@ -1112,20 +1162,52 @@ if gadgetHandler:IsSyncedCode() then
 			return true
 		end
 
+		-- once a second (dt = 1 s)
 		function researchTick(f)
 			for teamID, r in pairs(research) do
-				if r.finish <= f then
+				local up = H.SLOT_UPGRADES[r.level]
+				if not alive(r.altar) then
+					-- the altar is gone: another altar of the team continues the progress
+					for aid, t in pairs(altars) do
+						if t == teamID and alive(aid) then
+							r.altar = aid
+							setAltarBusy(aid, true)
+							break
+						end
+					end
+				end
+				local bp = altarBuildPower(r.altar)
+				local step = up and min(1 - r.progress, bp / max(1, up.buildtime)) or 1
+				local frac = 1
+				if step > 0 and up and not r.prepaid then
+					local needM, needE = up.metal * step, up.energy * step
+					local m = Spring.GetTeamResources(teamID, "metal") or 0
+					local e = Spring.GetTeamResources(teamID, "energy") or 0
+					frac = max(0, min(1, needM > 0 and m / needM or 1, needE > 0 and e / needE or 1))
+					if frac > 0 then
+						Spring.UseTeamResource(teamID, { metal = needM * frac, energy = needE * frac })
+						r.spentM = r.spentM + needM * frac
+						r.spentE = r.spentE + needE * frac
+					end
+				end
+				r.progress = min(1, r.progress + step * frac)
+				r.bp = floor(bp * frac)
+				r.stall = (step > 0 and frac < 0.99) and 1 or 0
+				local rate = up and bp * frac / max(1, up.buildtime) or 0
+				r.finish = f + (rate > 0 and floor((1 - r.progress) / rate * GAME_SPEED) or 3600 * GAME_SPEED)
+				if r.progress >= 1 - 1e-6 then
 					research[teamID] = nil
 					teamSlots[teamID] = min(H.MAX_HEROES, r.level + 1)
+					setAltarBusy(r.altar, false)
 					if alive(r.altar) then
-						local ud = UnitDefs[spGetUnitDefID(r.altar)]
-						Spring.SetUnitBuildSpeed(r.altar, ud and ud.buildSpeed or 1)
 						local x, y, z = spGetUnitPosition(r.altar)
 						ceg("hero-levelup-big", x, y, z)
 					end
 					Spring.Echo(string.format("[t4heroes] team %d: altar upgrade done, %d hero slots", teamID, teamSlots[teamID]))
 					toUI("slots", r.altar or -1, teamSlots[teamID])
 					refreshAltars(teamID)
+				else
+					publishSlots(teamID)
 				end
 			end
 		end
@@ -1635,7 +1717,7 @@ if gadgetHandler:IsSyncedCode() then
 				-- a hero's own weapon hit: the ONE multiplier (level, Firepower, damage mods, buffs) and the item bonus of
 				-- the weapon's damage type
 				local base = copyBase[weaponDefID] or weaponDefID
-				local hm = a.dmgMult * (1 + dtypeBonus(a, wdType[base]))
+				local hm = a.dmgMult * a.def.dmgScale * (1 + dtypeBonus(a, wdType[base]))
 				if not paralyzer then
 					hm = hm * abilityAttackMult(a, unitID, unitDefID) -- kit crit / slayer
 					local mods = a.mods
@@ -2186,15 +2268,18 @@ if gadgetHandler:IsSyncedCode() then
 			reflect = true, turretTurn = true }
 		local BUFF_FLAG = { immobile = true, cloak = true, hidden = true, unstoppable = true }
 
-		-- cloak: the engine cloak when the unitdef can cloak; otherwise the enemies' line of sight to the hero is
-		-- switched off (a radar blip stays). The hero holds fire while cloaked (a shot would reveal it).
+		-- cloak: the engine cloak when the unitdef can cloak; otherwise the enemies' line of sight AND radar to the hero
+		-- are switched off (v20: a radar blip stayed and enemy units kept shooting the "invisible" hero through it). The
+		-- hero holds fire while cloaked (a shot would reveal it).
+		local CLOAK_STATE = { los = false, prevLos = false, radar = false, contRadar = false }
+		local CLOAK_MASK = { los = true, prevLos = true, radar = true, contRadar = true }
 		local function losCloak(unitID, on)
 			local myAlly = spGetUnitAllyTeam(unitID)
 			for _, at in ipairs(Spring.GetAllyTeamList()) do
 				if at ~= myAlly then
 					if on then
-						Spring.SetUnitLosState(unitID, at, { los = false, prevLos = false })
-						Spring.SetUnitLosMask(unitID, at, { los = true, prevLos = true })
+						Spring.SetUnitLosState(unitID, at, CLOAK_STATE)
+						Spring.SetUnitLosMask(unitID, at, CLOAK_MASK)
 					else
 						Spring.SetUnitLosMask(unitID, at, 0)
 					end
@@ -2210,6 +2295,7 @@ if gadgetHandler:IsSyncedCode() then
 			h.cloaked = on
 			if h.def.canCloak then
 				Spring.SetUnitCloak(unitID, on and 4 or false)
+				Spring.SetUnitStealth(unitID, on and true or (UnitDefs[h.def.udid].stealth or false))
 			else
 				losCloak(unitID, on)
 			end
@@ -3111,7 +3197,7 @@ if gadgetHandler:IsSyncedCode() then
 			end
 			local ab = h.absorb
 			if ab then
-				if ab.expire <= f or ab.left <= 0 then
+				if ab.expire <= f or (ab.left <= 0 and not ab.keep) then
 					h.absorb = nil
 					spSetUnitRulesParam(unitID, "hero_absorb", 0, ALLIED)
 					spSetUnitRulesParam(unitID, "hero_absorb_max", 0, ALLIED)

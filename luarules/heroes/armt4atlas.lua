@@ -5,8 +5,8 @@
 --      the Doom Laser hits 5000+ metal targets harder.
 --   a2 Bulwark Protocol (active, self): plants its feet - immobile, much less damage taken, taunts every enemy around
 --      (heroes 1.5 s), reflects a share of the damage (before the reduction) back at the attackers as lightning.
---   a3 Seismic Charge (active, map): charges in a straight line; every footstep (0.35 s) is a shockwave that slows, the
---      landing hits harder and stuns.
+--   a3 Titan Salvo (active, map; v20, replaced Seismic Charge): a salvo of guided rockets rains on the area, every hit
+--      Sunders its target (the Doom Lens value once a1 is learned), the last three rockets also slow.
 --   ult Doomsday Lance (active, map): charges 0.8 s, then the Doom Laser becomes a continuous lance twice its range long
 --      and sweeps a 60 degree arc centred on the point; units it kills burst for 10% of their max HP.
 
@@ -115,63 +115,72 @@ function M.damaged(api, unitID, h, damage, attackerID, weaponDefID, isParalyzer,
 	return damage
 end
 
----------------------------------------------------------------------------- a3 Seismic Charge
+---------------------------------------------------------------------------- a3 Titan Salvo
 
-local function charge(api, unitID, h, r, tx, tz)
+-- v20 (replaces Seismic Charge): one guided rocket every 0.1 s from the shoulder rack, launched up and turning onto a
+-- random point of the area; every hit Sunders (the Doom Lens value once a1 is learned), the last three also slow
+local function salvo(api, unitID, h, r, tx, tz)
 	local a3 = b(h, "a3")
 	local x, _, z = api.pos(unitID)
 	local range = api.val(a3.range, r)
 	local dx, dz = tx - x, tz - z
 	local d = math.sqrt(dx * dx + dz * dz)
-	if d < 50 then
-		return false
-	end
 	if d > range then
 		tx, tz = x + dx / d * range, z + dz / d * range
-		d = range
 	end
-	local p = api.power(h)
-	local stepDmg = api.val(a3.step, r) * p
-	local landDmg = api.val(a3.land, r) * p
-	local stun = api.val(a3.stun, r)
-	local speed = 700
+	local count = math.floor(api.val(a3.count, r) + 0.5)
+	local dmg = api.val(a3.dmg, r) * api.power(h)
+	local radius = api.val(a3.radius, r)
+	local r1 = api.rank(h, "a1")
+	local vuln = r1 > 0 and api.val(b(h, "a1").sunder, r1) or (a3.sunder or 0.06)
+	local st = { hits = 0, fired = 0 }
 	local fx = api.fx
-	local last, steps, stepHits = api.frame(), 0, 0
-	local trail
 	if fx then
-		trail = fx.attach(unitID, "trail", { color = { 1, 0.8, 0.4, 0.8 }, width = 14, length = 0.6, ttl = d / speed + 0.5 })
-		fx.ring(x, z, { kind = "shock", r0 = 30, r1 = 260, color = { 1, 0.75, 0.4, 0.8 }, ttl = 0.4, width = 30 })
+		fx.ring(tx, tz, { kind = "rune", r0 = radius * 0.8, r1 = radius, color = SUNDER, ttl = count * 0.1 + 1.2, width = 22 })
 	end
-	local ok = api.dash(unitID, h, tx, tz, { speed = speed, untargetable = false,
-		onStep = function(px, pz)
-			local f = api.frame()
-			if f - last >= 10 then
-				last = f
-				steps = steps + 1
-				local hits = api.area(px, pz, 220, stepDmg, unitID, { dtype = "plasma" })
-				for _, uid in ipairs(hits) do
-					api.slow(uid, 0.5, 3)
-				end
-				stepHits = stepHits + #hits
-				if api.fx then
-					api.fx.ring(px, pz, { kind = "shock", r0 = 20, r1 = 240, color = { 1, 0.75, 0.4, 0.8 }, ttl = 0.4, width = 26 })
-				end
+	for i = 1, count do
+		api.delay(1 + (i - 1) * 3, function()
+			if not L.alive(unitID) then
+				return
 			end
-		end,
-		onLand = function(lx, lz)
-			local hits = api.area(lx, lz, 400, landDmg, unitID, { dtype = "plasma", stun = stun })
-			local f2 = api.fx
-			if f2 then
-				local gy = L.gy(lx, lz)
-				f2.flash(lx, gy + 40, lz, { radius = 260, color = GOLD, ttl = 0.45 })
-				f2.ring(lx, lz, { kind = "shock", r0 = 40, r1 = 450, color = { 1, 0.8, 0.45, 0.9 }, ttl = 0.5, width = 44 })
-				f2.ring(lx, lz, { kind = "rune", r0 = 300, r1 = 400, color = "gold", ttl = 0.8, width = 26 })
-				f2.detach(trail)
+			local sx, sy, sz = api.piecePos(unitID, "missleflare")
+			if not sx then
+				sx, sy, sz = api.pos(unitID)
+				sy = sy + 150
 			end
-			api.log("armt4atlas a3 charge rank=%d dist=%d steps=%d stepDmg=%d stepHits=%d land=%d landHits=%d stun=%.1f", r, d, steps,
-				stepDmg, stepHits, landDmg, #hits, stun)
-		end })
-	return ok
+			local ang = math.random() * 2 * math.pi
+			local rr = radius * math.sqrt(math.random())
+			local px, pz = tx + math.cos(ang) * rr, tz + math.sin(ang) * rr
+			local py = L.gy(px, pz)
+			local last = i > count - 3
+			local pid = api.fire(h, "hero_ab_missile", sx, sy, sz, sx + (px - sx) * 0.08, sy + 400, sz + (pz - sz) * 0.08, {
+				key = "a3", dmg = dmg, aoe = a3.aoe or 180, dtype = "rocket", ttl = 10,
+				onHit = function(hx, hz, hits)
+					st.hits = st.hits + #hits
+					for _, uid in ipairs(hits) do
+						api.mark(uid, "sunder", a3.sunderTime or 6, { vuln = vuln, from = unitID, max = 1 })
+						if last then
+							api.slow(uid, a3.slow or 0.35, 2.5)
+						end
+					end
+					local f2 = api.fx
+					if f2 then
+						f2.ring(hx, hz, { kind = last and "shock" or "rune", r0 = 20, r1 = (a3.aoe or 180) * 1.1, color = last and GOLD or SUNDER, ttl = 0.4, width = 18 })
+					end
+				end })
+			if pid and pid > 0 then
+				Spring.SetProjectileTarget(pid, px, py, pz)
+				st.fired = st.fired + 1
+			end
+			if i == count then
+				api.delay(150, function()
+					api.log("armt4atlas a3 salvo rank=%d rockets=%d/%d dmg=%d hits=%d vuln=%.2f", r, st.fired, count, dmg, st.hits, vuln)
+				end)
+			end
+		end)
+	end
+	api.active(unitID, "a3", count * 0.1 + 1)
+	return true
 end
 
 ---------------------------------------------------------------------------- ult Doomsday Lance
@@ -323,7 +332,7 @@ function M.cast(api, unitID, h, key, rank, x, y, z, targetID)
 		if targetID and not x then
 			x, y, z = api.pos(targetID)
 		end
-		return x and charge(api, unitID, h, rank, x, z) or false
+		return x and salvo(api, unitID, h, rank, x, z) or false
 	elseif key == "ult" then
 		if h.store.lance or not x then
 			return false
@@ -345,18 +354,15 @@ function M.autocast(api, unitID, h, key, rank)
 			return x, y, z
 		end
 	elseif key == "a3" then
-		if hp <= 0.5 or h.escaping then
-			return nil
-		end
 		local range = L.v(api, h, "a3", "range", rank)
+		local cx, cz, _, n = L.cluster(api, x, z, range, 300, h.ally)
+		if cx and n >= 5 then
+			return cx, L.gy(cx, cz), cz
+		end
 		local hero = L.enemyHero(api, x, z, range, h.ally)
-		if hero and L.unitDist(unitID, hero) >= 500 then
+		if hero then
 			local hx, hy, hz = api.pos(hero)
 			return hx, hy, hz
-		end
-		local cx, cz, _, n = L.cluster(api, x, z, range, 300, h.ally)
-		if cx and n >= 5 and L.dist(x, z, cx, cz) >= 500 then
-			return cx, L.gy(cx, cz), cz
 		end
 	elseif key == "ult" then
 		local a, cost, n, len = bestCone(api, unitID, h)

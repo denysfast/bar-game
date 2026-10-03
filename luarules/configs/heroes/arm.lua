@@ -89,11 +89,12 @@ heroes.armt4atlas = {
 		text = tf("{duration.1} s: -{armor%} damage taken, taunts within {radius}, reflects {reflect%}, cd {cooldown} s"),
 	},
 	a3 = {
-		name = "Seismic Charge", kind = "custom", cmd = 36107, action = "hero_atlas_charge", target = "map", icon = "ab_armt4atlas_a3",
-		desc = "Charges in a straight line: every footstep is a shockwave that slows, the landing stuns",
-		range = lin(600, 1000, 10), step = lin(250, 800, 50), land = lin(800, 2400, 100), stun = lin(1, 2.5, 0.1),
-		cooldown = lin(25, 12, 1),
-		text = tf("steps {step} dmg + 50% slow, landing {land} dmg + {stun.1} s stun, range {range}, cd {cooldown} s"),
+		-- v20: replaces Seismic Charge (the human did not like a charge on the Titan)
+		name = "Titan Salvo", kind = "custom", cmd = 36107, action = "hero_atlas_salvo", target = "map", icon = "ab_armt4atlas_a3",
+		desc = "Empties the shoulder racks: guided rockets rain on the area, every hit Sunders its target (Doom Lens value once learned), the last three rockets pin the ground (slow)",
+		range = lin(1400, 2200, 10), count = lin(8, 16, 1), dmg = lin(500, 1200, 50), aoe = 180, radius = lin(250, 380, 10),
+		sunder = 0.06, sunderTime = 6, slow = 0.35, cooldown = lin(24, 12, 1),
+		text = tf("{count} rockets x {dmg} dmg within {radius}, each hit Sunders for 6 s, range {range}, cd {cooldown} s"),
 	},
 	ult = {
 		name = "Doomsday Lance", kind = "custom", cmd = 36108, action = "hero_atlas_lance", target = "map", icon = "ab_armt4atlas_ult",
@@ -158,8 +159,8 @@ heroes.armt4aegis = {
 	},
 	a3 = {
 		name = "Overcharge", kind = "custom", cmd = 36115, action = "hero_razor_overcharge", toggle = true, icon = "ab_armt4aegis_a3",
-		desc = "Toggle: the lasers fire much faster, burning the hull; switches itself off at 15% health",
-		rate = lin(0.3, 0.8, 0.01), hpCost = lin(0.012, 0.008, 0.0005), minHp = 0.15, cooldown = 3,
+		desc = "Toggle: the lasers fire much faster, burning the hull a little; switches itself off at 25% health",
+		rate = lin(0.6, 1.5, 0.01), hpCost = lin(0.004, 0.002, 0.0001), minHp = 0.25, cooldown = 3,
 		text = function(r, _, b)
 			return string.format("+%d%% fire rate, burns %.1f%% of max health per second", H.val(b.rate, r) * 100 + 0.5, H.val(b.hpCost, r) * 100)
 		end,
@@ -167,7 +168,7 @@ heroes.armt4aegis = {
 	ult = {
 		name = "Razor Swarm", kind = "custom", passive = true, icon = "ab_armt4aegis_ult",
 		desc = "A crown of red-laser drones circles Razor and shoots what it shoots; destroyed drones are rebuilt",
-		count = { 2, 2, 3, 3, 4, 4, 5, 5, 6, 6 }, dps = lin(700, 1400, 10), rebuild = 8,
+		count = { 4, 4, 6, 6, 8, 8, 10, 10, 12, 12 }, dps = lin(700, 1400, 10), rebuild = 8,
 		text = tf("{count} drones x {dps} DPS, rebuilt every 8 s"),
 	},
 	weaponCopies = {
