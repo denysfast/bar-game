@@ -114,7 +114,7 @@
 			},
 			"legalab": {
 				"role": ["support"],
-				"limit": 1,
+				"limit": 8,
 				"build_speed": 15.0 // bp 300
 			},
 			"legvp": {
@@ -125,7 +125,7 @@
 			},
 			"legavp": {
 				"role": ["support"],
-				"limit": 1,
+				"limit": 8,
 				"build_speed": 15.0  //bp 300
 			},
 			"leghp": {
