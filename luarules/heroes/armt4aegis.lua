@@ -167,11 +167,14 @@ local function shellTick(api, unitID, h, f)
 	local st = h.store
 	local ab = h.absorb
 	if not ab or not st.shellOwn then
-		ab = { left = cap, max = cap, expire = f + 1e8 }
+		-- v20: the pool is kept at 0 when it breaks (ab.keep: the core no longer drops an empty pool) - before, the core
+		-- dropped it and this rebuilt it full on the next tick, so the shell "refilled at once" when it ran out
+		ab = { left = st.shellOwn and (st.shellLeft or 0) or cap, max = cap, expire = f + 1e8, keep = true }
 		h.absorb = ab
 		st.shellOwn = true
-		st.shellLeft = cap
+		st.shellLeft = ab.left
 	end
+	ab.keep = true
 	ab.expire = f + 1e8
 	ab.max = cap
 	local x, y, z = api.pos(unitID)

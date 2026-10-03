@@ -9,7 +9,7 @@
 
 local widget = widget ---@type Widget
 
-local CUSTOM_BUILD = "custom-v19"
+local CUSTOM_BUILD = "custom-v20"
 
 function widget:GetInfo()
 	return {

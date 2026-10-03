@@ -60,7 +60,7 @@ zeus.sightdistance = 1100 -- sight close to the main weapon's reach
 units.armt4zeus = T4.hero(zeus, 1.5) -- effect scale of its stock CEGs (2.2 drew a 900-wide lightning dome per salvo)
 
 ------------------------------------------------------------------------------------------------ 2. Atlas
--- armt4atlas: Atlas, the Bulwark (Bantha x2). Doom Lens, Bulwark Protocol, Seismic Charge, Doomsday Lance.
+-- armt4atlas: Atlas, the Bulwark (Bantha x2). Doom Lens, Bulwark Protocol, Titan Salvo, Doomsday Lance.
 local atlas = T4.derive(T4.base("units/ArmGantry/armbanth.lua", "armbanth"), {
 	name = "armt4atlas",
 	value = 8.8,

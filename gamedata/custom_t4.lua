@@ -220,6 +220,11 @@ end
 -- blast; not paralyzers, aiming dummies or melee kicks under 150 range) meets `dps`. Level 1 values. v19: the
 -- single-target DPS of a splash hero is lower than `dps` (Olympus ~2000, Starfall ~3200, Armageddon ~5100).
 T4.HERO_COST = { metal = 100000, energy = 2000000, buildtime = 2500000 }
+-- v20: the long-range artillery heroes (Olympus, Armageddon, Starfall, Medusa) out-damaged everything from behind the
+-- front: their WHOLE damage - weapons and abilities - is scaled by `dmgScale` (customparam t4_dmg_scale, applied by the
+-- hero gadget: UnitPreDamaged for weapon hits, abilityHurt for ability damage). The weapondefs keep the balanced
+-- numbers so the ability modules that derive from them are scaled once.
+local ARTY = 1 / 3
 T4.heroBalance = {
 	--                  health     dps      speed (elmos/s)
 	armt4atlas      = { hp = 420000, dps = 11000, speed = 36 }, -- front: assault anchor
@@ -236,11 +241,11 @@ T4.heroBalance = {
 	legt4charybdis  = { hp = 320000, dps = 4850, speed = 60 },  -- center: crowd control hover (v19 Legion): real ~9000, the
 	                                                             -- sweepfire heat ray counts once per 3 s (units/Legion/T4)
 	legt4apollyon   = { hp = 440000, dps = 14500, speed = 30 }, -- center: suppression / siege (v19 Legion)
-	armt4olympus    = { hp = 220000, dps = 8000, speed = 30, alt = { shocker_high = true } }, -- back: artillery 3300+ (high/low arc: one fires)
-	cort4armageddon = { hp = 220000, dps = 8000, speed = 34 },  -- back: rocket artillery 2700+
-	legt4starfall   = { hp = 220000, dps = 7800, speed = 26 },  -- back: orbital artillery ~7000
+	armt4olympus    = { hp = 220000, dps = 8000, speed = 30, alt = { shocker_high = true }, dmgScale = ARTY }, -- back: artillery 3300+ (high/low arc: one fires)
+	cort4armageddon = { hp = 220000, dps = 8000, speed = 34, dmgScale = ARTY },  -- back: rocket artillery 2700+
+	legt4starfall   = { hp = 220000, dps = 7800, speed = 26, dmgScale = ARTY },  -- back: orbital artillery ~7000
 	legt4myrmidon   = { hp = 260000, dps = 6500, speed = 32, alt = { plasma_high = true } }, -- back: hive mother (+drones; v19 Legion)
-	legt4medusa     = { hp = 230000, dps = 7500, speed = 34 },  -- back: petrify rocket artillery (v19 Legion)
+	legt4medusa     = { hp = 230000, dps = 7500, speed = 34, dmgScale = ARTY },  -- back: petrify rocket artillery (v19 Legion)
 	-- v19 Cortex roster (doc/v19-heroes/roster_cor.md)
 	cort4vesuvius   = { hp = 380000, dps = 8500, speed = 34 }, -- center: twin-barrel siege tank
 	cort4printer    = { hp = 300000, dps = 9000, speed = 42 },  -- center: drone carrier (+ drones)
@@ -258,7 +263,7 @@ for name, b in pairs({
 	armt4prowler   = { hp = 330000, dps = 11000, speed = 52 }, -- center: Prowler, amphibious hunter
 	armt4ratte     = { hp = 500000, dps = 9000, speed = 24 },  -- center: Ratte, siege landship
 	armt4recluse   = { hp = 300000, dps = 9000, speed = 40 },  -- center: Recluse, zone control, all-terrain
-	armt4olympus   = { hp = 220000, dps = 8000, speed = 30, alt = { shocker_high = true } }, -- back: artillery 3300+
+	armt4olympus   = { hp = 220000, dps = 8000, speed = 30, alt = { shocker_high = true }, dmgScale = ARTY }, -- back: artillery 3300+
 	armt4starlight = { hp = 240000, dps = 7500, speed = 40 },  -- back: Starlight, tachyon sniper 2090
 	armt4hive      = { hp = 280000, dps = 3000, speed = 34 },  -- back: Hive Mother, own laser only (drones: a1)
 }) do
@@ -307,6 +312,7 @@ local function balanceHero(ud)
 		alt[#alt + 1] = key
 	end
 	ud.customparams.t4_alt_weapons = #alt > 0 and table.concat(alt, " ") or nil -- the hero gadget's DPS skips them
+	ud.customparams.t4_dmg_scale = b.dmgScale and tostring(b.dmgScale) or nil
 	ud.health = b.hp
 	ud.speed = b.speed
 	for fname, fd in pairs(ud.featuredefs or {}) do
