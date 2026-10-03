@@ -20,6 +20,8 @@ so every client applies it identically.
   {"id":7, "team":2, "op":"order", "units":[..], "cmd":"fight", "pos":[x,z], "queue":false, "spread":true}
   {"id":8, "team":2, "op":"release", "units":[..]}        -- units omitted = release all of that team
   {"id":9, "team":2, "op":"ai", "text":"posture 1.5"}      -- forwarded to the AI script (AiLuaMessage)
+  {"id":10, "team":2, "op":"doctrine", "cmd":"focus", "pos":[x,z]}  -- v22: steer the AI doctrine's armies
+      (ai_doctrine.lua GG.AIDoctrine.directive): status | focus | gather | go | allin | normal | clear
 
 Authority: the sender must host the AI of that team (Spring.GetAIInfo) or be named in the
 modoption commander_players (comma separated). Units given an order are "commandeered": the AI
@@ -274,6 +276,12 @@ if gadgetHandler:IsSyncedCode() then
 		elseif req.op == "ai" then
 			forwardToAI(teamID, tostring(req.text or ""))
 			ok = true
+		elseif req.op == "doctrine" then
+			if GG.AIDoctrine and GG.AIDoctrine.directive then
+				ok, err, data = GG.AIDoctrine.directive(teamID, tostring(req.cmd or "status"), req)
+			else
+				ok, err = false, "no AI doctrine in this game"
+			end
 		elseif req.op == "ping" then
 			ok, data = true, { frame = Spring.GetGameFrame() }
 		else
