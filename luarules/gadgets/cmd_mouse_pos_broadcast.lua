@@ -71,6 +71,11 @@ if gadgetHandler:IsSyncedCode() then
 	function gadget:GamePaused(_, isPaused)
 		paused = isPaused
 	end
+
+	-- a multiplayer save is written while paused and loads unpaused without a GamePaused call
+	function gadget:GameFrame()
+		paused = false
+	end
 else
 	--------------------------------------------------------------------------------
 
