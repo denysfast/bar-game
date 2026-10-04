@@ -95,6 +95,13 @@ if gadgetHandler:IsSyncedCode() then
 		if name and allowedNames[name] then
 			return true
 		end
+		-- v22: an ally team with an AI general (modoption general_<ally>_role) obeys the generals' daemon account
+		local mo = Spring.GetModOptions()
+		local _, _, _, _, _, ally = Spring.GetTeamInfo(teamID, false)
+		local role = ally and mo["general_" .. ally .. "_role"]
+		if name and role and role ~= "" and role ~= "none" and name == (mo.general_commander or "AICommander") then
+			return true
+		end
 		local _, _, hostingPlayerID = Spring.GetAIInfo(teamID)
 		if hostingPlayerID == playerID then
 			return true

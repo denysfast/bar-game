@@ -150,13 +150,17 @@ local function alive(uid)
 	return uid and spValidUnitID(uid) and not spGetUnitIsDead(uid)
 end
 
-local function borrow(teamID, ids)
+-- stop = clear the AI's queue (constructors often hold an endless guard/assist order and never go idle)
+local function borrow(teamID, ids, stop)
 	local t, fresh = taken(), {}
 	for _, uid in ipairs(ids) do
 		if not t[uid] then
 			t[uid] = teamID
 			spSetUnitRulesParam(uid, "ai_cmdr", 1)
 			fresh[#fresh + 1] = uid
+		end
+		if stop and alive(uid) then
+			spGiveOrderToUnit(uid, CMD.STOP, {}, 0)
 		end
 	end
 	if #fresh > 0 then
@@ -308,6 +312,17 @@ local function pickBuilders(teamID, n, x, z, needDef)
 		end
 	end
 	table.sort(cands, function(a, b) return a.s < b.s end)
+	-- never strip the AI's opening: nothing below 3 constructors, at most half of them
+	local total = 0
+	for _, uid in ipairs(Spring.GetTeamUnits(teamID)) do
+		if mobileBuilder[spGetUnitDefID(uid)] then
+			total = total + 1
+		end
+	end
+	if total < 3 then
+		return {}
+	end
+	n = min(n, floor(total / 2))
 	local out = {}
 	for i = 1, min(n, #cands) do
 		out[i] = cands[i].uid
@@ -320,7 +335,7 @@ end
 local function refreshMemory(ally, f)
 	local m = allyMemory[ally]
 	if not m then
-		m = { coms = {}, eco = {}, frame = -999 }
+		m = { coms = {}, eco = {}, def = {}, aa = {}, frame = -999 }
 		allyMemory[ally] = m
 	end
 	if f - m.frame < 45 then
@@ -333,6 +348,12 @@ local function refreshMemory(ally, f)
 			local udid = spGetUnitDefID(uid)
 			local x, _, z = spGetUnitPosition(uid)
 			if x then
+				if isAA[udid] then
+					m.aa[uid] = { x = x, z = z, f = f, cost = unitCost[udid] or 0, fixed = isDefence[udid] }
+				end
+				if isDefence[udid] and not isAA[udid] then
+					m.def[uid] = { x = x, z = z, f = f, cost = unitCost[udid] or 0 }
+				end
 				if isCommander[udid] then
 					m.coms[uid] = { x = x, z = z, f = f, team = team }
 				elseif (isMex[udid] or isFactory[udid] or (UnitDefs[udid].energyMake or 0) > 5 or mobileBuilder[udid]) then
@@ -346,12 +367,57 @@ local function refreshMemory(ally, f)
 			m.coms[uid] = nil
 		end
 	end
-	for uid in pairs(m.eco) do
-		if not alive(uid) or spGetUnitAllyTeam(uid) == ally then
-			m.eco[uid] = nil
+	for _, tbl in ipairs({ m.eco, m.def, m.aa }) do
+		for uid, e in pairs(tbl) do
+			-- mobile AA is only trusted for a minute, structures until they die
+			if not alive(uid) or spGetUnitAllyTeam(uid) == ally or (tbl == m.aa and not e.fixed and f - e.f > 60 * GAME_SPEED) then
+				tbl[uid] = nil
+			end
 		end
 	end
 	return m
+end
+
+-- danger along a straight route: remembered defenses (or AA for aircraft) within `r` of the segment + visible armed enemies
+local function segRisk(ally, x0, z0, x1, z1, air, f)
+	local m = refreshMemory(ally, f)
+	local dx, dz = x1 - x0, z1 - z0
+	local len2 = max(1, dx * dx + dz * dz)
+	local r = air and 900 or 800
+	local risk = 0
+	for _, e in pairs(air and m.aa or m.def) do
+		local tproj = max(0, min(1, ((e.x - x0) * dx + (e.z - z0) * dz) / len2))
+		local px, pz = x0 + dx * tproj, z0 + dz * tproj
+		if (e.x - px) ^ 2 + (e.z - pz) ^ 2 < r * r then
+			risk = risk + e.cost * 1.5
+		end
+	end
+	if not air then
+		for i = 1, 5 do
+			local s = i / 6
+			risk = risk + enemyArmed(x0 + dx * s, z0 + dz * s, 700, ally)
+		end
+	end
+	return risk
+end
+
+-- the safest of: straight, or through a waypoint 2500 to either side of the route; returns risk, wx, wz (nil = straight)
+local function safeRoute(ally, x0, z0, x1, z1, air, f)
+	local best, bx, bz = segRisk(ally, x0, z0, x1, z1, air, f), nil, nil
+	local dx, dz = x1 - x0, z1 - z0
+	local d = max(1, sqrt(dx * dx + dz * dz))
+	local px, pz = -dz / d, dx / d
+	for _, side in ipairs({ -1, 1 }) do
+		for _, off in ipairs({ 1800, 3200 }) do
+			local wx = max(200, min(MAPX - 200, (x0 + x1) / 2 + px * off * side))
+			local wz = max(200, min(MAPZ - 200, (z0 + z1) / 2 + pz * off * side))
+			local r = segRisk(ally, x0, z0, wx, wz, air, f) + segRisk(ally, wx, wz, x1, z1, air, f)
+			if r < best * 0.6 then
+				best, bx, bz = r, wx, wz
+			end
+		end
+	end
+	return best, bx, bz
 end
 
 ---------------------------------------------------------------------------- protect: commanders guard a factory at home
@@ -369,6 +435,15 @@ local function protectTick(t, f)
 				if not best or d < best then
 					fac, best = uid, d
 				end
+			end
+		end
+	end
+	-- while the air wing is being built the commanders assist its air plant (it is at home too)
+	if t.wing.mode ~= "off" then
+		for uid in pairs(t.wing.plants or {}) do
+			if alive(uid) then
+				fac = uid
+				break
 			end
 		end
 	end
@@ -493,7 +568,7 @@ local function expandStart(t, req, f)
 	if #ids == 0 then
 		return false, "no free constructor"
 	end
-	borrow(t.team, ids)
+	borrow(t.team, ids, true)
 	local sq = { units = ids, x = x, z = z, radius = req.pos and 3000 or 6000, since = f, mexes = 0 }
 	t.squads[#t.squads + 1] = sq
 	assignSpots(t, sq, f)
@@ -553,8 +628,14 @@ local function ecoBuild(t, req, f)
 	if #ids == 0 then
 		return false, "no constructor can build " .. UnitDefs[udid].name .. ((what == "fusion" or what == "afus" or what == "moho") and " (needs T2 constructors)" or "")
 	end
-	borrow(t.team, ids)
+	borrow(t.team, ids, true)
 	local placed = 0
+	local issued = {}
+	local function give(uid, x, z)
+		spGiveOrderToUnit(uid, -udid, { x, spGetGroundHeight(x, z), z, 0 }, issued[uid] and CMD.OPT_SHIFT or 0)
+		issued[uid] = true
+		placed = placed + 1
+	end
 	if what == "moho" then
 		-- upgrade our own mexes nearest the base
 		local mexes = {}
@@ -568,8 +649,7 @@ local function ecoBuild(t, req, f)
 		table.sort(mexes, function(a, b) return a.d < b.d end)
 		for i = 1, min(count, #mexes) do
 			local m = mexes[i]
-			spGiveOrderToUnit(ids[1 + (i - 1) % #ids], -udid, { m.x, spGetGroundHeight(m.x, m.z), m.z, 0 }, CMD.OPT_SHIFT)
-			placed = placed + 1
+			give(ids[1 + (i - 1) % #ids], m.x, m.z)
 		end
 	else
 		local ox, oz = sx, sz
@@ -580,8 +660,7 @@ local function ecoBuild(t, req, f)
 		for i = 1, count do
 			local px, pz = findSpot(udid, ox + random(-300, 300), oz + random(-300, 300), 96)
 			if px then
-				spGiveOrderToUnit(ids[1 + (i - 1) % #ids], -udid, { px, spGetGroundHeight(px, pz), pz, 0 }, CMD.OPT_SHIFT)
-				placed = placed + 1
+				give(ids[1 + (i - 1) % #ids], px, pz)
 			end
 		end
 	end
@@ -652,7 +731,7 @@ local function airBuild(t, req, f)
 		if not px then
 			return false, "no place for an air plant"
 		end
-		borrow(t.team, ids)
+		borrow(t.team, ids, true)
 		for _, uid in ipairs(ids) do
 			spGiveOrderToUnit(uid, -ap, { px, spGetGroundHeight(px, pz), pz, 0 }, 0)
 		end
@@ -661,6 +740,14 @@ local function airBuild(t, req, f)
 		t.wing.pendingBuild = (t.wing.pendingBuild or 0) + count
 		log("t=%d team=%d air: building an air plant first, %d bombers wait", floor(f / 1800), t.team, count)
 		return true
+	end
+	-- the plants are borrowed: BARb's factory manager would otherwise replace the queue with its own picks
+	t.wing.plants = t.wing.plants or {}
+	for _, p in ipairs(plants) do
+		if not t.wing.plants[p.uid] then
+			borrow(t.team, { p.uid })
+			t.wing.plants[p.uid] = true
+		end
 	end
 	for i = 1, count do
 		local p = plants[1 + (i - 1) % #plants]
@@ -715,7 +802,7 @@ local function wingCollect(t)
 	end
 	if #fresh > 0 then
 		borrow(t.team, fresh)
-		local rx, rz = rally(t.team, t.ally)
+		local rx, rz = startPos(t.team)
 		for _, uid in ipairs(fresh) do
 			if t.wing.mode == "strike" and t.wing.tx then
 				spGiveOrderToUnit(uid, CMD.FIGHT, { t.wing.tx, spGetGroundHeight(t.wing.tx, t.wing.tz), t.wing.tz }, 0)
@@ -782,7 +869,7 @@ local function airTick(t, f)
 	if n == 0 then
 		return
 	end
-	local rx, rz = rally(t.team, t.ally)
+	local rx, rz = startPos(t.team) -- the wing waits over the base, under our AA (a forward rally fed it to fighters)
 	if w.mode == "hold" or w.mode == "build" then
 		if f % 300 < 30 then
 			for _, uid in ipairs(ids) do
@@ -823,8 +910,14 @@ local function airTick(t, f)
 			local c = allyMemory[t.ally] and allyMemory[t.ally].coms[tgt]
 			if c and (w.tx ~= c.x or w.tz ~= c.z) then
 				w.tx, w.tz, w.attacking = c.x, c.z, nil
+				local _, wx, wz = safeRoute(t.ally, cx, cz, c.x, c.z, true, f)
 				for _, uid in ipairs(ids) do
-					spGiveOrderToUnit(uid, CMD.MOVE, { c.x + random(-150, 150), 0, c.z + random(-150, 150) }, 0)
+					local opt = 0
+					if wx then
+						spGiveOrderToUnit(uid, CMD.MOVE, { wx + random(-150, 150), 0, wz + random(-150, 150) }, 0)
+						opt = CMD.OPT_SHIFT
+					end
+					spGiveOrderToUnit(uid, CMD.MOVE, { c.x + random(-150, 150), 0, c.z + random(-150, 150) }, opt)
 				end
 			end
 		elseif w.target == "commander" and not w.tx then
@@ -863,30 +956,42 @@ local function raidTarget(t, sq, f)
 		end
 		c.x, c.z, c.v, c.n = c.x + e.x, c.z + e.z, c.v + e.cost, c.n + 1
 	end
-	local best, bx, bz
+	local best, bx, bz, bwx, bwz
+	local ox, oz = sq.cx or startPos(t.team), sq.cz
+	if not oz then
+		ox, oz = startPos(t.team)
+	end
+	local strength = max(1, sq.strength or 1)
 	for _, c in pairs(cells) do
 		local x, z = c.x / c.n, c.z / c.n
 		local guard = enemyArmed(x, z, 900, t.ally)
-		local d = cz and sqrt((x - cx) ^ 2 + (z - cz) ^ 2) or 0
-		local score = c.v / (1 + guard / max(1, sq.strength or 1) * 3) / (1 + d / 4000)
-		if guard < (sq.strength or 0) * 0.8 and (not best or score > best) then
-			best, bx, bz = score, x, z
+		for _, e in pairs(m.def) do
+			if (e.x - x) ^ 2 + (e.z - z) ^ 2 < 700 * 700 then
+				guard = guard + e.cost * 1.5
+			end
+		end
+		if guard < strength * 0.8 then
+			local risk, wx, wz = safeRoute(t.ally, ox, oz, x, z, false, f)
+			local d = sqrt((x - ox) ^ 2 + (z - oz) ^ 2)
+			local score = c.v / (1 + (guard + risk) / strength * 3) / (1 + d / 5000)
+			if risk < strength * 1.0 and (not best or score > best) then
+				best, bx, bz, bwx, bwz = score, x, z, wx, wz
+			end
 		end
 	end
-	return bx, bz
+	return bx, bz, bwx, bwz
 end
 
-local function raidStart(t, req, f)
-	if t.raid then
-		return false, "a raid squad already runs"
-	end
-	local size = max(4, min(30, tonumber(req.size) or 12))
+-- fast armed ground units the raid may take: the AI's own and those of doctrine armies still gathering
+local function raidCandidates(t, want)
 	local owns = GG.AIDoctrine and GG.AIDoctrine.owns or {}
 	local tk = taken()
 	local cands = {}
 	for _, uid in ipairs(Spring.GetTeamUnits(t.team)) do
 		local udid = spGetUnitDefID(uid)
-		if isArmedGround[udid] and unitSpeed[udid] >= 75 and (unitCost[udid] or 0) <= 600 and not tk[uid] and not owns[uid] then
+		local army = owns[uid]
+		if isArmedGround[udid] and unitSpeed[udid] >= 75 and (unitCost[udid] or 0) <= 600 and not tk[uid]
+			and (not army or army.state == "forming" or army.state == "regroup") then
 			local _, _, _, _, bp = spGetUnitHealth(uid)
 			if bp and bp >= 1 then
 				cands[#cands + 1] = { uid = uid, s = unitSpeed[udid] }
@@ -894,21 +999,34 @@ local function raidStart(t, req, f)
 		end
 	end
 	table.sort(cands, function(a, b) return a.s > b.s end)
-	local ids, strength = {}, 0
-	for i = 1, min(size, #cands) do
-		ids[i] = cands[i].uid
-		strength = strength + (unitCost[spGetUnitDefID(cands[i].uid)] or 0)
+	local out = {}
+	for i = 1, min(want, #cands) do
+		out[i] = cands[i].uid
 	end
-	if #ids < 3 then
-		return false, "fewer than 3 fast armed units free"
+	return out
+end
+
+local function raidStart(t, req, f)
+	if t.raid then
+		return false, "a raid squad already runs"
 	end
-	borrow(t.team, ids)
-	t.raid = { units = ids, startN = #ids, strength = strength, since = f }
+	if f < 5 * 60 * GAME_SPEED then
+		return false, "no raids before minute 5: the AI's first units hold the opening"
+	end
+	local size = max(4, min(30, tonumber(req.size) or 12))
+	local ids = raidCandidates(t, size)
+	borrow(t.team, ids, true)
+	-- gathers at the rally point until it has `size` units (or 2 min passed), then goes
+	t.raid = { units = ids, size = size, startN = #ids, strength = 0, since = f, gathering = true }
 	if type(req.pos) == "table" and tonumber(req.pos[1]) then
 		t.raid.tx, t.raid.tz = tonumber(req.pos[1]), tonumber(req.pos[2])
 		t.raid.forced = true
 	end
-	log("t=%d team=%d raid squad %d units (%d metal)", floor(f / 1800), t.team, #ids, strength)
+	local rx, rz = rally(t.team, t.ally)
+	for _, uid in ipairs(ids) do
+		spGiveOrderToUnit(uid, CMD.MOVE, { rx + random(-250, 250), 0, rz + random(-250, 250) }, 0)
+	end
+	log("t=%d team=%d raid squad gathering: %d of %d fast units", floor(f / 1800), t.team, #ids, size)
 	return true
 end
 
@@ -916,6 +1034,36 @@ local function raidTick(t, f)
 	local sq = t.raid
 	if not sq then
 		return
+	end
+	if sq.gathering then
+		local have = {}
+		for _, uid in ipairs(sq.units) do
+			if alive(uid) then
+				have[#have + 1] = uid
+			end
+		end
+		if #have < sq.size then
+			local more = {}
+			for _, uid in ipairs(raidCandidates(t, sq.size - #have)) do
+				more[#more + 1] = uid
+				have[#have + 1] = uid
+			end
+			if #more > 0 then
+				borrow(t.team, more, true)
+				local rx, rz = rally(t.team, t.ally)
+				for _, uid in ipairs(more) do
+					spGiveOrderToUnit(uid, CMD.MOVE, { rx + random(-250, 250), 0, rz + random(-250, 250) }, 0)
+				end
+			end
+		end
+		sq.units = have
+		if #have >= sq.size or (f - sq.since > 120 * GAME_SPEED and #have >= 6) then
+			sq.gathering = false
+			sq.startN = #have
+			log("t=%d team=%d raid squad goes: %d units", floor(f / 1800), t.team, #have)
+		else
+			return
+		end
 	end
 	local live, strength = {}, 0
 	for _, uid in ipairs(sq.units) do
@@ -935,17 +1083,26 @@ local function raidTick(t, f)
 	sq.cx, sq.cz = cx, cz
 	local arrived = sq.tx and (cx - sq.tx) ^ 2 + (cz - sq.tz) ^ 2 < 450 * 450
 	if not sq.tx or (arrived and f - (sq.arrived or f) > 12 * GAME_SPEED) or f - (sq.retarget or 0) > 40 * GAME_SPEED then
-		local tx, tz = raidTarget(t, sq, f)
+		local tx, tz, wx, wz = raidTarget(t, sq, f)
 		if not sq.forced or arrived then
 			sq.forced = false
 			if tx then
-				sq.tx, sq.tz = tx, tz
+				sq.tx, sq.tz, sq.wx, sq.wz = tx, tz, wx, wz
 			end
 		end
 		sq.retarget, sq.arrived = f, nil
+		if sq.tx and (sq.loggedX ~= floor(sq.tx) or sq.loggedZ ~= floor(sq.tz)) then
+			sq.loggedX, sq.loggedZ = floor(sq.tx), floor(sq.tz)
+			log("t=%d team=%d raid targets %d,%d (%d units, %d metal)", floor(f / 1800), t.team, sq.tx, sq.tz, #live, strength)
+		end
 		if sq.tx then
 			for _, uid in ipairs(live) do
-				spGiveOrderToUnit(uid, CMD.FIGHT, { sq.tx + random(-200, 200), spGetGroundHeight(sq.tx, sq.tz), sq.tz + random(-200, 200) }, 0)
+				local opt = 0
+				if sq.wx then -- around the defenses first
+					spGiveOrderToUnit(uid, CMD.MOVE, { sq.wx + random(-150, 150), 0, sq.wz + random(-150, 150) }, 0)
+					opt = CMD.OPT_SHIFT
+				end
+				spGiveOrderToUnit(uid, CMD.FIGHT, { sq.tx + random(-200, 200), spGetGroundHeight(sq.tx, sq.tz), sq.tz + random(-200, 200) }, opt)
 			end
 		end
 	elseif arrived and not sq.arrived then
@@ -978,7 +1135,7 @@ local function status(t)
 		expand = squads,
 		air = { mode = t.wing.mode, aircraft = n, target = type(t.wing.target) == "table" and table.concat(t.wing.target, ",") or t.wing.target,
 			x = t.wing.tx and floor(t.wing.tx), z = t.wing.tz and floor(t.wing.tz), last = t.wing.lastResult, pending = t.wing.pendingBuild },
-		raid = t.raid and { units = rn, start = t.raid.startN, x = t.raid.tx and floor(t.raid.tx), z = t.raid.tz and floor(t.raid.tz) } or nil,
+		raid = t.raid and { units = rn, start = t.raid.startN, gathering = t.raid.gathering or false, x = t.raid.tx and floor(t.raid.tx), z = t.raid.tz and floor(t.raid.tz) } or nil,
 		protect = t.protect,
 	}
 end
@@ -1004,6 +1161,9 @@ local function handle(teamID, cmd, req)
 			t.wing.mode = "hold"
 		elseif mode == "release" then
 			local ids = wingUnits(t)
+			for uid in pairs(t.wing.plants or {}) do
+				ids[#ids + 1] = uid
+			end
 			handBack(teamID, ids)
 			t.wing = { units = {}, mode = "off" }
 		else
@@ -1076,9 +1236,31 @@ function gadget:GameFrame(f)
 	end
 end
 
-function gadget:UnitDestroyed(unitID)
-	for _, t in pairs(teams) do
-		t.wing.units[unitID] = nil
-		t.guards[unitID] = nil
+function gadget:UnitDestroyed(unitID, unitDefID, unitTeam, attackerID, attackerDefID)
+	local t = teams[unitTeam]
+	if t then
+		local what = t.wing.units[unitID] and "air wing" or nil
+		if not what and t.raid then
+			for _, uid in ipairs(t.raid.units) do
+				if uid == unitID then
+					what = "raid"
+					break
+				end
+			end
+		end
+		if what then
+			local x, _, z = spGetUnitPosition(unitID)
+			t.lost = t.lost or {}
+			local key = what .. ":" .. (attackerDefID and UnitDefs[attackerDefID].name or "?")
+			t.lost[key] = (t.lost[key] or 0) + 1
+			if (t.lost[key] % 3) == 1 then
+				log("t=%d team=%d %s lost %s at %d,%d to %s (x%d)", floor(frameNow() / 1800), unitTeam, what, UnitDefs[unitDefID].name,
+					x or -1, z or -1, attackerDefID and UnitDefs[attackerDefID].name or "?", t.lost[key])
+			end
+		end
+	end
+	for _, tm in pairs(teams) do
+		tm.wing.units[unitID] = nil
+		tm.guards[unitID] = nil
 	end
 end
