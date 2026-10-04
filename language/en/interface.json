@@ -3978,6 +3978,74 @@
 			"name": "AI Bonus: Curve",
 			"desc": "Shape of the growth between start and maximum."
 		},
+		"ai_generals": {
+			"name": "AI Generals",
+			"desc": "Генералы ИИ: LLM-агент с ролью командует союзом ИИ (стратегия, экономика, авиация, рейды)"
+		},
+		"general_0_role": {
+			"name": "Ally 0 general: role",
+			"desc": "Persona of the LLM general for ally team 0. None = plain AI."
+		},
+		"general_0_harness": {
+			"name": "Ally 0 general: harness",
+			"desc": "Agent CLI that runs the general for ally team 0."
+		},
+		"general_0_model": {
+			"name": "Ally 0 general: model",
+			"desc": "Model name for the harness (e.g. qwen, opus, gpt-6-sol). Empty = harness default."
+		},
+		"general_0_effort": {
+			"name": "Ally 0 general: effort",
+			"desc": "Reasoning effort of the general (not used by PiAgent and Antigravity)."
+		},
+		"general_1_role": {
+			"name": "Ally 1 general: role",
+			"desc": "Persona of the LLM general for ally team 1. None = plain AI."
+		},
+		"general_1_harness": {
+			"name": "Ally 1 general: harness",
+			"desc": "Agent CLI that runs the general for ally team 1."
+		},
+		"general_1_model": {
+			"name": "Ally 1 general: model",
+			"desc": "Model name for the harness (e.g. qwen, opus, gpt-6-sol). Empty = harness default."
+		},
+		"general_1_effort": {
+			"name": "Ally 1 general: effort",
+			"desc": "Reasoning effort of the general (not used by PiAgent and Antigravity)."
+		},
+		"general_2_role": {
+			"name": "Ally 2 general: role",
+			"desc": "Persona of the LLM general for ally team 2. None = plain AI."
+		},
+		"general_2_harness": {
+			"name": "Ally 2 general: harness",
+			"desc": "Agent CLI that runs the general for ally team 2."
+		},
+		"general_2_model": {
+			"name": "Ally 2 general: model",
+			"desc": "Model name for the harness (e.g. qwen, opus, gpt-6-sol). Empty = harness default."
+		},
+		"general_2_effort": {
+			"name": "Ally 2 general: effort",
+			"desc": "Reasoning effort of the general (not used by PiAgent and Antigravity)."
+		},
+		"general_3_role": {
+			"name": "Ally 3 general: role",
+			"desc": "Persona of the LLM general for ally team 3. None = plain AI."
+		},
+		"general_3_harness": {
+			"name": "Ally 3 general: harness",
+			"desc": "Agent CLI that runs the general for ally team 3."
+		},
+		"general_3_model": {
+			"name": "Ally 3 general: model",
+			"desc": "Model name for the harness (e.g. qwen, opus, gpt-6-sol). Empty = harness default."
+		},
+		"general_3_effort": {
+			"name": "Ally 3 general: effort",
+			"desc": "Reasoning effort of the general (not used by PiAgent and Antigravity)."
+		},
 		"ai_incomemultiplier": {
 			"name": "AI Income Multiplier",
 			"desc": "Multiplies AI resource income"
