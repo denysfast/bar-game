@@ -749,11 +749,34 @@ local function airBuild(t, req, f)
 			t.wing.plants[p.uid] = true
 		end
 	end
-	for i = 1, count do
+	-- count is the wing size wanted: queue only what the wing and the plants' queues lack (a repeated order
+	-- must not pile up 50 bombers)
+	local have = 0
+	for uid in pairs(t.wing.units) do
+		if alive(uid) then
+			have = have + 1
+		end
+	end
+	for _, uid in ipairs(Spring.GetTeamUnits(t.team)) do
+		if isStrikeAir[spGetUnitDefID(uid)] and not t.wing.units[uid] then
+			have = have + 1
+		end
+	end
+	for _, p in ipairs(plants) do
+		local counts = Spring.GetFactoryCounts(p.uid) or {}
+		for d, n in pairs(counts) do
+			if isStrikeAir[d] then
+				have = have + n
+			end
+		end
+	end
+	t.wing.goal = count
+	local add = max(0, count - have)
+	for i = 1, add do
 		local p = plants[1 + (i - 1) % #plants]
 		spGiveOrderToUnit(p.uid, -p.def, {}, 0)
 	end
-	log("t=%d team=%d air: %d strike aircraft queued on %d plants", floor(f / 1800), t.team, count, #plants)
+	log("t=%d team=%d air: wing goal %d, has/queued %d, %d more queued on %d plants", floor(f / 1800), t.team, count, have, add, #plants)
 	return true
 end
 
@@ -864,6 +887,15 @@ local function airTick(t, f)
 					break
 				end
 			end
+		end
+	end
+	-- bombers cost ~4400 energy each: a wing in production stalls the energy; the executor answers it itself
+	if (w.mode == "build" or w.goal) and f - (w.energyCheck or 0) > 60 * GAME_SPEED then
+		w.energyCheck = f
+		local cur, stor, pull, income = Spring.GetTeamResources(t.team, "energy")
+		if cur and stor and stor > 0 and cur < stor * 0.1 and (pull or 0) > (income or 0) then
+			local ok = ecoBuild(t, { build = "energy", count = 2 }, f)
+			log("t=%d team=%d air: energy stall (%d/%d), energy ordered: %s", floor(f / 1800), t.team, cur, stor, tostring(ok))
 		end
 	end
 	if n == 0 then
@@ -1013,7 +1045,7 @@ local function raidStart(t, req, f)
 	if f < 5 * 60 * GAME_SPEED then
 		return false, "no raids before minute 5: the AI's first units hold the opening"
 	end
-	local size = max(4, min(30, tonumber(req.size) or 12))
+	local size = max(8, min(30, tonumber(req.size) or 14))
 	local ids = raidCandidates(t, size)
 	borrow(t.team, ids, true)
 	-- gathers at the rally point until it has `size` units (or 2 min passed), then goes
@@ -1057,7 +1089,7 @@ local function raidTick(t, f)
 			end
 		end
 		sq.units = have
-		if #have >= sq.size or (f - sq.since > 120 * GAME_SPEED and #have >= 6) then
+		if #have >= sq.size or (f - sq.since > 120 * GAME_SPEED and #have >= 8) then
 			sq.gathering = false
 			sq.startN = #have
 			log("t=%d team=%d raid squad goes: %d units", floor(f / 1800), t.team, #have)
