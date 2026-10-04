@@ -383,7 +383,7 @@ SUB-сессию. Игра только хранит выбор и показы�
 | Ключ | Тип | Значения |
 |---|---|---|
 | `general_N_role` | list | `none` (по умолчанию), `sneaky` «Подлый», `economist` «Лейт-гейм экономист», `aggressor` «Агрессор», `air_marshal` «Маршал авиации», `strategist` «Стратег» |
-| `general_N_harness` | list | `pi-agent` (по умолчанию), `claude`, `codex`, `antigravity` |
+| `general_N_harness` | list | `pi-agent` (по умолчанию), `claude`, `codex`, `antigravity`, `staff` (без LLM: только автопилот штаба и умолчания роли) |
 | `general_N_model` | string | пусто = модель харнесса по умолчанию |
 | `general_N_effort` | list | `default`, `low`, `medium`, `high`, `xhigh`, `max` (PiAgent и Antigravity игнорируют) |
 

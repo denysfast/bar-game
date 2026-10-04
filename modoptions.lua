@@ -785,6 +785,7 @@ local options = {
 			{ key = "claude", name = "Claude", desc = "Claude Code" },
 			{ key = "codex", name = "Codex", desc = "OpenAI Codex CLI" },
 			{ key = "antigravity", name = "Antigravity", desc = "Google Antigravity (Gemini)" },
+			{ key = "staff", name = "Staff only / Штаб", desc = "No LLM: the staff autopilot and the role defaults only (free, instant)" },
 		},
 	},
 
@@ -860,6 +861,7 @@ local options = {
 			{ key = "claude", name = "Claude", desc = "Claude Code" },
 			{ key = "codex", name = "Codex", desc = "OpenAI Codex CLI" },
 			{ key = "antigravity", name = "Antigravity", desc = "Google Antigravity (Gemini)" },
+			{ key = "staff", name = "Staff only / Штаб", desc = "No LLM: the staff autopilot and the role defaults only (free, instant)" },
 		},
 	},
 
@@ -935,6 +937,7 @@ local options = {
 			{ key = "claude", name = "Claude", desc = "Claude Code" },
 			{ key = "codex", name = "Codex", desc = "OpenAI Codex CLI" },
 			{ key = "antigravity", name = "Antigravity", desc = "Google Antigravity (Gemini)" },
+			{ key = "staff", name = "Staff only / Штаб", desc = "No LLM: the staff autopilot and the role defaults only (free, instant)" },
 		},
 	},
 
@@ -1010,6 +1013,7 @@ local options = {
 			{ key = "claude", name = "Claude", desc = "Claude Code" },
 			{ key = "codex", name = "Codex", desc = "OpenAI Codex CLI" },
 			{ key = "antigravity", name = "Antigravity", desc = "Google Antigravity (Gemini)" },
+			{ key = "staff", name = "Staff only / Штаб", desc = "No LLM: the staff autopilot and the role defaults only (free, instant)" },
 		},
 	},
 
