@@ -624,6 +624,9 @@ local function ecoBuild(t, req, f)
 		end
 	end
 	if not udid then
+		if what == "energy" then
+			return false, "no free constructor for energy right now (expansion squads may hold them); try again next turn"
+		end
 		return false, "unknown build " .. what
 	end
 	local sx, sz = startPos(t.team)
