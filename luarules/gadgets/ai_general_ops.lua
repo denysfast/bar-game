@@ -58,6 +58,8 @@ local max, min, floor, sqrt, random = math.max, math.min, math.floor, math.sqrt,
 local GAME_SPEED = Game.gameSpeed
 local MAPX, MAPZ = Game.mapSizeX, Game.mapSizeZ
 local GAIA = Spring.GetGaiaTeamID()
+local PROTECT_FROM = 7 * 60 * GAME_SPEED   -- commanders build the opening; protect starts no earlier
+local MANUAL_HOLD = 3 * 60 * GAME_SPEED    -- a general's own order pauses the autopilot of that subsystem this long
 
 ---------------------------------------------------------------------------- static data
 
@@ -238,7 +240,8 @@ local function teamState(teamID)
 	local t = teams[teamID]
 	if not t then
 		local _, _, _, _, _, ally = Spring.GetTeamInfo(teamID, false)
-		t = { team = teamID, ally = ally, side = sideOf(teamID), squads = {}, wing = { units = {}, mode = "off" }, raid = nil, protect = false, guards = {} }
+		t = { team = teamID, ally = ally, side = sideOf(teamID), squads = {}, wing = { units = {}, mode = "off" }, raid = nil, protect = false,
+			guards = {}, manual = {}, autopilot = false }
 		teams[teamID] = t
 	end
 	return t
@@ -1147,6 +1150,77 @@ local function raidTick(t, f)
 	end
 end
 
+---------------------------------------------------------------------------- autopilot: the staff's standing orders
+
+-- runs whatever model sits in the general's chair: commanders home after the opening, steady expansion, a bomber
+-- wing and the commander snipe once it can win. The general's own order on a subsystem pauses that part for
+-- MANUAL_HOLD; `autopilot on=false` stops it.
+local function aaNear(ally, x, z, r, f)
+	local m = refreshMemory(ally, f)
+	local n = 0
+	for _, e in pairs(m.aa) do
+		if (e.x - x) ^ 2 + (e.z - z) ^ 2 < r * r then
+			n = n + 1
+		end
+	end
+	return n
+end
+
+local function freeHand(t, key, f)
+	return f - (t.manual[key] or -MANUAL_HOLD) >= MANUAL_HOLD
+end
+
+local function autopilotTick(t, f)
+	if t.protectArmed and f >= PROTECT_FROM then
+		t.protectArmed, t.protect = nil, true
+		protectTick(t, f)
+	end
+	if not t.autopilot then
+		return
+	end
+	if f >= PROTECT_FROM and not t.protect and freeHand(t, "protect", f) then
+		t.protect = true
+		protectTick(t, f)
+		log("t=%d team=%d autopilot: commanders home", floor(f / 1800), t.team)
+	end
+	if f >= 4 * 60 * GAME_SPEED and #t.squads == 0 and freeHand(t, "expand", f) and f - (t.autoExpand or -1e9) > 3 * 60 * GAME_SPEED then
+		t.autoExpand = f
+		local sx, sz = startPos(t.team)
+		if #freeSpots(t, sx, sz, 5000) >= 2 then
+			expandStart(t, { builders = 3 }, f)
+		end
+	end
+	local _, _, _, eIncome = Spring.GetTeamResources(t.team, "energy")
+	if f >= 6 * 60 * GAME_SPEED and not t.wing.goal and not t.wing.pendingBuild and freeHand(t, "airbuild", f) and (eIncome or 0) >= 250 then
+		if t.wing.mode == "off" then
+			t.wing.mode = "build"
+		end
+		airBuild(t, { count = 16 }, f)
+	end
+	-- the snipe: a wing of 14+ and an enemy commander seen in the last 3 min with little AA around it
+	local ids, n = wingUnits(t)
+	if n >= 14 and (t.wing.mode == "build" or t.wing.mode == "hold") and freeHand(t, "airstrike", f) then
+		local cx, cz = wingCenter(ids)
+		local m = refreshMemory(t.ally, f)
+		local best, bd
+		for uid, c in pairs(m.coms) do
+			if f - c.f < 180 * GAME_SPEED then
+				local aa = aaNear(t.ally, c.x, c.z, 1000, f)
+				if aa <= (n >= 30 and 6 or 3) then
+					local d = (c.x - cx) ^ 2 + (c.z - cz) ^ 2
+					if not bd or d < bd then
+						best, bd = uid, d
+					end
+				end
+			end
+		end
+		if best then
+			airStrike(t, { target = "commander" }, f)
+			log("t=%d team=%d autopilot: commander strike with %d aircraft", floor(f / 1800), t.team, n)
+		end
+	end
+end
+
 ---------------------------------------------------------------------------- dispatch
 
 local function status(t)
@@ -1168,7 +1242,8 @@ local function status(t)
 		air = { mode = t.wing.mode, aircraft = n, target = type(t.wing.target) == "table" and table.concat(t.wing.target, ",") or t.wing.target,
 			x = t.wing.tx and floor(t.wing.tx), z = t.wing.tz and floor(t.wing.tz), last = t.wing.lastResult, pending = t.wing.pendingBuild },
 		raid = t.raid and { units = rn, start = t.raid.startN, gathering = t.raid.gathering or false, x = t.raid.tx and floor(t.raid.tx), z = t.raid.tz and floor(t.raid.tz) } or nil,
-		protect = t.protect,
+		protect = t.protect or (t.protectArmed and "armed") or false,
+		autopilot = t.autopilot,
 	}
 end
 
@@ -1177,11 +1252,13 @@ local function handle(teamID, cmd, req)
 	local f = frameNow()
 	local ok, err = true, nil
 	if cmd == "expand" then
+		t.manual.expand = f
 		ok, err = expandStart(t, req, f)
 	elseif cmd == "eco" then
 		ok, err = ecoBuild(t, req, f)
 	elseif cmd == "air" then
 		local mode = tostring(req.mode or "build")
+		t.manual[mode == "build" and "airbuild" or "airstrike"] = f
 		if mode == "build" then
 			if t.wing.mode == "off" then
 				t.wing.mode = "build"
@@ -1212,12 +1289,22 @@ local function handle(teamID, cmd, req)
 		end
 	elseif cmd == "protect" then
 		local on = req.on ~= false and req.on ~= 0 and req.on ~= "false"
-		t.protect = on
-		if on then
-			protectTick(t, f)
+		t.manual.protect = f
+		if on and f < PROTECT_FROM then
+			-- the commander is the opening's main constructor: guarding a factory at minute 1 starved the economy
+			t.protectArmed = true
+			err = string.format("armed: commanders go home at %d:00 (the opening needs them building)", PROTECT_FROM / 1800)
 		else
-			protectOff(t)
+			t.protect = on
+			t.protectArmed = nil
+			if on then
+				protectTick(t, f)
+			else
+				protectOff(t)
+			end
 		end
+	elseif cmd == "autopilot" then
+		t.autopilot = req.on ~= false and req.on ~= 0 and req.on ~= "false"
 	elseif cmd == "report" then
 		local text = tostring(req.text or ""):sub(1, 200)
 		Spring.SetGameRulesParam("general_report_" .. t.ally, text)
@@ -1251,6 +1338,9 @@ function gadget:GameFrame(f)
 		if not isDead then
 			if t.protect and f % 300 == 23 then
 				protectTick(t, f)
+			end
+			if f % 600 == 23 then
+				autopilotTick(t, f)
 			end
 			if #t.squads > 0 and f % 90 == 23 then
 				expandTick(t, f)
