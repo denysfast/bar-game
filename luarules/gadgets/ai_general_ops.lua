@@ -346,7 +346,7 @@ end
 local function refreshMemory(ally, f)
 	local m = allyMemory[ally]
 	if not m then
-		m = { coms = {}, eco = {}, def = {}, aa = {}, frame = -999 }
+		m = { coms = {}, eco = {}, def = {}, aa = {}, army = {}, frame = -999 }
 		allyMemory[ally] = m
 	end
 	if f - m.frame < 45 then
@@ -365,6 +365,9 @@ local function refreshMemory(ally, f)
 				if isDefence[udid] and not isAA[udid] then
 					m.def[uid] = { x = x, z = z, f = f, cost = unitCost[udid] or 0 }
 				end
+				if isArmedGround[udid] then
+					m.army[uid] = { x = x, z = z, f = f, cost = unitCost[udid] or 0 }
+				end
 				if isCommander[udid] then
 					m.coms[uid] = { x = x, z = z, f = f, team = team }
 				elseif (isMex[udid] or isFactory[udid] or (UnitDefs[udid].energyMake or 0) > 5 or mobileBuilder[udid]) then
@@ -378,10 +381,11 @@ local function refreshMemory(ally, f)
 			m.coms[uid] = nil
 		end
 	end
-	for _, tbl in ipairs({ m.eco, m.def, m.aa }) do
+	for _, tbl in ipairs({ m.eco, m.def, m.aa, m.army }) do
 		for uid, e in pairs(tbl) do
-			-- mobile AA is only trusted for a minute, structures until they die
-			if not alive(uid) or spGetUnitAllyTeam(uid) == ally or (tbl == m.aa and not e.fixed and f - e.f > 60 * GAME_SPEED) then
+			-- mobile AA is only trusted for a minute, an army sighting for two, structures until they die
+			if not alive(uid) or spGetUnitAllyTeam(uid) == ally or (tbl == m.aa and not e.fixed and f - e.f > 60 * GAME_SPEED)
+				or (tbl == m.army and f - e.f > 120 * GAME_SPEED) then
 				tbl[uid] = nil
 			end
 		end
@@ -1469,6 +1473,86 @@ local function freeHand(t, key, f)
 	return f - (t.manual[key] or -MANUAL_HOLD) >= MANUAL_HOLD
 end
 
+-- the decisive push: from 14:00, when the ally's army is 1.5x the enemy army seen in the last 2 min, every
+-- doctrine army focuses the nearest known enemy commander (else their base), goes and goes all in; a push that
+-- lost half its strength is called off (normal) and the next one waits 4 min
+local function allyArmyValue(ally)
+	local v = 0
+	for _, tm in ipairs(Spring.GetTeamList()) do
+		local _, _, isDead, _, _, a = Spring.GetTeamInfo(tm, false)
+		if a == ally and not isDead then
+			for _, uid in ipairs(Spring.GetTeamUnits(tm)) do
+				local udid = spGetUnitDefID(uid)
+				if isArmedGround[udid] then
+					v = v + (unitCost[udid] or 0)
+				end
+			end
+		end
+	end
+	return v
+end
+
+local function armyPushTick(t, f)
+	-- one team of the ally decides for all of them
+	for tid, tm in pairs(teams) do
+		if tm.ally == t.ally and tm.autopilot and tid < t.team then
+			return
+		end
+	end
+	if f < 14 * 60 * GAME_SPEED or not freeHand(t, "army", f) then
+		return
+	end
+	local m = refreshMemory(t.ally, f)
+	local ours = allyArmyValue(t.ally)
+	local theirs = 0
+	for _, e in pairs(m.army) do
+		theirs = theirs + e.cost
+	end
+	local ap = t.push
+	local function all(cmd, req)
+		req = req or {}
+		req.byStaff = true -- not a general's manual order: it must not pause the staff
+		for tid, tm in pairs(teams) do
+			if tm.ally == t.ally and GG.AIDoctrine and GG.AIDoctrine.directive then
+				GG.AIDoctrine.directive(tid, cmd, req)
+			end
+		end
+	end
+	if ap and ap.active then
+		if ours < ap.start * 0.5 then
+			ap.active, ap.ended = false, f
+			all("normal")
+			all("clear")
+			log("t=%d ally=%d autopilot: push called off (%d of %d army left)", floor(f / 1800), t.ally, ours, ap.start)
+		end
+		return
+	end
+	if ap and f - (ap.ended or 0) < 4 * 60 * GAME_SPEED then
+		return
+	end
+	if ours >= max(3000, theirs * 1.5) then
+		local hx, hz = allyHome(t.ally)
+		local best, bd
+		for _, c in pairs(m.coms) do
+			local d = (c.x - hx) ^ 2 + (c.z - hz) ^ 2
+			if not bd or d < bd then
+				best, bd = c, d
+			end
+		end
+		local tx, tz
+		if best then
+			tx, tz = best.x, best.z
+		else
+			tx, tz = enemyHome(t.team, t.ally)
+		end
+		t.push = { active = true, start = ours, since = f }
+		all("focus", { pos = { tx, tz } })
+		all("go")
+		all("allin")
+		log("t=%d ally=%d autopilot: decisive push on %d,%d (army %d vs %d known)", floor(f / 1800), t.ally, tx, tz, ours, theirs)
+	end
+end
+
 local function autopilotTick(t, f)
 	if t.protectArmed and f >= PROTECT_FROM then
 		t.protectArmed, t.protect = nil, true
@@ -1492,6 +1576,7 @@ local function autopilotTick(t, f)
 	if f >= 4 * 60 * GAME_SPEED then
 		scoutTick(t, f)
 	end
+	armyPushTick(t, f)
 	local _, _, _, eIncome = Spring.GetTeamResources(t.team, "energy")
 	if f >= 6 * 60 * GAME_SPEED and not t.wing.goal and not t.wing.pendingBuild and freeHand(t, "airbuild", f) and (eIncome or 0) >= 250 then
 		if t.wing.mode == "off" then
@@ -1625,6 +1710,12 @@ end
 function gadget:Initialize()
 	GG.AIGeneralOps = {
 		handle = handle,
+		noteManual = function(teamID, key)
+			local t = teams[teamID]
+			if t then
+				t.manual[key] = frameNow()
+			end
+		end,
 		status = function(teamID)
 			return teams[teamID] and status(teams[teamID]) or nil
 		end,

@@ -1431,6 +1431,10 @@ local function directive(teamID, cmd, req)
 		end
 		return false, "unknown doctrine command " .. cmd
 	end
+	if (cmd == "focus" or cmd == "gather" or cmd == "go" or cmd == "allin" or cmd == "normal" or cmd == "clear")
+		and req.byStaff == nil and GG.AIGeneralOps and GG.AIGeneralOps.noteManual then
+		GG.AIGeneralOps.noteManual(teamID, "army") -- a general's own army order pauses the staff's push
+	end
 	if cmd ~= "status" then
 		log("t=%d team=%d commander directive %s%s", floor(f / 1800), teamID, cmd,
 			d.focus and string.format(" (focus %d,%d)", d.focus[1], d.focus[2]) or "")
