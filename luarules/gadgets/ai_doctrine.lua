@@ -1402,19 +1402,21 @@ local function directive(teamID, cmd, req)
 		d.focus = nil
 	elseif cmd == "gather" then
 		d.gather, d.go = true, nil
+		d.gatherFrame = d.gatherFrame or f
 	elseif cmd == "go" then
-		d.gather, d.go = nil, f
+		d.gather, d.go, d.gatherFrame = nil, f, nil
 	elseif cmd == "allin" then
 		d.allin = true
 	elseif cmd == "normal" then
-		d.allin, d.gather = nil, nil
+		d.allin, d.gather, d.gatherFrame = nil, nil, nil
 	elseif cmd == "prefer" then
 		-- weights for the plan choice: tactics {raid=2, assault=1, ...}, tier "auto" or 1..4
 		local tac = type(req.tactics) == "table" and req.tactics or {}
 		d.prefer = d.prefer or {}
 		for k, v in pairs(tac) do
 			if tonumber(v) then
-				d.prefer[k] = max(0, min(10, tonumber(v)))
+				-- defend is capped: a general that weighs it high keeps every army at home
+				d.prefer[k] = max(0, min(k == "defend" and 2 or 10, tonumber(v)))
 			end
 		end
 		if tonumber(req.tier) then
@@ -1885,6 +1887,12 @@ function gadget:GameFrame(f)
 			end
 			if f % 150 == 47 then
 				altarAssist(teamID, f)
+			end
+			-- a general's gather is a muster, not a posture: after 4 min the gathered force goes by itself
+			local dir = t.dir
+			if dir and dir.gather and dir.gatherFrame and f - dir.gatherFrame > 4 * 60 * GAME_SPEED then
+				dir.gather, dir.go, dir.gatherFrame = nil, f, nil
+				log("t=%d team=%d commander gather expired after 4 min: the gathered armies go", floor(f / 1800), teamID)
 			end
 			updateProduction(teamID, t)
 			for _, a in ipairs(t.armies) do

@@ -300,7 +300,7 @@ local function canBuild(uid, udid)
 end
 
 -- constructors of a team, idle ones and those near (x, z) first
-local function pickBuilders(teamID, n, x, z, needDef)
+local function pickBuilders(teamID, n, x, z, needDef, urgent)
 	local t, cands = taken(), {}
 	local owns = GG.AIDoctrine and GG.AIDoctrine.owns or {}
 	for _, uid in ipairs(Spring.GetTeamUnits(teamID)) do
@@ -322,10 +322,10 @@ local function pickBuilders(teamID, n, x, z, needDef)
 			total = total + 1
 		end
 	end
-	if total < 3 then
+	if total < (urgent and 2 or 3) then
 		return {}
 	end
-	n = min(n, floor(total / 2))
+	n = min(n, urgent and total - 1 or floor(total / 2))
 	local out = {}
 	for i = 1, min(n, #cands) do
 		out[i] = cands[i].uid
@@ -627,7 +627,8 @@ local function ecoBuild(t, req, f)
 		return false, "unknown build " .. what
 	end
 	local sx, sz = startPos(t.team)
-	local ids = pickBuilders(t.team, what == "converters" and 2 or 1, sx, sz, udid)
+	-- energy on a stall is urgent: it may take a constructor past the half-of-them cap
+	local ids = pickBuilders(t.team, what == "converters" and 2 or 1, sx, sz, udid, req.urgent)
 	if #ids == 0 then
 		return false, "no constructor can build " .. UnitDefs[udid].name .. ((what == "fusion" or what == "afus" or what == "moho") and " (needs T2 constructors)" or "")
 	end
@@ -856,6 +857,9 @@ end
 
 local function airStrike(t, req, f)
 	local ids, n = wingUnits(t)
+	if n < 8 and (req.target == nil or req.target == "commander" or req.target == "base") then
+		return false, string.format("the wing has %d aircraft: a strike needs 8+ (14+ against a commander with AA)", n)
+	end
 	t.wing.mode = "strike"
 	t.wing.target = req.target or "commander"
 	t.wing.startN = max(n, 1)
@@ -897,7 +901,7 @@ local function airTick(t, f)
 		w.energyCheck = f
 		local cur, stor, pull, income = Spring.GetTeamResources(t.team, "energy")
 		if cur and stor and stor > 0 and cur < stor * 0.1 and (pull or 0) > (income or 0) then
-			local ok = ecoBuild(t, { build = "energy", count = 2 }, f)
+			local ok = ecoBuild(t, { build = "energy", count = 2, urgent = true }, f)
 			log("t=%d team=%d air: energy stall (%d/%d), energy ordered: %s", floor(f / 1800), t.team, cur, stor, tostring(ok))
 		end
 	end
