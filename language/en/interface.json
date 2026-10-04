@@ -3970,6 +3970,10 @@
 			"name": "T4 heroes: experience rate",
 			"desc": "How fast the T4 heroes gain levels. 1 = normal, 2 = twice as fast, 0.5 = half."
 		},
+		"hero_damage_mult": {
+			"name": "T4 heroes: damage",
+			"desc": "Damage of all T4 heroes (weapons, abilities, items, summons). 1 = full, 0.7 = default."
+		},
 		"ai_reveal": {
 			"name": "AI Bonus: Reveal enemy",
 			"desc": "What the AI teams always see, so their attack waves have targets: nothing, enemy buildings and commanders, or everything."

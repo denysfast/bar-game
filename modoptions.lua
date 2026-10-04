@@ -701,6 +701,19 @@ local options = {
 
 	-- NOTE: update language/en/interface.json when you change name or desc
 	{
+		key = "hero_damage_mult",
+		name = "T4 heroes: damage",
+		desc = "Damage of all T4 heroes (weapons, abilities, items, summons). 1 = full, 0.7 = default.",
+		type = "number",
+		section = "ai_bonus",
+		def = 0.7,
+		min = 0.1,
+		max = 3,
+		step = 0.05,
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
 		key = "ai_reveal",
 		name = "AI Bonus: Reveal enemy",
 		desc = "What the AI teams always see, so their attack waves have targets: nothing, enemy buildings and commanders, or everything.",

@@ -186,6 +186,8 @@ if gadgetHandler:IsSyncedCode() then
 	local val = H.val
 
 	local xpMult = tonumber(Spring.GetModOptions().hero_xp_mult) or 1
+	-- v22: one damage coefficient over every hero (weapons, abilities, items, summons; modoption hero_damage_mult)
+	local heroDamageMult = tonumber(Spring.GetModOptions().hero_damage_mult) or H.DAMAGE_MULT
 	if xpMult <= 0 then
 		xpMult = 1
 	end
@@ -250,7 +252,8 @@ if gadgetHandler:IsSyncedCode() then
 				airSight = ud.airLosRadius or 0, radar = ud.radarDistance or ud.radarRadius or 0, height = ud.height or 60,
 				canCloak = ud.canCloak, fx = cfg.fx or 2,
 				-- v20: a hero's whole damage scale (weapons and abilities; T4.heroBalance `dmgScale`, the artillery heroes)
-				dmgScale = tonumber(ud.customParams.t4_dmg_scale) or 1,
+				-- x the coefficient of all heroes (v22)
+				dmgScale = (tonumber(ud.customParams.t4_dmg_scale) or 1) * heroDamageMult,
 				weapons = {}, keyNum = {}, numOf = {}, extra = {}, copies = {}, cmds = {},
 				altWeapon = {}, -- keys of the second arc of a gun (not counted in the DPS)
 			}
@@ -567,10 +570,11 @@ if gadgetHandler:IsSyncedCode() then
 			return false
 		end
 		if not paraTime or paraTime <= 0 then
-			-- v20: the attacker hero's damage scale (artillery heroes); item powers keep their own numbers
+			-- v20: the attacker hero's damage scale (artillery heroes); item powers keep their own numbers, only the
+			-- coefficient of all heroes (v22)
 			local h = heroOf(ownerID)
-			if h and h.def.dmgScale ~= 1 and not itemDamage() then
-				dmg = dmg * h.def.dmgScale
+			if h then
+				dmg = dmg * (itemDamage() and heroDamageMult or h.def.dmgScale)
 			end
 		end
 		local prev = inAbility
@@ -1242,10 +1246,11 @@ if gadgetHandler:IsSyncedCode() then
 		return "ok", cost
 	end
 
-	-- the AI keeps a reserve for its army: a rank only when it has half as much metal again
+	-- v22: an AI rank is paid only from the team's hero bank (aiEconomy fills it with at most H.AI_BUY_SAVE of the
+	-- metal income), never straight from the storage: the leveling budget of the AI stays a share of its income
 	local function aiCanLearn(h, key)
 		local state, cost = learnState(h, key)
-		return state == "ok" and ((cost or 0) <= prepaid or (cost or 0) * 1.5 <= (Spring.GetTeamResources(h.team, "metal") or 0))
+		return state == "ok" and (cost or 0) <= prepaid
 	end
 
 	local function updateCmdDescs(unitID, h)
@@ -1287,13 +1292,12 @@ if gadgetHandler:IsSyncedCode() then
 		return true
 	end
 
-	-- the metal of an ultimate / ability rank the level allows but the AI cannot pay yet (with its reserve), or nil
+	-- the metal of an ultimate / ability rank the level allows but the AI bank cannot pay yet, or nil
 	local function aiWaitCost(h)
-		local m = Spring.GetTeamResources(h.team, "metal") or 0
 		for _, key in ipairs({ "ult", "a1", "a2", "a3" }) do
 			if h.def.cfg[key] then
 				local st, cost = learnState(h, key)
-				if st == "metal" or (st == "ok" and (cost or 0) > prepaid and (cost or 0) * 1.5 > m) then
+				if st == "metal" or (st == "ok" and (cost or 0) > prepaid) then
 					return cost
 				end
 			end
@@ -1741,6 +1745,7 @@ if gadgetHandler:IsSyncedCode() then
 			elseif attackerID and not ability then
 				local s = summoned[attackerID]
 				if s then
+					m = m * heroDamageMult -- v22: a hero's summons deal its damage coefficient too
 					if s.scale then
 						m = m * s.scale
 					end
@@ -5471,8 +5476,8 @@ if gadgetHandler:IsSyncedCode() then
 
 		-- The AI's hero bank: storage is small (the AI builds no storage), so the price of a rank, a level or an altar
 		-- upgrade (100k metal + 1M energy) is put aside over time - only overflow (storage fuller than AI_BUY_FULL), at
-		-- most AI_BUY_SAVE of the income, only up to what the next purchase needs, nothing while a dead hero waits for its
-		-- revive. Order: unspent points (learnAI), then the altar upgrade, then a level of the best hero.
+		-- most AI_BUY_SAVE of the income (v22: the whole leveling budget - ranks too are paid only from the bank), only up
+		-- to what the next purchase needs, nothing while a dead hero waits for its revive. Order: unspent points (learnAI), then the altar upgrade, then a level of the best hero.
 		function aiEconomy(f)
 			for teamID, ai in pairs(isAITeam) do
 				if ai then
