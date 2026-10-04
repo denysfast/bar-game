@@ -538,6 +538,9 @@ local function newArmy(teamID, t, f)
 	-- the tier: the best one available, sometimes a cheaper army for variety; T4 needs a living hero
 	for try = 1, 8 do
 		local tier = try <= 6 and pickTier(maxTier, late) or (try == 7 and 2 or 1)
+		if try <= 3 and t.dir and t.dir.tier then
+			tier = min(maxTier, t.dir.tier) -- the general's tier, while it is buildable
+		end
 		local list = comps[t.side]["t" .. tier] or {}
 		local cands, sum = {}, 0
 		-- v22: after 4 misses a composition the factories make only in part (>= 50%) is fine too (the rest is
@@ -546,8 +549,8 @@ local function newArmy(teamID, t, f)
 		for _, comp in ipairs(list) do
 			local feas = feasibility(comp, facs, teamID, t)
 			if feas >= need and (try > 6 or not recentlyUsed(t, comp.id)) then
-				-- tactics the situation calls for weigh more
-				local w = feas
+				-- tactics the situation calls for weigh more; a general's preferences on top (v22)
+				local w = feas * (t.dir and t.dir.prefer and t.dir.prefer[comp.tactic or "assault"] or 1)
 				if comp.tactic == "defend" then
 					w = w * (t.threatened and 3 or 0.4)
 				end
@@ -1405,7 +1408,25 @@ local function directive(teamID, cmd, req)
 		d.allin = true
 	elseif cmd == "normal" then
 		d.allin, d.gather = nil, nil
+	elseif cmd == "prefer" then
+		-- weights for the plan choice: tactics {raid=2, assault=1, ...}, tier "auto" or 1..4
+		local tac = type(req.tactics) == "table" and req.tactics or {}
+		d.prefer = d.prefer or {}
+		for k, v in pairs(tac) do
+			if tonumber(v) then
+				d.prefer[k] = max(0, min(10, tonumber(v)))
+			end
+		end
+		if tonumber(req.tier) then
+			d.tier = max(1, min(4, floor(tonumber(req.tier))))
+		elseif req.tier == "auto" then
+			d.tier = nil
+		end
 	elseif cmd ~= "status" then
+		-- the general's executors (expansion, economy, air wing, raids, commander guard, reports): ai_general_ops.lua
+		if GG.AIGeneralOps then
+			return GG.AIGeneralOps.handle(teamID, cmd, req)
+		end
 		return false, "unknown doctrine command " .. cmd
 	end
 	if cmd ~= "status" then
@@ -1421,6 +1442,7 @@ local function directive(teamID, cmd, req)
 			plan = floor(a.planMetal or 0), kills = floor(a.kills), losses = floor(a.losses) }
 	end
 	return true, nil, { armies = out, focus = d.focus, gather = d.gather or false, allin = d.allin or false,
+		prefer = d.prefer, tier = d.tier, executors = GG.AIGeneralOps and GG.AIGeneralOps.status(teamID) or nil,
 		rally = (t.armies[1] and { floor(t.armies[1].rallyX), floor(t.armies[1].rallyZ) }) or nil }
 end
 
