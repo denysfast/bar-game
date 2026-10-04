@@ -65,11 +65,11 @@ local MANUAL_HOLD = 3 * 60 * GAME_SPEED    -- a general's own order pauses the a
 
 local SIDE_DEFS = {
 	arm = { mex = "armmex", moho = "armmoho", tower = "armllt", fus = "armfus", afus = "armafus", conv = "armmakr",
-		energy = { "armafus", "armfus", "armadvsol", "armsolar" }, airplant = "armap", strike = { "armthund" } },
+		energy = { "armafus", "armfus", "armadvsol", "armsolar" }, airplant = "armap", strike = { "armthund" }, fighter = "armfig" },
 	cor = { mex = "cormex", moho = "cormoho", tower = "corllt", fus = "corfus", afus = "corafus", conv = "cormakr",
-		energy = { "corafus", "corfus", "coradvsol", "corsolar" }, airplant = "corap", strike = { "corshad" } },
+		energy = { "corafus", "corfus", "coradvsol", "corsolar" }, airplant = "corap", strike = { "corshad" }, fighter = "corveng" },
 	leg = { mex = "legmex", moho = "legmoho", tower = "leglht", fus = "legfus", afus = "legafus", conv = "legeconv",
-		energy = { "legafus", "legfus", "legadvsol", "legsolar" }, airplant = "legap", strike = { "legmos" } },
+		energy = { "legafus", "legfus", "legadvsol", "legsolar" }, airplant = "legap", strike = { "legmos" }, fighter = "legfig" },
 }
 
 local function defID(name)
@@ -79,6 +79,13 @@ end
 
 local isCommander, mobileBuilder, isMex, isFactory, unitCost, unitSpeed, isArmedGround, isStrikeAir, isDefence = {}, {}, {}, {}, {}, {}, {}, {}, {}
 local isAA = {}
+local isFighter = {}
+for _, sd in pairs(SIDE_DEFS) do
+	local ud = UnitDefNames[sd.fighter]
+	if ud then
+		isFighter[ud.id] = true
+	end
+end
 for udid, ud in pairs(UnitDefs) do
 	unitCost[udid] = ud.metalCost + ud.energyCost / 70
 	unitSpeed[udid] = ud.speed or 0
@@ -814,6 +821,30 @@ local function airBuild(t, req, f)
 	end
 	count = min(count, 30) -- a wing beyond 30 per team only drains the energy
 	t.wing.goal = count
+	-- an escort of fighters, a third of the wing: idle bombers over the base were picked off by enemy fighters
+	local fdef = defID(sdef(t, "fighter"))
+	if fdef then
+		local fhave = 0
+		for _, uid in ipairs(Spring.GetTeamUnits(t.team)) do
+			if spGetUnitDefID(uid) == fdef then
+				fhave = fhave + 1
+			end
+		end
+		for _, p in ipairs(plants) do
+			for _, c in ipairs(Spring.GetFactoryCommands(p.uid, -1) or {}) do
+				if type(c) == "table" and c.id == -fdef then
+					fhave = fhave + 1
+				end
+			end
+		end
+		local fadd = max(0, math.ceil(count / 3) - fhave)
+		for i = 1, fadd do
+			local p = plants[1 + (i - 1) % #plants]
+			if canBuild(p.uid, fdef) then
+				spGiveOrderToUnit(p.uid, -fdef, {}, 0)
+			end
+		end
+	end
 	local add = max(0, count - have)
 	for i = 1, add do
 		local p = plants[1 + (i - 1) % #plants]
@@ -861,6 +892,20 @@ local function wingCollect(t)
 	end
 	local fresh = {}
 	local tk = taken()
+	t.wing.escort = t.wing.escort or {}
+	local newEscort = {}
+	for _, uid in ipairs(Spring.GetTeamUnits(t.team)) do
+		if isFighter[spGetUnitDefID(uid)] and not t.wing.escort[uid] and not tk[uid] then
+			local _, _, _, _, bp = spGetUnitHealth(uid)
+			if bp and bp >= 1 then
+				t.wing.escort[uid] = true
+				newEscort[#newEscort + 1] = uid
+			end
+		end
+	end
+	if #newEscort > 0 then
+		borrow(t.team, newEscort)
+	end
 	for _, uid in ipairs(Spring.GetTeamUnits(t.team)) do
 		local udid = spGetUnitDefID(uid)
 		if isStrikeAir[udid] and not t.wing.units[uid] and not tk[uid] then
@@ -899,20 +944,44 @@ local function nearestCommander(t, x, z, f)
 	return best, vis
 end
 
+-- the wings of every AI team of one ally (the general's order reaches all of them): their total size
+local function allyWing(ally)
+	local total = 0
+	for _, tm in pairs(teams) do
+		if tm.ally == ally then
+			local _, n = wingUnits(tm)
+			total = total + n
+		end
+	end
+	return total
+end
+
+local function allyHome(ally)
+	local sx, sz, n = 0, 0, 0
+	for _, tm in pairs(teams) do
+		if tm.ally == ally then
+			local x, z = startPos(tm.team)
+			sx, sz, n = sx + x, sz + z, n + 1
+		end
+	end
+	return sx / max(1, n), sz / max(1, n)
+end
+
+-- a strike is an ally-wide operation: wings of 8-12 per team flying in one by one from different bases were
+-- shot down piecemeal. Every wing first musters at one point between the ally's bases and the target, then all
+-- strike at once (70% there or 75 s).
 local function airStrike(t, req, f)
 	local ids, n = wingUnits(t)
-	if n < 8 and not tonumber(req.target) then
-		return false, string.format("the wing has %d aircraft: a strike needs 8+ (14+ against a commander with AA)", n)
+	local total = allyWing(t.ally)
+	local target = req.target or "commander"
+	if not tonumber(target) and total < 16 then
+		return false, string.format("the ally's wings have %d aircraft: a strike needs 16+ together (the wings strike as one)", total)
 	end
-	t.wing.mode = "strike"
-	t.wing.target = req.target or "commander"
-	t.wing.startN = max(n, 1)
-	t.wing.since = f
-	t.wing.tx, t.wing.tz, t.wing.unit = nil, nil, nil
-	local target = t.wing.target
+	local tx, tz, unit
+	local m = refreshMemory(t.ally, f)
+	local hx, hz = allyHome(t.ally)
 	if type(target) == "table" and tonumber(target[1]) then
-		local tx, tz = tonumber(target[1]), tonumber(target[2])
-		local m = refreshMemory(t.ally, f)
+		tx, tz = tonumber(target[1]), tonumber(target[2])
 		local known = enemyArmed(tx, tz, 1200, t.ally) > 0
 		for _, tbl in ipairs({ m.eco, m.def, m.aa, m.coms }) do
 			for _, e in pairs(tbl) do
@@ -922,23 +991,73 @@ local function airStrike(t, req, f)
 			end
 		end
 		if not known then
-			t.wing.mode = t.wing.mode == "strike" and "hold" or t.wing.mode
 			return false, "nothing known within 1200 of that point: scout it (raid, army focus) before sending the wing"
 		end
-		t.wing.tx, t.wing.tz = tx, tz
 	elseif tonumber(target) then
-		t.wing.unit = tonumber(target)
+		unit = tonumber(target)
+		local x, _, z = spGetUnitPosition(unit)
+		tx, tz = x, z
 	elseif target == "base" then
-		t.wing.tx, t.wing.tz = enemyHome(t.team, t.ally)
+		tx, tz = enemyHome(t.team, t.ally)
+	else -- commander: the nearest known one (or the enemy start to find one)
+		local best, bd
+		for _, c in pairs(m.coms) do
+			local d = (c.x - hx) ^ 2 + (c.z - hz) ^ 2
+			if not bd or d < bd then
+				best, bd = c, d
+			end
+		end
+		if best then
+			tx, tz = best.x, best.z
+		else
+			tx, tz = enemyHome(t.team, t.ally)
+		end
 	end
-	log("t=%d team=%d air strike (%s) with %d aircraft", floor(f / 1800), t.team, tostring(type(target) == "table" and (target[1] .. "," .. target[2]) or target), n)
-	return n > 0, n == 0 and "no strike aircraft yet (air mode=build first)" or nil
+	if tx and target ~= "commander" and not unit then
+		local aa = 0
+		for _, e in pairs(m.aa) do
+			if (e.x - tx) ^ 2 + (e.z - tz) ^ 2 < 1200 * 1200 then
+				aa = aa + 1
+			end
+		end
+		if aa > total / 5 then
+			return false, string.format("%d AA known around the target for %d aircraft: too costly (AA x5 at most)", aa, total)
+		end
+	end
+	local w = t.wing
+	w.mode, w.target, w.unit, w.since = "muster", target, unit, f
+	w.tx, w.tz = (type(target) == "table" or target == "base") and tx or nil, (type(target) == "table" or target == "base") and tz or nil
+	if tx then
+		w.rx, w.rz = hx + (tx - hx) * 0.25, hz + (tz - hz) * 0.25
+	else
+		w.rx, w.rz = hx, hz
+	end
+	for _, uid in ipairs(ids) do
+		spGiveOrderToUnit(uid, CMD.MOVE, { w.rx + random(-200, 200), 0, w.rz + random(-200, 200) }, 0)
+	end
+	log("t=%d team=%d air strike (%s): %d aircraft muster at %d,%d with the ally's %d", floor(f / 1800), t.team,
+		tostring(type(target) == "table" and (target[1] .. "," .. target[2]) or target), n, w.rx, w.rz, total)
+	return true
 end
 
 local function airTick(t, f)
 	wingCollect(t)
 	local ids, n = wingUnits(t)
 	local w = t.wing
+	-- escort: guard the wing's lead bomber (over the base while waiting, along on a strike)
+	if w.escort and f % 300 < 30 then
+		local lead = ids[1]
+		local hx, hz = startPos(t.team)
+		for uid in pairs(w.escort) do
+			if not alive(uid) then
+				w.escort[uid] = nil
+			elseif lead then
+				spGiveOrderToUnit(uid, CMD.GUARD, { lead }, 0)
+			else
+				spGiveOrderToUnit(uid, CMD.PATROL, { hx + random(-400, 400), 0, hz + random(-400, 400) }, 0)
+			end
+		end
+	end
 	if w.armedGoal and f % 300 < 30 then
 		airBuild(t, { count = w.armedGoal }, f)
 	end
@@ -979,6 +1098,40 @@ local function airTick(t, f)
 			end
 		end
 		return
+	end
+	if w.mode == "muster" then
+		-- all of the ally's mustering wings near the point (70%) or 75 s: every team flips to strike on the same tick
+		local near, all = 0, 0
+		for _, tm in pairs(teams) do
+			if tm.ally == t.ally and tm.wing.mode == "muster" then
+				for _, uid in ipairs((wingUnits(tm))) do
+					all = all + 1
+					local x, _, z = spGetUnitPosition(uid)
+					if x and (x - (tm.wing.rx or x)) ^ 2 + (z - (tm.wing.rz or z)) ^ 2 < 900 * 900 then
+						near = near + 1
+					end
+				end
+			end
+		end
+		if near >= all * 0.7 or f - w.since > 75 * GAME_SPEED then
+			w.mode, w.startN, w.since = "strike", max(n, 1), f
+			w.attacking = nil
+			log("t=%d team=%d air strike goes: %d of the ally's %d aircraft mustered", floor(f / 1800), t.team, near, all)
+			if w.tx then
+				for _, uid in ipairs(ids) do
+					spGiveOrderToUnit(uid, CMD.FIGHT, { w.tx + random(-300, 300), spGetGroundHeight(w.tx, w.tz), w.tz + random(-300, 300) }, 0)
+				end
+			end
+		else
+			if f % 150 < 30 then
+				for _, uid in ipairs(ids) do
+					if spGetUnitCommandCount(uid) == 0 then
+						spGiveOrderToUnit(uid, CMD.MOVE, { w.rx + random(-200, 200), 0, w.rz + random(-200, 200) }, 0)
+					end
+				end
+			end
+			return
+		end
 	end
 	if w.mode ~= "strike" then
 		return
@@ -1273,14 +1426,15 @@ local function autopilotTick(t, f)
 	end
 	-- the snipe: a wing of 14+ and an enemy commander seen in the last 3 min with little AA around it
 	local ids, n = wingUnits(t)
-	if n >= 14 and (t.wing.mode == "build" or t.wing.mode == "hold") and freeHand(t, "airstrike", f) then
+	local allyN = allyWing(t.ally)
+	if allyN >= 16 and n >= 4 and (t.wing.mode == "build" or t.wing.mode == "hold") and freeHand(t, "airstrike", f) then
 		local cx, cz = wingCenter(ids)
 		local m = refreshMemory(t.ally, f)
 		local best, bd
 		for uid, c in pairs(m.coms) do
 			if f - c.f < 180 * GAME_SPEED then
 				local aa = aaNear(t.ally, c.x, c.z, 1000, f)
-				if aa <= (n >= 30 and 6 or 3) then
+				if aa <= (allyN >= 40 and 6 or 3) then
 					local d = (c.x - cx) ^ 2 + (c.z - cz) ^ 2
 					if not bd or d < bd then
 						best, bd = uid, d
@@ -1345,6 +1499,9 @@ local function handle(teamID, cmd, req)
 		elseif mode == "release" then
 			local ids = wingUnits(t)
 			for uid in pairs(t.wing.plants or {}) do
+				ids[#ids + 1] = uid
+			end
+			for uid in pairs(t.wing.escort or {}) do
 				ids[#ids + 1] = uid
 			end
 			handBack(teamID, ids)
