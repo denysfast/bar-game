@@ -752,6 +752,16 @@ local function airBuild(t, req, f)
 	end
 	if #plants == 0 then
 		local ap = defID(sdef(t, "airplant"))
+		-- an air plant already being built (ours or the AI's): wait for it instead of ordering a second one
+		for _, uid in ipairs(Spring.GetTeamUnits(t.team)) do
+			if spGetUnitDefID(uid) == ap then
+				local _, _, _, _, bp = spGetUnitHealth(uid)
+				if bp and bp < 1 then
+					t.wing.pendingBuild = count
+					return true, "an air plant is being built; the bombers follow it"
+				end
+			end
+		end
 		local sx, sz = startPos(t.team)
 		local ids = ap and pickBuilders(t.team, 2, sx, sz, ap) or {}
 		if #ids == 0 then
@@ -793,20 +803,28 @@ local function airBuild(t, req, f)
 		end
 	end
 	for _, p in ipairs(plants) do
-		local counts = Spring.GetFactoryCounts(p.uid) or {}
-		for d, n in pairs(counts) do
-			if isStrikeAir[d] then
-				have = have + n
+		-- the build queue: commands with id = -unitDefID (GetFactoryCounts' shape did not count them and a
+		-- repeated order piled up 130 bombers on one ally)
+		for _, c in ipairs(Spring.GetFactoryCommands(p.uid, -1) or {}) do
+			local id = type(c) == "table" and c.id or nil
+			if id and id < 0 and isStrikeAir[-id] then
+				have = have + 1
 			end
 		end
 	end
+	count = min(count, 30) -- a wing beyond 30 per team only drains the energy
 	t.wing.goal = count
 	local add = max(0, count - have)
 	for i = 1, add do
 		local p = plants[1 + (i - 1) % #plants]
 		spGiveOrderToUnit(p.uid, -p.def, {}, 0)
 	end
-	log("t=%d team=%d air: wing goal %d, has/queued %d, %d more queued on %d plants", floor(f / 1800), t.team, count, have, add, #plants)
+	local where = {}
+	for _, p in ipairs(plants) do
+		local x, _, z = spGetUnitPosition(p.uid)
+		where[#where + 1] = string.format("%s@%d,%d", UnitDefs[spGetUnitDefID(p.uid)].name, x or -1, z or -1)
+	end
+	log("t=%d team=%d air: wing goal %d, has/queued %d, %d more queued on %s", floor(f / 1800), t.team, count, have, add, table.concat(where, " "))
 	return true
 end
 
@@ -893,7 +911,21 @@ local function airStrike(t, req, f)
 	t.wing.tx, t.wing.tz, t.wing.unit = nil, nil, nil
 	local target = t.wing.target
 	if type(target) == "table" and tonumber(target[1]) then
-		t.wing.tx, t.wing.tz = tonumber(target[1]), tonumber(target[2])
+		local tx, tz = tonumber(target[1]), tonumber(target[2])
+		local m = refreshMemory(t.ally, f)
+		local known = enemyArmed(tx, tz, 1200, t.ally) > 0
+		for _, tbl in ipairs({ m.eco, m.def, m.aa, m.coms }) do
+			for _, e in pairs(tbl) do
+				if not known and (e.x - tx) ^ 2 + (e.z - tz) ^ 2 < 1200 * 1200 then
+					known = true
+				end
+			end
+		end
+		if not known then
+			t.wing.mode = t.wing.mode == "strike" and "hold" or t.wing.mode
+			return false, "nothing known within 1200 of that point: scout it (raid, army focus) before sending the wing"
+		end
+		t.wing.tx, t.wing.tz = tx, tz
 	elseif tonumber(target) then
 		t.wing.unit = tonumber(target)
 	elseif target == "base" then
