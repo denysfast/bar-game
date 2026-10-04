@@ -23,12 +23,16 @@ end
 		   these answers, and the requester unpauses once every player has answered.
 		4. Later, "!loadsave <name>" in the battle room makes the server script carry
 		   MPSaveFile/MPSaveFrame and every client loads its own copy instead of starting fresh.
+	Autosave: every MPAutosaveMinutes (springsettings, default 10, 0 = off) of game time the
+	active player with the lowest ID runs the same save into the slot auto_<game id>, overwritten
+	each time (one slot per match, the autohost keeps the latest).
 ]]
 
 local SAVE_DIR = "Saves/mp"
 local MSG_REQ = "mpsave:req:"
 local MSG_OK = "mpsave:ok:"
 local ACK_TIMEOUT = 60 -- wall-clock seconds the requester waits for every player before unpausing anyway
+local AUTOSAVE_FRAMES = math.floor((Spring.GetConfigFloat("MPAutosaveMinutes", 10) or 10) * 60 * Game.gameSpeed)
 
 local spGetGameSpeed = Spring.GetGameSpeed
 local spGetGameFrame = Spring.GetGameFrame
@@ -110,7 +114,7 @@ local function writeSave(name)
 	pendingSave = { name = name, frame = frame, updates = 0 }
 end
 
-local function requestSave(name)
+local function requestSave(name, auto)
 	if Spring.IsReplay() then
 		spEcho("Multiplayer save: replays cannot be saved")
 		return
@@ -129,7 +133,7 @@ local function requestSave(name)
 	end
 	name = sanitizeName(name)
 	local wasPaused = isPaused()
-	request = { name = name, wasPaused = wasPaused, started = Spring.GetTimer(), answers = {} }
+	request = { name = name, auto = auto, wasPaused = wasPaused, started = Spring.GetTimer(), answers = {} }
 	if not wasPaused then
 		Spring.SendCommands("pause 1")
 	end
@@ -147,7 +151,11 @@ local function finishRequest(timedOut)
 	if timedOut and #missing > 0 then
 		spEcho("Multiplayer save \"" .. request.name .. "\": no answer from " .. table.concat(missing, ", ") .. " - they cannot resume this save")
 	end
-	spEcho("Multiplayer save \"" .. request.name .. "\" done. Resume it later in the battle room with: !loadsave " .. request.name)
+	if request.auto then
+		spEcho("Autosave \"" .. request.name .. "\" done (resume: !loadsave " .. request.name .. ")")
+	else
+		spEcho("Multiplayer save \"" .. request.name .. "\" done. Resume it later in the battle room with: !loadsave " .. request.name)
+	end
 	if not request.wasPaused and isPaused() then
 		Spring.SendCommands("pause 0")
 	end
@@ -198,6 +206,36 @@ function widget:Update()
 	end
 	if request and Spring.DiffTimers(Spring.GetTimer(), request.started) > ACK_TIMEOUT then
 		finishRequest(true)
+	end
+end
+
+-- the autosaver is the active (connected, not spectating) player with the lowest ID, so
+-- exactly one client asks; the others take part through the usual request
+local function isAutosaver()
+	local lowest
+	for playerID in pairs(activePlayers()) do
+		if not lowest or playerID < lowest then
+			lowest = playerID
+		end
+	end
+	return lowest == myPlayerID
+end
+
+local function autosaveName()
+	local gameID = tostring(Game.gameID or Spring.GetGameRulesParam("GameID") or ""):gsub("[^%w]", "")
+	return "auto_" .. (gameID ~= "" and gameID:sub(1, 12) or os.date("%Y%m%d_%H%M"))
+end
+
+function widget:GameFrame(frame)
+	if AUTOSAVE_FRAMES <= 0 or frame <= 0 or frame % AUTOSAVE_FRAMES ~= 0 then
+		return
+	end
+	if request or pendingSave or BAR.Utilities.Gametype.IsSinglePlayer() or Spring.GetSpectatingState() then
+		return
+	end
+	if isAutosaver() then
+		spEcho(string.format("Autosave (every %g min)...", AUTOSAVE_FRAMES / (60 * Game.gameSpeed)))
+		requestSave(autosaveName(), true)
 	end
 end
 
