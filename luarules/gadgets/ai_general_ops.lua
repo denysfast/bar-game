@@ -65,11 +65,11 @@ local MANUAL_HOLD = 3 * 60 * GAME_SPEED    -- a general's own order pauses the a
 
 local SIDE_DEFS = {
 	arm = { mex = "armmex", moho = "armmoho", tower = "armllt", fus = "armfus", afus = "armafus", conv = "armmakr",
-		energy = { "armafus", "armfus", "armadvsol", "armsolar" }, airplant = "armap", strike = { "armthund" }, fighter = "armfig" },
+		energy = { "armafus", "armfus", "armadvsol", "armsolar" }, airplant = "armap", strike = { "armthund" }, fighter = "armfig", scout = "armpeep" },
 	cor = { mex = "cormex", moho = "cormoho", tower = "corllt", fus = "corfus", afus = "corafus", conv = "cormakr",
-		energy = { "corafus", "corfus", "coradvsol", "corsolar" }, airplant = "corap", strike = { "corshad" }, fighter = "corveng" },
+		energy = { "corafus", "corfus", "coradvsol", "corsolar" }, airplant = "corap", strike = { "corshad" }, fighter = "corveng", scout = "corfink" },
 	leg = { mex = "legmex", moho = "legmoho", tower = "leglht", fus = "legfus", afus = "legafus", conv = "legeconv",
-		energy = { "legafus", "legfus", "legadvsol", "legsolar" }, airplant = "legap", strike = { "legmos" }, fighter = "legfig" },
+		energy = { "legafus", "legfus", "legadvsol", "legsolar" }, airplant = "legap", strike = { "legmos" }, fighter = "legfig", scout = "legcib" },
 }
 
 local function defID(name)
@@ -1020,8 +1020,8 @@ local function airStrike(t, req, f)
 				aa = aa + 1
 			end
 		end
-		if aa > total / 5 then
-			return false, string.format("%d AA known around the target for %d aircraft: too costly (AA x5 at most)", aa, total)
+		if aa > total / 8 then
+			return false, string.format("%d AA known around the target for %d aircraft: too costly (one AA per 8 aircraft at most)", aa, total)
 		end
 	end
 	local w = t.wing
@@ -1377,6 +1377,78 @@ local function raidTick(t, f)
 	end
 end
 
+---------------------------------------------------------------------------- scouts: commanders seen often enough to be sniped
+
+-- two scout planes per team circle the enemy's start, known economy and the enemy half; the commander memory
+-- the snipe needs stays fresh (AI commanders walk out to build, often without AA)
+local function scoutTick(t, f)
+	local sdefId = defID(sdef(t, "scout"))
+	if not sdefId then
+		return
+	end
+	t.scouts = t.scouts or {}
+	local tk, fresh, n = taken(), {}, 0
+	for uid in pairs(t.scouts) do
+		if alive(uid) then
+			n = n + 1
+		else
+			t.scouts[uid] = nil
+		end
+	end
+	for _, uid in ipairs(Spring.GetTeamUnits(t.team)) do
+		if n < 2 and spGetUnitDefID(uid) == sdefId and not tk[uid] then
+			local _, _, _, _, bp = spGetUnitHealth(uid)
+			if bp and bp >= 1 then
+				t.scouts[uid] = true
+				fresh[#fresh + 1] = uid
+				n = n + 1
+			end
+		end
+	end
+	if #fresh > 0 then
+		borrow(t.team, fresh, true)
+	end
+	if n < 2 and f - (t.scoutOrder or -1e9) > 60 * GAME_SPEED then
+		for _, uid in ipairs(Spring.GetTeamUnits(t.team)) do
+			if isFactory[spGetUnitDefID(uid)] and canBuild(uid, sdefId) then
+				local _, _, _, _, bp = spGetUnitHealth(uid)
+				if bp and bp >= 1 then
+					spGiveOrderToUnit(uid, -sdefId, {}, 0)
+					t.scoutOrder = f
+					break
+				end
+			end
+		end
+	end
+	-- routes for idle scouts: enemy starts, remembered enemy economy, random points of the enemy half
+	local m = refreshMemory(t.ally, f)
+	local pts = {}
+	for _, tm in ipairs(Spring.GetTeamList()) do
+		local _, _, isDead, _, _, a = Spring.GetTeamInfo(tm, false)
+		if a ~= t.ally and not isDead and tm ~= GAIA then
+			local x, z = startPos(tm)
+			pts[#pts + 1] = { x, z }
+		end
+	end
+	for _, e in pairs(m.eco) do
+		if #pts < 24 then
+			pts[#pts + 1] = { e.x, e.z }
+		end
+	end
+	local ex, ez = enemyHome(t.team, t.ally)
+	for _ = 1, 4 do
+		pts[#pts + 1] = { max(200, min(MAPX - 200, ex + random(-3000, 3000))), max(200, min(MAPZ - 200, ez + random(-3000, 3000))) }
+	end
+	for uid in pairs(t.scouts) do
+		if spGetUnitCommandCount(uid) == 0 and #pts > 0 then
+			for k = 1, 4 do
+				local p = pts[random(#pts)]
+				spGiveOrderToUnit(uid, CMD.MOVE, { p[1], 0, p[2] }, k > 1 and CMD.OPT_SHIFT or 0)
+			end
+		end
+	end
+end
+
 ---------------------------------------------------------------------------- autopilot: the staff's standing orders
 
 -- runs whatever model sits in the general's chair: commanders home after the opening, steady expansion, a bomber
@@ -1416,6 +1488,9 @@ local function autopilotTick(t, f)
 		if #freeSpots(t, sx, sz, 5000) >= 2 then
 			expandStart(t, { builders = 3 }, f)
 		end
+	end
+	if f >= 4 * 60 * GAME_SPEED then
+		scoutTick(t, f)
 	end
 	local _, _, _, eIncome = Spring.GetTeamResources(t.team, "energy")
 	if f >= 6 * 60 * GAME_SPEED and not t.wing.goal and not t.wing.pendingBuild and freeHand(t, "airbuild", f) and (eIncome or 0) >= 250 then
