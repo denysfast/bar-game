@@ -39,9 +39,8 @@ close, and new units pile up inside the base. Two mechanisms, AI teams only:
 
 3. tech ladder (modoption ai_techup, default on) - tech follows the economy: once an AI team earns
              TECH_T2_INCOME m/s and owns TECH_REQUIRE finished T2 factories, its T1 factories are
-             recycled (90% refund), one per TECH_STEP, idle ones first; once it earns TECH_T3_INCOME
-             and owns TECH_REQUIRE T3 gantries, its T2 land factories follow. New obsolete factories
-             are refused. T2 air / T2 sea are the top of their line and are kept. The BARb script
+             recycled (90% refund), one per TECH_STEP, idle ones first (v22: T2 land factories stay
+             for good - late-game T2 mass production). New obsolete factories are refused. T2 air / T2 sea are the top of their line and are kept. The BARb script
              (Factory::TechUp) makes the same choice for new factories, so this mostly cleans up.
 
 Human-owned units are never touched and human construction is never blocked.
@@ -52,7 +51,6 @@ local mode = Spring.GetModOptions().ai_unjam or "on"
 local techupOpt = Spring.GetModOptions().ai_techup
 local techupOn = techupOpt == nil or techupOpt == true or techupOpt == "1" or techupOpt == "true"
 local TECH_T2_INCOME = 150
-local TECH_T3_INCOME = 800
 local TECH_REQUIRE = 2
 local TECH_STEP = 30 * 30
 local lanesOn = (mode == "lanes")
@@ -340,9 +338,9 @@ local function techLadder(teamID, info, frame)
 		end
 	end
 	local t2count = #byTier[2] + #byTier[22]
-	if income >= TECH_T3_INCOME and #byTier[3] >= TECH_REQUIRE then
-		info.obsoleteTier = 2
-	elseif income >= TECH_T2_INCOME and t2count >= TECH_REQUIRE then
+	-- v22: T2 land factories are never obsolete (late-game T2 mass armies; with only the 4 gantries left the
+	-- AI could not spend its income and the doctrine's T3/T4 plans, which all need T2 units, became unbuildable)
+	if income >= TECH_T2_INCOME and t2count >= TECH_REQUIRE then
 		info.obsoleteTier = math.max(info.obsoleteTier, 1)
 	end
 	if info.obsoleteTier == 0 or frame - info.lastRecycle < TECH_STEP then

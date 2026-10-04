@@ -74,11 +74,26 @@ local MAX_ARMIES = 3                          -- per team, forming one included
 local PLAN_SHARE = 1                          -- planned units before one stock pick (1 = every other slot: the stock AI keeps
                                               -- its defence and constructors)
 local LAUNCH_SHARE = 0.85                     -- launch at this share of the planned metal (by tactic below) ...
-local LAUNCH_BY_TACTIC = { raid = 0.6, assault = 0.85, siege = 0.8, skirmish = 0.8, air = 0.7, defend = 0.5 }
+local LAUNCH_BY_TACTIC = { raid = 0.6, assault = 0.75, siege = 0.7, skirmish = 0.7, air = 0.7, defend = 0.5 }
 local LAUNCH_LATE = 0.6                       -- ... or this after LAUNCH_WAIT
 local LAUNCH_WAIT = 4 * 60 * GAME_SPEED
-local RETREAT_STRENGTH = 0.35                 -- fall back below this share of the launch strength
-local RETREAT_ODDS = 2.2                      -- or when the enemy around is this many times stronger
+local GATHER_SHARE = 0.7                      -- v22: launch only with this share of the army's metal at the rally point
+local RETREAT_STRENGTH = 0.25                 -- fall back below this share of the launch strength (v22: was 0.35)
+local RETREAT_ODDS = 3.0                      -- or when the enemy around is this many times stronger than the army
+                                              -- and the allied armies next to it (v22: was 2.2, own army only)
+local HIT_MEMORY = 8 * GAME_SPEED             -- v22: an army shot by enemies it cannot see goes for them this long
+-- v22 late game: "late" = 0 below LATE_FROM m/s of income, 1 at LATE_FULL; it scales the budget, the unit cap,
+-- the number of armies, the factory share of the plan and the weight of T2 (mass) compositions
+local LATE_FROM, LATE_FULL = 600, 4000
+local LATE_BUDGET = 4                         -- budget hi x (1 + LATE_BUDGET * late)
+local LATE_UNITS = 2.5                        -- unit cap x (1 + LATE_UNITS * late): a T2 army up to 140 units
+local LATE_ARMIES = 3                         -- MAX_ARMIES + LATE_ARMIES * late
+local LATE_T2 = 1.2                           -- T2 weight + LATE_T2 * late (T2 spam)
+-- v22 levy: the stock AI's own army idling at home is taken into a doctrine army and sent
+local LEVY_FROM = 18 * 60 * GAME_SPEED
+local LEVY_MIN = 6000                         -- metal of idle stock army before a levy
+local LEVY_KEEP = 0.25                        -- share of the stock army left to the AI (home guard)
+local LEVY_RADIUS = 3500                      -- around the start and the factories
 local REFILL_SHARE = 0.8                      -- a beaten army goes again at this share of its plan
 local CELL = 1024                             -- enemy map grid
 local BUDGET = {                              -- army metal: clamp(income * seconds, lo, hi)
@@ -95,7 +110,6 @@ local TIER_ODDS = {                           -- max tier available -> weights o
 }
 local MAX_UNITS = { 36, 40, 32, 32 }          -- per tier: a cheap-unit composition does not become a 90-unit blob
 local ENGAGE_SHARE = 0.08                     -- enemies worth an engagement: this share of the army's strength
-local ROLE_OFFSET = { front = 220, skirm = 60, aa = -80, support = -180, air = 0 } -- along the march direction
 
 ---------------------------------------------------------------------------- static data
 
@@ -206,6 +220,11 @@ end
 
 local function frameNow()
 	return Spring.GetGameFrame()
+end
+
+local function lateOf(teamID)
+	local _, _, _, income = spGetTeamResources(teamID, "metal")
+	return max(0, min(1, ((income or 0) - LATE_FROM) / (LATE_FULL - LATE_FROM))), income or 0
 end
 
 local function sideOf(teamID)
@@ -426,8 +445,14 @@ local function feasibility(comp, facs, teamID, t)
 	return total > 0 and ok / total or 0
 end
 
-local function pickTier(maxTier)
-	local w = TIER_ODDS[min(4, max(1, maxTier))]
+local function pickTier(maxTier, late)
+	local w = {}
+	for i, x in ipairs(TIER_ODDS[min(4, max(1, maxTier))]) do
+		w[i] = x
+	end
+	if w[2] then
+		w[2] = w[2] + LATE_T2 * (late or 0) -- late game: mass T2 armies
+	end
 	local sum = 0
 	for _, x in ipairs(w) do
 		sum = sum + x
@@ -451,9 +476,10 @@ local function recentlyUsed(t, id)
 	return false
 end
 
-local function makePlan(t, comp, tier, facs, income)
+local function makePlan(t, comp, tier, facs, income, late)
 	local b = BUDGET[tier]
-	local budget = max(b.lo, min(b.hi, income * b.sec))
+	late = late or 0
+	local budget = max(b.lo, min(b.hi * (1 + LATE_BUDGET * late), income * b.sec))
 	local weightCost, entries = 0, {}
 	for _, e in ipairs(comp.units) do
 		local udid = defID(e[1])
@@ -471,7 +497,7 @@ local function makePlan(t, comp, tier, facs, income)
 	for _, e in ipairs(entries) do
 		wsum = wsum + e.w
 	end
-	k = min(k, MAX_UNITS[tier] / wsum)
+	k = min(k, MAX_UNITS[tier] * (1 + LATE_UNITS * late) / wsum)
 	local want, metal, count = {}, 0, 0
 	for _, e in ipairs(entries) do
 		local n = max(1, floor(e.w * k + 0.5))
@@ -508,18 +534,23 @@ local function newArmy(teamID, t, f)
 	if #facs == 0 or not comps[t.side] then
 		return nil
 	end
-	local _, _, _, income = spGetTeamResources(teamID, "metal")
-	income = income or 0
+	local late, income = lateOf(teamID)
 	-- the tier: the best one available, sometimes a cheaper army for variety; T4 needs a living hero
-	for _ = 1, 6 do
-		local tier = pickTier(maxTier)
+	for try = 1, 8 do
+		local tier = try <= 6 and pickTier(maxTier, late) or (try == 7 and 2 or 1)
+		if try <= 3 and t.dir and t.dir.tier then
+			tier = min(maxTier, t.dir.tier) -- the general's tier, while it is buildable
+		end
 		local list = comps[t.side]["t" .. tier] or {}
 		local cands, sum = {}, 0
+		-- v22: after 4 misses a composition the factories make only in part (>= 50%) is fine too (the rest is
+		-- left out of the plan); the last two tries go for T2, then T1 (the AI never stays without a plan)
+		local need = try <= 4 and 0.75 or 0.5
 		for _, comp in ipairs(list) do
 			local feas = feasibility(comp, facs, teamID, t)
-			if feas >= 0.75 and not recentlyUsed(t, comp.id) then
-				-- tactics the situation calls for weigh more
-				local w = feas
+			if feas >= need and (try > 6 or not recentlyUsed(t, comp.id)) then
+				-- tactics the situation calls for weigh more; a general's preferences on top (v22)
+				local w = feas * (t.dir and t.dir.prefer and t.dir.prefer[comp.tactic or "assault"] or 1)
 				if comp.tactic == "defend" then
 					w = w * (t.threatened and 3 or 0.4)
 				end
@@ -537,7 +568,7 @@ local function newArmy(teamID, t, f)
 					break
 				end
 			end
-			local plan = makePlan(t, pick, tier, facs, income)
+			local plan = makePlan(t, pick, tier, facs, income, late)
 			if plan then
 				armyId = armyId + 1
 				local sx, sz = startPos(teamID)
@@ -732,10 +763,47 @@ local function armyStats(army)
 end
 
 -- the target of an army by its tactic, from what its ally team sees
+-- v22: the targets of the ally team's other armies in the field (one force hits one place)
+local function alliedTargets(army)
+	local out = {}
+	for _, tm in pairs(teams) do
+		if tm.ally == army.ally then
+			for _, a in ipairs(tm.armies) do
+				if a ~= army and a.target and (a.state == "march" or a.state == "engage") and a.tactic ~= "raid" and a.tactic ~= "defend" then
+					out[#out + 1] = a.target
+				end
+			end
+		end
+	end
+	return out
+end
+
+-- v22: fighting strength of the ally team's other armies in the field within r of (x, z)
+local function alliedNear(army, x, z, r)
+	local s = 0
+	for _, tm in pairs(teams) do
+		if tm.ally == army.ally then
+			for _, a in ipairs(tm.armies) do
+				local st = a.last
+				if a ~= army and st and (a.state == "march" or a.state == "engage") and (st.x - x) ^ 2 + (st.z - z) ^ 2 < r * r then
+					s = s + st.strength
+				end
+			end
+		end
+	end
+	return s
+end
+
 local function chooseTarget(army, st, f)
+	-- v22: the external commander's focus point beats everything but home defence
+	local dir = teams[army.team] and teams[army.team].dir
+	if dir and dir.focus and army.tactic ~= "defend" then
+		return dir.focus[1], dir.focus[2], "focus", 1e12
+	end
 	local cells = enemyCells(army.ally, f)
 	local best, bx, bz, kind
 	local hx, hz = startPos(army.team)
+	local focus = (army.tactic == "assault" or army.tactic == "siege" or army.tactic == "skirmish") and alliedTargets(army) or {}
 	for _, c in pairs(cells) do
 		local d = sqrt((c.x - st.x) ^ 2 + (c.z - st.z) ^ 2)
 		local home = sqrt((c.x - hx) ^ 2 + (c.z - hz) ^ 2)
@@ -764,6 +832,14 @@ local function chooseTarget(army, st, f)
 			local v = c.struct + c.eco + c.army * 0.8
 			if v > 0 and (c.army + c.def * 1.5) < st.strength * (t == "air" and 1.0 or 1.6) then
 				score, k = v / (1 + d / 2500), c.struct > 0 and "base" or "army"
+			end
+		end
+		if score then
+			for _, ft in ipairs(focus) do
+				if (ft[1] - c.x) ^ 2 + (ft[2] - c.z) ^ 2 < 1600 * 1600 then
+					score = score * 1.6 -- join the push of another army
+					break
+				end
 			end
 		end
 		if score and (not best or score > best) then
@@ -837,46 +913,71 @@ local function order(uid, cmd, x, z, opts)
 end
 
 -- every unit to its role's slot around (ax, az), facing (dx, dz); fight = FIGHT instead of MOVE
+-- v22: the roles stand in blocks one behind the other (front line ahead of the anchor, then skirmishers, AA,
+-- support, artillery at its range), every block as wide as the army's common row, rows centred: a rectangle
+-- instead of role lines drawn over each other
+local ROLE_ORDER = { "front", "skirm", "aa", "support", "air", "artillery" }
 local function formation(army, ax, az, dx, dz, fight, f)
-	local byRole = {}
+	local byRole, total = {}, 0
 	for uid in pairs(army.units) do
 		local r = roleOf(army, uid)
-		byRole[r] = byRole[r] or {}
+		if not byRole[r] then
+			byRole[r] = {}
+		end
 		byRole[r][#byRole[r] + 1] = uid
+		total = total + 1
 	end
 	local px, pz = -dz, dx -- perpendicular
-	for role, list in pairs(byRole) do
-		table.sort(list)
-		local along = ROLE_OFFSET[role] or 0
-		local n = #list
-		local gap = 70
-		for _, uid in ipairs(list) do
-			gap = max(gap, unitSize[spGetUnitDefID(uid) or -1] or 70)
-		end
-		for i, uid in ipairs(list) do
-			local a = along
-			if role == "artillery" then
-				local udid = spGetUnitDefID(uid)
-				a = -min(700, max(250, (unitRange[udid] or 600) * 0.55))
+	local width = max(6, floor(sqrt(total) * 1.7 + 0.5))
+	local cursor
+	for _, role in ipairs(ROLE_ORDER) do
+		local list = byRole[role]
+		if list then
+			table.sort(list)
+			local n = #list
+			local gap = 70
+			for _, uid in ipairs(list) do
+				gap = max(gap, unitSize[spGetUnitDefID(uid) or -1] or 70)
 			end
-			-- a line (two lines for many units), 70 elmos apart
-			local perRow = max(6, floor(sqrt(n) * 2))
-			local row = floor((i - 1) / perRow)
-			local col = (i - 1) % perRow - (min(n, perRow) - 1) / 2
-			local sx = ax + dx * (a - row * gap * 1.2) + px * col * gap
-			local sz = az + dz * (a - row * gap * 1.2) + pz * col * gap
-			sx, sz = clampMap(sx, sz)
-			local ux, _, uz = spGetUnitPosition(uid)
-			if ux then
-				local prev = army.slot and army.slot[uid]
-				local moved = not prev or (prev[1] - sx) ^ 2 + (prev[2] - sz) ^ 2 > 150 * 150
-				local idle = spGetUnitCommands(uid) == 0
-				local far = (ux - sx) ^ 2 + (uz - sz) ^ 2 > 120 * 120
-				if (moved or idle) and (far or fight) then
-					order(uid, fight and CMD.FIGHT or CMD.MOVE, sx, sz)
-					army.slot = army.slot or {}
-					army.slot[uid] = { sx, sz }
+			local perRow = min(n, width)
+			local rows = floor((n - 1) / perRow) + 1
+			local rowGap = gap * 1.15
+			if not cursor then
+				cursor = 120 + (rows - 1) * rowGap -- the first block's front row ahead of the anchor
+			end
+			local top = cursor
+			if role == "artillery" then
+				local range = 0
+				for _, uid in ipairs(list) do
+					range = max(range, unitRange[spGetUnitDefID(uid) or -1] or 600)
 				end
+				top = min(cursor, -min(700, max(250, range * 0.55)))
+			elseif role == "air" then
+				top = 0
+			end
+			for i, uid in ipairs(list) do
+				local row = floor((i - 1) / perRow)
+				local inRow = min(perRow, n - row * perRow)
+				local col = (i - 1) % perRow - (inRow - 1) / 2
+				local a = top - row * rowGap
+				local sx = ax + dx * a + px * col * gap
+				local sz = az + dz * a + pz * col * gap
+				sx, sz = clampMap(sx, sz)
+				local ux, _, uz = spGetUnitPosition(uid)
+				if ux then
+					local prev = army.slot and army.slot[uid]
+					local moved = not prev or (prev[1] - sx) ^ 2 + (prev[2] - sz) ^ 2 > 150 * 150
+					local idle = spGetUnitCommands(uid) == 0
+					local far = (ux - sx) ^ 2 + (uz - sz) ^ 2 > 120 * 120
+					if (moved or idle) and (far or fight) then
+						order(uid, fight and CMD.FIGHT or CMD.MOVE, sx, sz)
+						army.slot = army.slot or {}
+						army.slot[uid] = { sx, sz }
+					end
+				end
+			end
+			if role ~= "air" and role ~= "artillery" then
+				cursor = top - rows * rowGap - 30
 			end
 		end
 	end
@@ -945,6 +1046,21 @@ local function settle(army, f)
 	if next(miss) == nil then
 		return -- complete: nothing to settle
 	end
+	if army.levy then
+		-- a levy is what the AI had: no refills, the plan is what is left (dropped below three units)
+		local have, metal, n = {}, 0, 0
+		for uid in pairs(army.units) do
+			local udid = spGetUnitDefID(uid)
+			if udid then
+				have[udid] = (have[udid] or 0) + 1
+				metal, n = metal + (unitCost[udid] or 0), n + 1
+			end
+		end
+		if n >= 3 then
+			army.want, army.planMetal = have, metal
+			return
+		end
+	end
 	local facs = teamFactories(t)
 	local makeable = false
 	for udid in pairs(miss) do
@@ -986,6 +1102,16 @@ local function settle(army, f)
 end
 
 local function driveArmy(army, f)
+	-- v22: units the external commander took (cmd_ai_commander) leave the army: two drivers fight over them
+	local taken = GG.AICommanderUnits
+	if taken then
+		for uid in pairs(army.units) do
+			if taken[uid] then
+				removeUnit(army, uid)
+				spSetUnitRulesParam(uid, "doctrine_army", 0)
+			end
+		end
+	end
 	settle(army, f)
 	if army.state == "dead" then
 		return false
@@ -1009,9 +1135,30 @@ local function driveArmy(army, f)
 		if army.state == "regroup" and waited < 60 * GAME_SPEED then
 			ready = false
 		end
-		if ready then
+		-- v22 commander directives: gather holds every army at the rally point, go launches what is there
+		local dir = teams[army.team] and teams[army.team].dir
+		local goNow = dir and dir.go and dir.go >= (army.since or 0) and st.n >= 3
+		if dir and dir.gather then
+			ready = false
+		end
+		if ready and waited < LAUNCH_WAIT * 1.5 and not goNow then
+			-- v22: the army leaves as one body - most of it at the rally point first
+			local at = 0
+			for uid in pairs(army.units) do
+				local x, _, z = spGetUnitPosition(uid)
+				if x and (x - army.rallyX) ^ 2 + (z - army.rallyZ) ^ 2 < 1000 * 1000 then
+					at = at + (unitCost[spGetUnitDefID(uid)] or 0)
+				end
+			end
+			if at < st.cost * GATHER_SHARE then
+				ready = false
+			end
+		end
+		if goNow then
+			ready = true
+		elseif ready then
 			local near = enemyStrength(army.rallyX, army.rallyZ, 2600, army.ally)
-			if near > st.strength * 1.3 and t ~= "defend" then
+			if near > st.strength * 2 and t ~= "defend" then
 				ready = false
 				army.heldBack = (army.heldBack or 0) + 1
 			end
@@ -1071,6 +1218,11 @@ local function driveArmy(army, f)
 		return true
 	end
 
+	local dir = teams[army.team] and teams[army.team].dir
+	if dir and dir.gather and t ~= "defend" then
+		retreat(army, st, f, "mustered by the commander")
+		return true
+	end
 	-- march / engage: retarget every 10 s or when the target is gone
 	if not army.target or f - (army.targetFrame or 0) > 10 * GAME_SPEED then
 		local tx, tz, kind, score = chooseTarget(army, st, f)
@@ -1081,6 +1233,12 @@ local function driveArmy(army, f)
 			if cur and cur * 1.5 >= score then
 				tx, tz, kind, score = army.target[1], army.target[2], army.targetKind, cur
 			end
+		end
+		-- v22: a sweep point stands until the army gets there (or something real turns up): a new random point
+		-- every 10 s had armies turning round and round
+		local sweeping = { sweep = true, ["enemy start"] = true }
+		if army.target and army.targetFrame and army.targetFrame > 0 and sweeping[army.targetKind] and sweeping[kind] then
+			tx, tz, kind, score = army.target[1], army.target[2], army.targetKind, army.targetScore
 		end
 		if kind ~= army.targetKind or not army.target or (tx - army.target[1]) ^ 2 + (tz - army.target[2]) ^ 2 > 800 * 800 then
 			log("t=%d team=%d army#%d %s targets %s at %d,%d (%d away)", floor(f / 1800), army.team, army.id, army.comp.id, kind,
@@ -1105,13 +1263,23 @@ local function driveArmy(army, f)
 	-- losses and odds
 	local engageR = max(900, st.range * 1.2 + 350)
 	local es, ex, ez, en = enemyStrength(st.x, st.z, engageR + 400, army.ally)
-	if st.strength < army.launchStrength * RETREAT_STRENGTH then
+	local allin = dir and dir.allin
+	if st.strength < army.launchStrength * (allin and 0.05 or RETREAT_STRENGTH) then
 		retreat(army, st, f, "losses")
 		return true
 	end
-	if es > st.strength * RETREAT_ODDS and t ~= "defend" then
-		retreat(army, st, f, string.format("outnumbered %.1fx", es / max(1, st.strength)))
+	local own = st.strength + 0.7 * alliedNear(army, st.x, st.z, 2500)
+	if es > own * (allin and 8 or RETREAT_ODDS) and t ~= "defend" then
+		retreat(army, st, f, string.format("outnumbered %.1fx", es / max(1, own)))
 		return true
+	end
+	-- v22: shot by enemies it cannot see (outranged by artillery, heroes, long-range defences): go for them
+	-- instead of marching on under fire (armies used to melt with no engagement at all)
+	local hit = army.hit and f - army.hit[3] < HIT_MEMORY and t ~= "raid" and t ~= "air" and army.hit
+	local blind = false
+	if hit and es <= st.strength * ENGAGE_SHARE then
+		blind = true
+		es, ex, ez, en = max(es, st.strength * ENGAGE_SHARE + 1), hit[1], hit[2], en or 0
 	end
 	if t == "raid" and es > st.strength * 0.9 and army.targetKind ~= "army" then
 		-- raiders do not take fair fights: pick another target
@@ -1124,19 +1292,19 @@ local function driveArmy(army, f)
 			army.state = "engage"
 			army.engagements = army.engagements + 1
 			army.engageStart = f
-			log("t=%d team=%d army#%d %s engages: own %d vs enemy %d (%d units)", floor(f / 1800), army.team, army.id, army.comp.id,
-				st.strength, es, en or 0)
+			log("t=%d team=%d army#%d %s engages%s: own %d vs enemy %d (%d units)", floor(f / 1800), army.team, army.id, army.comp.id,
+				blind and " an unseen shooter" or "", st.strength, es, en or 0)
 		end
 		local dx, dz = norm(ex - st.x, ez - st.z)
 		-- siege: hold at artillery range of the enemy
 		local ax, az = st.x, st.z
 		local dist = sqrt((ex - st.x) ^ 2 + (ez - st.z) ^ 2)
-		if t == "siege" then
+		if t == "siege" and not blind then
 			local keep = max(600, st.range * 0.85)
 			local adv = max(0, dist - keep)
 			ax, az = st.x + dx * min(adv, 200), st.z + dz * min(adv, 200)
 		else
-			local adv = min(300, dist * 0.5)
+			local adv = blind and min(450, dist) or min(300, dist * 0.5)
 			ax, az = st.x + dx * adv, st.z + dz * adv
 		end
 		army.anchorX, army.anchorZ = clampMap(ax, az)
@@ -1208,6 +1376,82 @@ local function isAITeam(teamID)
 	return isAI and (luaAI == nil or luaAI == "") and (not onlyTeams or onlyTeams[teamID])
 end
 
+-- v22: directives of an external commander (cmd_ai_commander.lua op "doctrine") for one AI team:
+--   status            the team's armies
+--   focus {pos=[x,z]} every army but defence goes for that point (clear: back to its own targets)
+--   gather            armies in the field fall back to the rally point, forming ones wait: one big force
+--   go                every army gathered or forming (3+ units) launches now; ends gather
+--   allin / normal    armies retreat only when nearly wiped out / the usual thresholds
+local function directive(teamID, cmd, req)
+	local t = teams[teamID]
+	if not t then
+		return false, "team " .. tostring(teamID) .. " has no doctrine"
+	end
+	t.dir = t.dir or {}
+	local d, f = t.dir, frameNow()
+	if cmd == "focus" then
+		local p = req.pos
+		if type(p) ~= "table" or not tonumber(p[1]) or not tonumber(p[2]) then
+			return false, "focus needs pos [x, z]"
+		end
+		d.focus = { clampMap(tonumber(p[1]), tonumber(p[2])) }
+		for _, a in ipairs(t.armies) do
+			a.targetFrame = 0 -- retarget now
+		end
+	elseif cmd == "clear" then
+		d.focus = nil
+	elseif cmd == "gather" then
+		d.gather, d.go = true, nil
+		d.gatherFrame = d.gatherFrame or f
+	elseif cmd == "go" then
+		d.gather, d.go, d.gatherFrame = nil, f, nil
+	elseif cmd == "allin" then
+		d.allin = true
+	elseif cmd == "normal" then
+		d.allin, d.gather, d.gatherFrame = nil, nil, nil
+	elseif cmd == "prefer" then
+		-- weights for the plan choice: tactics {raid=2, assault=1, ...}, tier "auto" or 1..4
+		local tac = type(req.tactics) == "table" and req.tactics or {}
+		d.prefer = d.prefer or {}
+		for k, v in pairs(tac) do
+			if tonumber(v) then
+				-- defend is capped: a general that weighs it high keeps every army at home
+				d.prefer[k] = max(0, min(k == "defend" and 2 or 10, tonumber(v)))
+			end
+		end
+		if tonumber(req.tier) then
+			d.tier = max(1, min(4, floor(tonumber(req.tier))))
+		elseif req.tier == "auto" then
+			d.tier = nil
+		end
+	elseif cmd ~= "status" then
+		-- the general's executors (expansion, economy, air wing, raids, commander guard, reports): ai_general_ops.lua
+		if GG.AIGeneralOps then
+			return GG.AIGeneralOps.handle(teamID, cmd, req)
+		end
+		return false, "unknown doctrine command " .. cmd
+	end
+	if (cmd == "focus" or cmd == "gather" or cmd == "go" or cmd == "allin" or cmd == "normal" or cmd == "clear")
+		and req.byStaff == nil and GG.AIGeneralOps and GG.AIGeneralOps.noteManual then
+		GG.AIGeneralOps.noteManual(teamID, "army") -- a general's own army order pauses the staff's push
+	end
+	if cmd ~= "status" then
+		log("t=%d team=%d commander directive %s%s", floor(f / 1800), teamID, cmd,
+			d.focus and string.format(" (focus %d,%d)", d.focus[1], d.focus[2]) or "")
+	end
+	local out = {}
+	for _, a in ipairs(t.armies) do
+		local st = a.last
+		out[#out + 1] = { id = a.id, comp = a.comp.id, tactic = a.tactic, state = a.state, units = st and st.n or a.n,
+			metal = st and floor(st.cost) or 0, x = st and floor(st.x) or nil, z = st and floor(st.z) or nil,
+			target = a.targetKind, tx = a.target and floor(a.target[1]) or nil, tz = a.target and floor(a.target[2]) or nil,
+			plan = floor(a.planMetal or 0), kills = floor(a.kills), losses = floor(a.losses) }
+	end
+	return true, nil, { armies = out, focus = d.focus, gather = d.gather or false, allin = d.allin or false,
+		prefer = d.prefer, tier = d.tier, executors = GG.AIGeneralOps and GG.AIGeneralOps.status(teamID) or nil,
+		rally = (t.armies[1] and { floor(t.armies[1].rallyX), floor(t.armies[1].rallyZ) }) or nil }
+end
+
 function gadget:Initialize()
 	for _, teamID in ipairs(Spring.GetTeamList()) do
 		if isAITeam(teamID) then
@@ -1228,6 +1472,7 @@ function gadget:Initialize()
 	GG.AIDoctrine = {
 		owns = owns,
 		teams = teams,
+		directive = directive,
 		-- the army a hero marches with: its own hero-led composition, else the strongest launched army
 		heroArmy = function(teamID, heroID, heroName)
 			local t = teams[teamID]
@@ -1286,7 +1531,8 @@ function gadget:UnitCreated(unitID, unitDefID, teamID, builderID)
 	end
 	if wanted then
 		fs.planned = fs.planned + 1
-		if fs.planned >= PLAN_SHARE then
+		-- v22: late game the plan takes up to 3 slots of 4 (the stock AI has its levy-free home guard and builders)
+		if fs.planned >= PLAN_SHARE + floor(2 * lateOf(teamID) + 0.5) then
 			fs.skip = true
 			fs.planned = 0
 			fs.next = ""
@@ -1484,6 +1730,118 @@ local function altarAssist(teamID, f)
 	end
 end
 
+---------------------------------------------------------------------------- v22 levy: the stock army goes to war
+-- BARb keeps most of its army at home (its attack groups launch at a capped power, the rest guards); late game
+-- that was millions of metal standing still. Every 20 s the armed mobile units the AI owns around its start and
+-- factories are counted; past LEVY_MIN metal all but LEVY_KEEP of them (every 4th unit by cost stays) become a
+-- doctrine army that gathers at the rally point and attacks like a planned one.
+local levyDef = {}
+for udid, ud in pairs(UnitDefs) do
+	local armed = (unitRange[udid] or 0) > 0 or unitRole[udid] == "aa"
+	if armed and not isStructure[udid] and not ud.canFly and not ud.isBuilder and not ud.customParams.iscommander
+		and not ud.name:find("t4", 1, true) and (ud.speed or 0) > 0 then
+		levyDef[udid] = true
+	end
+end
+local MAX_LEVIES = 2
+
+local function levy(teamID, t, f)
+	-- not while the base is attacked (that army is the home guard) and not before the economy is past the opening
+	if not t.side or t.threatened or t.homeThreat or lateOf(teamID) <= 0 then
+		return
+	end
+	local nLevy = 0
+	for _, a in ipairs(t.armies) do
+		if a.levy then
+			nLevy = nLevy + 1
+		end
+	end
+	if nLevy >= MAX_LEVIES then
+		return
+	end
+	local spots = { { startPos(teamID) } }
+	for uid in pairs(t.factories) do
+		local x, _, z = spGetUnitPosition(uid)
+		if x then
+			spots[#spots + 1] = { x, z }
+		end
+	end
+	local heroes = GG.T4Heroes and GG.T4Heroes.heroes or {}
+	local taken = GG.AICommanderUnits or {}
+	local helpers = altarHelp[teamID] and altarHelp[teamID].units or {}
+	local cands, total = {}, 0
+	for _, uid in ipairs(Spring.GetTeamUnits(teamID)) do
+		local udid = spGetUnitDefID(uid)
+		if udid and levyDef[udid] and not owns[uid] and not pending[uid] and not heroes[uid] and not taken[uid] and not helpers[uid] then
+			local x, _, z = spGetUnitPosition(uid)
+			local _, _, _, _, bp = spGetUnitHealth(uid)
+			if x and bp and bp >= 1 then
+				for _, p in ipairs(spots) do
+					if (x - p[1]) ^ 2 + (z - p[2]) ^ 2 < LEVY_RADIUS * LEVY_RADIUS then
+						cands[#cands + 1] = { uid = uid, c = unitCost[udid] or 0 }
+						total = total + (unitCost[udid] or 0)
+						break
+					end
+				end
+			end
+		end
+	end
+	if total < LEVY_MIN / (1 - LEVY_KEEP) then
+		return
+	end
+	table.sort(cands, function(p, q) return p.c > q.c or (p.c == q.c and p.uid < q.uid) end)
+	local army = {
+		id = 0, team = teamID, ally = t.ally, comp = { id = "levy", name = "Levy" }, tier = 0, tactic = "assault", levy = true,
+		want = {}, planMetal = 0, planCount = 0, roleOver = {}, units = {}, n = 0, made = {}, state = "forming", since = f,
+		launchStrength = 0, kills = 0, losses = 0, engagements = 0, launches = 0, spreadSum = 0, spreadN = 0,
+	}
+	local ids, metal = {}, 0
+	for i, c in ipairs(cands) do
+		if i % 4 ~= 0 then -- every 4th stays home
+			local udid = spGetUnitDefID(c.uid)
+			addUnit(army, c.uid)
+			army.want[udid] = (army.want[udid] or 0) + 1
+			ids[#ids + 1] = c.uid
+			metal = metal + c.c
+		end
+	end
+	if #ids < 4 then
+		for _, uid in ipairs(ids) do
+			removeUnit(army, uid)
+		end
+		return
+	end
+	armyId = armyId + 1
+	army.id = armyId
+	army.planMetal, army.planCount = metal, #ids
+	local sx, sz = startPos(teamID)
+	local ex, ez = enemyHome(teamID)
+	local dx, dz, d = norm(ex - sx, ez - sz)
+	army.rallyX, army.rallyZ = clampMap(sx + dx * min(1600, d * 0.22), sz + dz * min(1600, d * 0.22))
+	t.armies[#t.armies + 1] = army
+	toAI(teamID, "detach " .. table.concat(ids, ","))
+	for _, uid in ipairs(ids) do
+		order(uid, CMD.MOVE, army.rallyX + random(-300, 300), army.rallyZ + random(-300, 300))
+	end
+	log("t=%d team=%d army#%d levy: %d idle stock units, %d metal (of %d at home)", floor(f / 1800), teamID, army.id, #ids, metal, total)
+end
+
+function gadget:UnitDamaged(unitID, unitDefID, unitTeam, damage, paralyzer, weaponDefID, projectileID, attackerID)
+	local army = owns[unitID]
+	if not army or not attackerID or damage <= 0 then
+		return
+	end
+	local x, _, z = spGetUnitPosition(attackerID)
+	if x and spGetUnitAllyTeam(attackerID) ~= army.ally then
+		local h = army.hit
+		if h then
+			h[1], h[2], h[3] = x, z, Spring.GetGameFrame()
+		else
+			army.hit = { x, z, Spring.GetGameFrame() }
+		end
+	end
+end
+
 function gadget:GameFrame(f)
 	if f % 30 ~= 17 then
 		return
@@ -1512,9 +1870,9 @@ function gadget:GameFrame(f)
 			-- drop dead armies, start a new plan when nothing is forming
 			local keep, forming = {}, false
 			for _, a in ipairs(t.armies) do
-				if a.state ~= "dead" and (a.n > 0 or a.state == "forming") then
+				if a.state ~= "dead" and (a.n > 0 or (a.state == "forming" and not a.levy)) then
 					keep[#keep + 1] = a
-					if a.state == "forming" then
+					if a.state == "forming" and not a.levy then
 						forming = true
 					end
 				elseif a.state ~= "dead" then
@@ -1524,11 +1882,21 @@ function gadget:GameFrame(f)
 				end
 			end
 			t.armies = keep
-			if not forming and #t.armies < MAX_ARMIES then
+			local late = lateOf(teamID)
+			if not forming and #t.armies < MAX_ARMIES + floor(LATE_ARMIES * late + 0.5) then
 				newArmy(teamID, t, f)
+			end
+			if f >= LEVY_FROM and f % 600 == 317 then
+				levy(teamID, t, f)
 			end
 			if f % 150 == 47 then
 				altarAssist(teamID, f)
+			end
+			-- a general's gather is a muster, not a posture: after 4 min the gathered force goes by itself
+			local dir = t.dir
+			if dir and dir.gather and dir.gatherFrame and f - dir.gatherFrame > 4 * 60 * GAME_SPEED then
+				dir.gather, dir.go, dir.gatherFrame = nil, f, nil
+				log("t=%d team=%d commander gather expired after 4 min: the gathered armies go", floor(f / 1800), teamID)
 			end
 			updateProduction(teamID, t)
 			for _, a in ipairs(t.armies) do

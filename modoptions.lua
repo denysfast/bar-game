@@ -731,6 +731,326 @@ local options = {
 
 	---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 	---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+	-- AI Generals (custom, v22): an LLM general per ally team (role/persona, harness, model, effort).
+	-- Read by the bar-commander daemon (beyond-all-reason/server/commander), which starts the generals;
+	-- shown in game by luaui/Widgets/gui_ai_generals.lua
+	---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+	---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
+		key = "ai_generals",
+		name = "AI Generals",
+		desc = "Генералы ИИ: LLM-агент с ролью командует союзом ИИ (стратегия, экономика, авиация, рейды)",
+		type = "section",
+	},
+
+	{
+		key = "general_0_sub_header",
+		name = "Ally team 0 / Союз 0",
+		section = "ai_generals",
+		type = "subheader",
+		def = true,
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
+		key = "general_0_role",
+		name = "Ally 0 general: role",
+		desc = "Persona of the LLM general for ally team 0. None = plain AI.",
+		type = "list",
+		section = "ai_generals",
+		def = "none",
+		items = {
+			{ key = "none", name = "None / Нет", desc = "No general for this ally team" },
+			{ key = "sneaky", name = "Sneaky / Подлый", desc = "Raids, commander snipes, hits where the enemy is weak" },
+			{ key = "economist", name = "Late-game economist / Лейт-гейм экономист", desc = "Expands and techs up, wins the late game with a bigger economy" },
+			{ key = "aggressor", name = "Aggressor / Агрессор", desc = "Constant pressure, early and repeated attacks" },
+			{ key = "air_marshal", name = "Air marshal / Маршал авиации", desc = "Air wing first: bombers, commander strikes, AA awareness" },
+			{ key = "strategist", name = "Strategist / Стратег", desc = "Balanced: reads the map and picks the right tactic" },
+		},
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
+		key = "general_0_harness",
+		name = "Ally 0 general: harness",
+		desc = "Agent CLI that runs the general for ally team 0.",
+		type = "list",
+		section = "ai_generals",
+		def = "pi-agent",
+		column = 2,
+		items = {
+			{ key = "pi-agent", name = "PiAgent", desc = "Local model through PiAgent (default)" },
+			{ key = "claude", name = "Claude", desc = "Claude Code" },
+			{ key = "codex", name = "Codex", desc = "OpenAI Codex CLI" },
+			{ key = "antigravity", name = "Antigravity", desc = "Google Antigravity (Gemini)" },
+			{ key = "staff", name = "Staff only / Штаб", desc = "No LLM: the staff autopilot and the role defaults only (free, instant)" },
+		},
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
+		key = "general_0_model",
+		name = "Ally 0 general: model",
+		desc = "Model name for the harness (e.g. qwen, opus, gpt-6-sol). Empty = harness default.",
+		type = "string",
+		section = "ai_generals",
+		def = "",
+		hint = "harness default",
+		maxlen = 64,
+		column = -1,
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
+		key = "general_0_effort",
+		name = "Ally 0 general: effort",
+		desc = "Reasoning effort of the general (not used by PiAgent and Antigravity).",
+		type = "list",
+		section = "ai_generals",
+		def = "default",
+		column = 2,
+		items = {
+			{ key = "default", name = "Default", desc = "Harness default" },
+			{ key = "low", name = "Low", desc = "" },
+			{ key = "medium", name = "Medium", desc = "" },
+			{ key = "high", name = "High", desc = "" },
+			{ key = "xhigh", name = "Extra high", desc = "" },
+			{ key = "max", name = "Max", desc = "" },
+		},
+	},
+
+	{
+		key = "general_1_sub_header",
+		name = "Ally team 1 / Союз 1",
+		section = "ai_generals",
+		type = "subheader",
+		def = true,
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
+		key = "general_1_role",
+		name = "Ally 1 general: role",
+		desc = "Persona of the LLM general for ally team 1. None = plain AI.",
+		type = "list",
+		section = "ai_generals",
+		def = "none",
+		items = {
+			{ key = "none", name = "None / Нет", desc = "No general for this ally team" },
+			{ key = "sneaky", name = "Sneaky / Подлый", desc = "Raids, commander snipes, hits where the enemy is weak" },
+			{ key = "economist", name = "Late-game economist / Лейт-гейм экономист", desc = "Expands and techs up, wins the late game with a bigger economy" },
+			{ key = "aggressor", name = "Aggressor / Агрессор", desc = "Constant pressure, early and repeated attacks" },
+			{ key = "air_marshal", name = "Air marshal / Маршал авиации", desc = "Air wing first: bombers, commander strikes, AA awareness" },
+			{ key = "strategist", name = "Strategist / Стратег", desc = "Balanced: reads the map and picks the right tactic" },
+		},
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
+		key = "general_1_harness",
+		name = "Ally 1 general: harness",
+		desc = "Agent CLI that runs the general for ally team 1.",
+		type = "list",
+		section = "ai_generals",
+		def = "pi-agent",
+		column = 2,
+		items = {
+			{ key = "pi-agent", name = "PiAgent", desc = "Local model through PiAgent (default)" },
+			{ key = "claude", name = "Claude", desc = "Claude Code" },
+			{ key = "codex", name = "Codex", desc = "OpenAI Codex CLI" },
+			{ key = "antigravity", name = "Antigravity", desc = "Google Antigravity (Gemini)" },
+			{ key = "staff", name = "Staff only / Штаб", desc = "No LLM: the staff autopilot and the role defaults only (free, instant)" },
+		},
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
+		key = "general_1_model",
+		name = "Ally 1 general: model",
+		desc = "Model name for the harness (e.g. qwen, opus, gpt-6-sol). Empty = harness default.",
+		type = "string",
+		section = "ai_generals",
+		def = "",
+		hint = "harness default",
+		maxlen = 64,
+		column = -1,
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
+		key = "general_1_effort",
+		name = "Ally 1 general: effort",
+		desc = "Reasoning effort of the general (not used by PiAgent and Antigravity).",
+		type = "list",
+		section = "ai_generals",
+		def = "default",
+		column = 2,
+		items = {
+			{ key = "default", name = "Default", desc = "Harness default" },
+			{ key = "low", name = "Low", desc = "" },
+			{ key = "medium", name = "Medium", desc = "" },
+			{ key = "high", name = "High", desc = "" },
+			{ key = "xhigh", name = "Extra high", desc = "" },
+			{ key = "max", name = "Max", desc = "" },
+		},
+	},
+
+	{
+		key = "general_2_sub_header",
+		name = "Ally team 2 / Союз 2",
+		section = "ai_generals",
+		type = "subheader",
+		def = true,
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
+		key = "general_2_role",
+		name = "Ally 2 general: role",
+		desc = "Persona of the LLM general for ally team 2. None = plain AI.",
+		type = "list",
+		section = "ai_generals",
+		def = "none",
+		items = {
+			{ key = "none", name = "None / Нет", desc = "No general for this ally team" },
+			{ key = "sneaky", name = "Sneaky / Подлый", desc = "Raids, commander snipes, hits where the enemy is weak" },
+			{ key = "economist", name = "Late-game economist / Лейт-гейм экономист", desc = "Expands and techs up, wins the late game with a bigger economy" },
+			{ key = "aggressor", name = "Aggressor / Агрессор", desc = "Constant pressure, early and repeated attacks" },
+			{ key = "air_marshal", name = "Air marshal / Маршал авиации", desc = "Air wing first: bombers, commander strikes, AA awareness" },
+			{ key = "strategist", name = "Strategist / Стратег", desc = "Balanced: reads the map and picks the right tactic" },
+		},
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
+		key = "general_2_harness",
+		name = "Ally 2 general: harness",
+		desc = "Agent CLI that runs the general for ally team 2.",
+		type = "list",
+		section = "ai_generals",
+		def = "pi-agent",
+		column = 2,
+		items = {
+			{ key = "pi-agent", name = "PiAgent", desc = "Local model through PiAgent (default)" },
+			{ key = "claude", name = "Claude", desc = "Claude Code" },
+			{ key = "codex", name = "Codex", desc = "OpenAI Codex CLI" },
+			{ key = "antigravity", name = "Antigravity", desc = "Google Antigravity (Gemini)" },
+			{ key = "staff", name = "Staff only / Штаб", desc = "No LLM: the staff autopilot and the role defaults only (free, instant)" },
+		},
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
+		key = "general_2_model",
+		name = "Ally 2 general: model",
+		desc = "Model name for the harness (e.g. qwen, opus, gpt-6-sol). Empty = harness default.",
+		type = "string",
+		section = "ai_generals",
+		def = "",
+		hint = "harness default",
+		maxlen = 64,
+		column = -1,
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
+		key = "general_2_effort",
+		name = "Ally 2 general: effort",
+		desc = "Reasoning effort of the general (not used by PiAgent and Antigravity).",
+		type = "list",
+		section = "ai_generals",
+		def = "default",
+		column = 2,
+		items = {
+			{ key = "default", name = "Default", desc = "Harness default" },
+			{ key = "low", name = "Low", desc = "" },
+			{ key = "medium", name = "Medium", desc = "" },
+			{ key = "high", name = "High", desc = "" },
+			{ key = "xhigh", name = "Extra high", desc = "" },
+			{ key = "max", name = "Max", desc = "" },
+		},
+	},
+
+	{
+		key = "general_3_sub_header",
+		name = "Ally team 3 / Союз 3",
+		section = "ai_generals",
+		type = "subheader",
+		def = true,
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
+		key = "general_3_role",
+		name = "Ally 3 general: role",
+		desc = "Persona of the LLM general for ally team 3. None = plain AI.",
+		type = "list",
+		section = "ai_generals",
+		def = "none",
+		items = {
+			{ key = "none", name = "None / Нет", desc = "No general for this ally team" },
+			{ key = "sneaky", name = "Sneaky / Подлый", desc = "Raids, commander snipes, hits where the enemy is weak" },
+			{ key = "economist", name = "Late-game economist / Лейт-гейм экономист", desc = "Expands and techs up, wins the late game with a bigger economy" },
+			{ key = "aggressor", name = "Aggressor / Агрессор", desc = "Constant pressure, early and repeated attacks" },
+			{ key = "air_marshal", name = "Air marshal / Маршал авиации", desc = "Air wing first: bombers, commander strikes, AA awareness" },
+			{ key = "strategist", name = "Strategist / Стратег", desc = "Balanced: reads the map and picks the right tactic" },
+		},
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
+		key = "general_3_harness",
+		name = "Ally 3 general: harness",
+		desc = "Agent CLI that runs the general for ally team 3.",
+		type = "list",
+		section = "ai_generals",
+		def = "pi-agent",
+		column = 2,
+		items = {
+			{ key = "pi-agent", name = "PiAgent", desc = "Local model through PiAgent (default)" },
+			{ key = "claude", name = "Claude", desc = "Claude Code" },
+			{ key = "codex", name = "Codex", desc = "OpenAI Codex CLI" },
+			{ key = "antigravity", name = "Antigravity", desc = "Google Antigravity (Gemini)" },
+			{ key = "staff", name = "Staff only / Штаб", desc = "No LLM: the staff autopilot and the role defaults only (free, instant)" },
+		},
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
+		key = "general_3_model",
+		name = "Ally 3 general: model",
+		desc = "Model name for the harness (e.g. qwen, opus, gpt-6-sol). Empty = harness default.",
+		type = "string",
+		section = "ai_generals",
+		def = "",
+		hint = "harness default",
+		maxlen = 64,
+		column = -1,
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
+		key = "general_3_effort",
+		name = "Ally 3 general: effort",
+		desc = "Reasoning effort of the general (not used by PiAgent and Antigravity).",
+		type = "list",
+		section = "ai_generals",
+		def = "default",
+		column = 2,
+		items = {
+			{ key = "default", name = "Default", desc = "Harness default" },
+			{ key = "low", name = "Low", desc = "" },
+			{ key = "medium", name = "Medium", desc = "" },
+			{ key = "high", name = "High", desc = "" },
+			{ key = "xhigh", name = "Extra high", desc = "" },
+			{ key = "max", name = "Max", desc = "" },
+		},
+	},
+
+	---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+	---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Other Options
 	---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 	---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------

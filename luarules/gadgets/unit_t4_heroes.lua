@@ -5871,7 +5871,14 @@ if gadgetHandler:IsSyncedCode() then
 		local x, _, z = heroPos(unitID)
 		local range = K.castRange(b, rankOf(h, key))
 		if (tx - x) ^ 2 + (tz - z) ^ 2 <= range ^ 2 then
-			K.tryCast(unitID, h, key, tx, tz, targetID, ty)
+			-- cast next frame: a cast orders the hero itself (dash/blink STOP, MOVE, ATTACK) and an order here clears the
+			-- queue under the engine, whose FinishCommand then pops the empty deque (corrupt queue -> the owner's client
+			-- crashed drawing the selected hero's commands, CommandDrawer::DrawMobileCAICommands; v22)
+			delayed[#delayed + 1] = { frame = frameNow() + 1, fn = function()
+				if heroes[unitID] == h then
+					K.tryCast(unitID, h, key, tx, tz, targetID, ty)
+				end
+			end }
 			return true, true
 		end
 		Spring.SetUnitMoveGoal(unitID, tx, spGetGroundHeight(tx, tz), tz, range * 0.9)

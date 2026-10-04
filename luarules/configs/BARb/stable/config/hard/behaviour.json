@@ -128,7 +128,7 @@
 		"armalab": {
 			"role": ["static"],
 			"attribute": ["support"], //facory with support is build only in base
-			"limit": 6,
+			"limit": 10,
 			"build_speed": 15.0 //bp 300
 		},
 		// custom T4 tier (denysfast/bar-game): foundries (built by T2 constructors) and titans
@@ -157,7 +157,7 @@
 		"armavp": {
 			"role": ["static"],
 			"attribute": ["support"],
-			"limit": 6,
+			"limit": 10,
 			"build_speed": 15.0 //bp 300
 		},
 
@@ -171,7 +171,7 @@
 			"role": ["static"],
 			"midposoffset": [0, 0, -4],
 			//"attribute": ["support"],
-			"limit": 6,
+			"limit": 10,
 			"build_speed": 15.0 // bp 300
 		},
 		"corgant": {
@@ -189,7 +189,7 @@
 		"coravp": {
 			"role": ["static"],
 			"attribute": ["support"],
-			"limit": 6,
+			"limit": 10,
 			"build_speed": 15.0  //bp 300
 		},
 
