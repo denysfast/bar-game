@@ -632,6 +632,21 @@ local function ecoBuild(t, req, f)
 	local sx, sz = startPos(t.team)
 	-- energy on a stall is urgent: it may take a constructor past the half-of-them cap
 	local ids = pickBuilders(t.team, what == "converters" and 2 or 1, sx, sz, udid, req.urgent)
+	if #ids == 0 and req.urgent then
+		-- every constructor sits in an expansion squad: energy first, one of them leaves its squad
+		for _, sq in ipairs(t.squads) do
+			for i, uid in ipairs(sq.units) do
+				if alive(uid) and canBuild(uid, udid) then
+					table.remove(sq.units, i)
+					ids = { uid }
+					break
+				end
+			end
+			if #ids > 0 then
+				break
+			end
+		end
+	end
 	if #ids == 0 then
 		return false, "no constructor can build " .. UnitDefs[udid].name .. ((what == "fusion" or what == "afus" or what == "moho") and " (needs T2 constructors)" or "")
 	end
@@ -713,6 +728,13 @@ end
 
 local function airBuild(t, req, f)
 	local count = max(1, min(60, tonumber(req.count) or 10))
+	-- bombers cost ~4400 energy each: ordered in the opening they stalled the energy for the whole game
+	local _, _, _, eIncome = Spring.GetTeamResources(t.team, "energy")
+	if f < 5 * 60 * GAME_SPEED or (eIncome or 0) < 200 then
+		t.wing.armedGoal = count
+		return true, string.format("armed: the wing (%d) starts after 5:00 with energy income 200+ (now %d)", count, eIncome or 0)
+	end
+	t.wing.armedGoal = nil
 	local plants = {}
 	local defs = strikeDefs(t)
 	for _, uid in ipairs(Spring.GetTeamUnits(t.team)) do
@@ -860,7 +882,7 @@ end
 
 local function airStrike(t, req, f)
 	local ids, n = wingUnits(t)
-	if n < 8 and (req.target == nil or req.target == "commander" or req.target == "base") then
+	if n < 8 and not tonumber(req.target) then
 		return false, string.format("the wing has %d aircraft: a strike needs 8+ (14+ against a commander with AA)", n)
 	end
 	t.wing.mode = "strike"
@@ -884,6 +906,9 @@ local function airTick(t, f)
 	wingCollect(t)
 	local ids, n = wingUnits(t)
 	local w = t.wing
+	if w.armedGoal and f % 300 < 30 then
+		airBuild(t, { count = w.armedGoal }, f)
+	end
 	if w.pendingBuild and w.pendingBuild > 0 and f % 300 < 30 then
 		-- bombers wait for the air plant ordered by airBuild: queue them once it stands
 		local ap = defID(sdef(t, "airplant"))
