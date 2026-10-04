@@ -322,10 +322,11 @@ local function pickBuilders(teamID, n, x, z, needDef, urgent)
 			total = total + 1
 		end
 	end
-	if total < (urgent and 2 or 3) then
+	if total < (urgent and 2 or 5) then
 		return {}
 	end
-	n = min(n, urgent and total - 1 or floor(total / 2))
+	-- an order reaches every AI team of the ally at once: each one gives at most a third of its constructors
+	n = min(n, urgent and total - 1 or floor(total / 3))
 	local out = {}
 	for i = 1, min(n, #cands) do
 		out[i] = cands[i].uid
@@ -1081,7 +1082,16 @@ local function raidStart(t, req, f)
 		return false, "no raids before minute 5: the AI's first units hold the opening"
 	end
 	local size = max(8, min(30, tonumber(req.size) or 14))
+	-- one raid per ally team (the order reaches every AI team of it): the first team that can field it
+	for _, other in pairs(teams) do
+		if other ~= t and other.ally == t.ally and other.raid then
+			return false, "the ally's raid already runs on team " .. other.team
+		end
+	end
 	local ids = raidCandidates(t, size)
+	if #ids < 8 then
+		return false, string.format("only %d fast units free on this team (8 needed)", #ids)
+	end
 	borrow(t.team, ids, true)
 	-- gathers at the rally point until it has `size` units (or 2 min passed), then goes
 	t.raid = { units = ids, size = size, startN = #ids, strength = 0, since = f, gathering = true }
