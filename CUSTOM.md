@@ -64,6 +64,9 @@ Starfall, Medusa) бьёт втрое слабее — оружие и спос�
 `t4_dmg_scale`). Razor: невидимость гасит и LOS, и радар врага; щит после пробоя остаётся пустым и
 перезаряжается, а не появляется полным; дронов ×2; Overcharge сильнее и жжёт корпус втрое меньше.
 Atlas (модель Titan): вместо Seismic Charge — Titan Salvo (залп управляемых ракет по площади, Sunder).
+**v23 Legion:** 11-й герой Boreas, the Firestorm (`legt4boreas`, грузовик-ракетница `legavroc` ×3.2; зажигательная
+ракетная артиллерия, `dmgScale` 1/3) — модуль `luarules/heroes/legt4boreas.lua`; аудит дальности/урона способностей
+Legion на ранге 10 — `doc/v23-balance/leg.md`.
 
 **Баланс (v17).** Все 12 героев стоят одинаково — 100k металла, 2M энергии, 2.5M времени (`T4.HERO_COST`), и
 размерены по роли в `T4.heroBalance` (`gamedata/custom_t4.lua`): HP, устойчивый DPS и скорость на 1-м уровне.

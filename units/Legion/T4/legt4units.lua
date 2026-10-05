@@ -6,10 +6,11 @@ local T4 = VFS.Include("gamedata/custom_t4.lua")
 
 local units = {}
 
--- the ten heroes, in the order of the altar's build menu
+-- the heroes, in the order of the altar's build menu (v23: the 11th, Boreas)
 local ORDER = {
 	"legt4helios", "legt4starfall", "legt4longinus", "legt4tempest", "legt4myrmidon",
 	"legt4keres", "legt4mukade", "legt4charybdis", "legt4apollyon", "legt4medusa",
+	"legt4boreas",
 }
 
 -- Apex Forge: the Legion hero altar (Experimental Gantry model x1.5)
@@ -176,6 +177,27 @@ local medusa = T4.derive(T4.base("units/Legion/Vehicles/T2 Vehicles/legmed.lua",
 	movementclass = "T4TANK9",
 })
 units.legt4medusa = T4.hero(medusa, 2.5)
+
+-- 11. Boreas, the Firestorm (Boreas starburst rocket truck x3.2, v23): incendiary rocket artillery. Scorched Earth,
+-- Hellfire Volley, Thermal Vent, Firestorm. The 18 s reload of the truck is cut to 3 s (T4.hero rescales the damage
+-- to heroBalance), its starburst rockets keep their flight time over the longer range (T4.scaleWeapon).
+local boreas = T4.derive(T4.base("units/Legion/Vehicles/T2 Vehicles/legavroc.lua", "legavroc"), {
+	name = "legt4boreas",
+	value = 60,
+	range = 2.0,
+	aoe = 1.8,
+	scale = 3.2,
+	sight = 4.5,
+	footprint = 9,
+	movementclass = "T4TANK9",
+	weapons = { armtruck_rocket = { reloadtime = 3 } },
+	overrides = { stealth = false },
+})
+-- the truck prefers buildings (badtargetcategory MOBILE); the hero fights armies
+for _, w in ipairs(boreas.weapons or {}) do
+	w.badtargetcategory = nil
+end
+units.legt4boreas = T4.hero(boreas, 2.5)
 
 ---------------------------------------------------------------------------- summons (not buildable)
 

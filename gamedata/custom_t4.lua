@@ -246,6 +246,7 @@ T4.heroBalance = {
 	legt4starfall   = { hp = 220000, dps = 7800, speed = 26, dmgScale = ARTY },  -- back: orbital artillery ~7000
 	legt4myrmidon   = { hp = 260000, dps = 6500, speed = 32, alt = { plasma_high = true } }, -- back: hive mother (+drones; v19 Legion)
 	legt4medusa     = { hp = 230000, dps = 7500, speed = 34, dmgScale = ARTY },  -- back: petrify rocket artillery (v19 Legion)
+	legt4boreas     = { hp = 230000, dps = 7500, speed = 36, dmgScale = ARTY },  -- back: incendiary rocket artillery (v23 Legion)
 	-- v19 Cortex roster (doc/v19-heroes/roster_cor.md)
 	cort4vesuvius   = { hp = 380000, dps = 8500, speed = 34 }, -- center: twin-barrel siege tank
 	cort4printer    = { hp = 300000, dps = 9000, speed = 42 },  -- center: drone carrier (+ drones)

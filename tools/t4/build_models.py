@@ -51,6 +51,7 @@ MODELS = [
     ("legt4charybdis",  "legehovertank",   2.4),
     ("legt4apollyon",   "legapollyon",     2.0),
     ("legt4medusa",     "legmed",          3.0),
+    ("legt4boreas",     "legavroc",        3.2),
     ("legt4myrmdrone",  "legheavydronesmall", 1.5),
     ("legt4myrmmite",   "legdrone",        1.6),
 ]

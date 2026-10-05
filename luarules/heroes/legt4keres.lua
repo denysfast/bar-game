@@ -6,7 +6,7 @@
 --   a3 Devour (unit): a broken non-hero enemy within 400 (HP below a flat value or a share of its max) is eaten whole
 --      (api.consume, no wreck, kill credited): Keres heals a multiple of its remaining HP + 10% of its max, +5 Souls.
 --   ult Danse Macabre (self): spends Souls as hunting spirits (deaths meanwhile add more) that each strike a different
---      enemy within 1200 once a second; Keres gains lifesteal.
+--      enemy within `radius` (950) once a second; Keres gains lifesteal.
 local L = VFS.Include("luarules/heroes/legt4_lib.lua")
 local C = L.C
 local M = {}

@@ -1,7 +1,8 @@
 -- Helios, the Sunbringer (legt4helios) - v19 Legion hero module (doc/v19-heroes/roster_leg.md section 1; API: header of
 -- luarules/gadgets/unit_t4_heroes.lua). Numbers per rank: legt4helios in luarules/configs/heroes/leg.lua.
 --   a1 Solar Heat (passive): heat-ray hits add Heat (once per 0.2 s per target, decays 4 s after the last stack); every
---      stack = more damage taken from Helios; 10 Heat = Ignite (blast in a radius, spreads Heat on -> chains).
+--      stack = more damage taken from Helios; 10 Heat = Ignite (blast in a radius, spreads Heat on -> chains; v23: a
+--      unit takes one ignite blast per 0.5 s, the ignited one always).
 --   a2 Corona Flare (self): burst around Helios - damage + Heat to enemies, heals allies (heroes 50%).
 --   a3 Sunspot (map): a small sun hovers over the point, lashing enemies under it every 0.5 s; ignitions extend it.
 --   ult Sunstrike (map): 0.8 s warning, a creeping column of sunlight for 6 s, then a Collapse igniting heated enemies.
@@ -100,20 +101,27 @@ local function ignite(api, unitID, h, uid, scale)
 	local total, n = 0, 0
 	-- the blast: flat + a share of the IGNITED unit's max HP (capped), the same for everyone in the radius
 	local blast = min(cap, flat + pct * L.effMaxHp(api, uid)) * power * scale
+	-- v23: a unit takes one ignite blast per 0.5 s (a pack igniting at once stacked a dozen blasts on everyone in it)
+	local blastAt = h.store.blastAt or {}
+	h.store.blastAt = blastAt
 	for _, vid in ipairs(api.enemiesIn(x, z, radius, h.ally)) do
-		local d = blast
-		if api.isHero(vid) then
-			d = d * 0.5
-		end
-		d = d * heatMult(api, h, vid)
-		api.damage(vid, d, unitID, { dtype = "flame" })
-		total, n = total + d, n + 1
-		if vid ~= uid then
-			local vx, vy, vz = api.pos(vid)
-			if vx then
-				fx.beam(x, y + 30, z, vx, vy + 25, vz, { color = L.a(C.EMBER, 0.8), width = 6, ttl = 0.25, flare = 0.6 })
+		local skip = vid ~= uid and blastAt[vid] and f - blastAt[vid] < 15
+		if not skip then
+			blastAt[vid] = f
+			local d = blast
+			if api.isHero(vid) then
+				d = d * 0.5
 			end
-			addHeat(api, h, vid, spread, f)
+			d = d * heatMult(api, h, vid)
+			api.damage(vid, d, unitID, { dtype = "flame" })
+			total, n = total + d, n + 1
+			if vid ~= uid then
+				local vx, vy, vz = api.pos(vid)
+				if vx then
+					fx.beam(x, y + 30, z, vx, vy + 25, vz, { color = L.a(C.EMBER, 0.8), width = 6, ttl = 0.25, flare = 0.6 })
+				end
+				addHeat(api, h, vid, spread, f)
+			end
 		end
 	end
 	-- an ignition under a Sunspot makes it last longer
@@ -307,6 +315,7 @@ end
 
 function M.init(api, unitID, h)
 	h.store.heat = {}
+	h.store.blastAt = {}
 	h.store.heatFx = {}
 	h.store.igniteQ = {}
 	h.store.spots = {}

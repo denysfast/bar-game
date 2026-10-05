@@ -1,10 +1,10 @@
--- Custom heroes (denysfast/bar-game), v19: the ten Legion heroes (altar legt4gant). Included by
+-- Custom heroes (denysfast/bar-game), v19: the Legion heroes (altar legt4gant; v23: 11th, Boreas). Included by
 -- luarules/configs/t4_heroes.lua with the shared table H as `...`; returns `defs, order`. Format: header of
 -- luarules/configs/heroes/arm.lua. Design: doc/v19-heroes/roster_leg.md. Every ability is kind = "custom": the
 -- behaviour lives in luarules/heroes/<hero>.lua (shared helpers luarules/heroes/legt4_lib.lua).
 -- Damage / heal numbers here are BASE values: the modules multiply them by api.power(h) (ability power, grows with the
 -- hero level). Dash abilities (Phase Rail, Storm Charge, Surge, Burrow) have a huge `range` so a click anywhere goes
--- off at once; the module clamps the move to `reach`. Command ids: Legion block 36301-36328.
+-- off at once; the module clamps the move to `reach`. Command ids: Legion block 36301-36331 (Boreas 36329-36331).
 local H = ...
 local lin, tf = H.lin, H.textf
 
@@ -18,9 +18,9 @@ local heroes = {
 		weapons = { { keys = { "heatray1" }, name = "Heat Rays" }, { keys = { "ultraheavyriotcannon" }, name = "Riot Cannons" }, { keys = { "legflak_gun" }, name = "Flak Battery" } },
 		a1 = {
 			name = "Solar Heat", kind = "custom", passive = true, icon = "ab_legt4helios_a1",
-			desc = "Heat rays pile Heat on their target; every stack makes it take more damage from Helios, and at 10 Heat it ignites: a blast that spreads Heat to the next ones",
+			desc = "Heat rays pile Heat on their target; every stack makes it take more damage from Helios, and at 10 Heat it ignites: a blast that spreads Heat to the next ones (a unit takes one ignite blast per 0.5 s)",
 			perStack = lin(0.02, 0.04, 0.001), maxHeat = 10, igniteFlat = lin(400, 1200, 50), ignitePct = lin(0.01, 0.02, 0.005),
-			igniteCap = lin(4000, 10000, 500), igniteRadius = lin(150, 220, 5), spread = lin(1, 3, 1), decay = 4, immune = 10,
+			igniteCap = lin(3000, 6000, 500), igniteRadius = lin(150, 220, 5), spread = lin(1, 2, 1), decay = 4, immune = 10,
 			text = tf("+{perStack%} damage taken per Heat; ignite {igniteFlat} + {ignitePct%} max HP in {igniteRadius}, spreads {spread} Heat"),
 		},
 		a2 = {
@@ -40,7 +40,7 @@ local heroes = {
 		ult = {
 			name = "Sunstrike", kind = "custom", cmd = 36303, action = "hero_sunstrike", target = "map", icon = "ab_legt4helios_ult",
 			desc = "A column of sunlight burns an area for 6 s, creeping after the hottest enemy, and collapses: every heated enemy around ignites",
-			range = 2400, radius = lin(250, 350, 10), tick = lin(100, 220, 10), duration = 6, creep = 90, collapse = 900,
+			range = 1750, radius = lin(250, 350, 10), tick = lin(100, 220, 10), duration = 6, creep = 90, collapse = 900,
 			cooldown = lin(100, 60, 5),
 			text = tf("{radius} radius, {tick} dmg per 0.2 s for 6 s, collapse ignites in 900, cd {cooldown} s"),
 		},
@@ -63,21 +63,21 @@ local heroes = {
 		a2 = {
 			name = "Gravity Lens", kind = "custom", cmd = 36304, action = "hero_gravitylens", target = "map", icon = "ab_legt4starfall_a2",
 			desc = "A gravity well for 6 s pulls the enemies to its centre; the cannon reloads at once and its shells landing inside hit harder",
-			range = 7000, radius = lin(400, 650, 10), pull = lin(30, 70, 5), bonus = lin(0.15, 0.3, 0.01), duration = 6,
+			range = 6900, radius = lin(400, 650, 10), pull = lin(30, 70, 5), bonus = lin(0.15, 0.3, 0.01), duration = 6,
 			cooldown = lin(40, 24, 1),
 			text = tf("{radius} radius, pull {pull}/s, +{bonus%} shell damage inside, cd {cooldown} s"),
 		},
 		a3 = {
 			name = "Deep Sky Eye", kind = "custom", cmd = 36305, action = "hero_skyeye", target = "map", icon = "ab_legt4starfall_a3",
 			desc = "An orbital eye reveals an area (sight, radar, cloaked units); the enemies under it are Observed and take more damage from everyone",
-			range = 9000, radius = lin(1200, 2400, 50), duration = lin(10, 20, 1), vuln = lin(0.05, 0.12, 0.01),
+			range = 6900, radius = lin(1200, 2400, 50), duration = lin(10, 20, 1), vuln = lin(0.05, 0.12, 0.01),
 			cooldown = lin(50, 28, 1),
 			text = tf("{radius} radius for {duration} s, Observed take +{vuln%} damage, cd {cooldown} s"),
 		},
 		ult = {
 			name = "Starfall", kind = "custom", cmd = 36306, action = "hero_starfall", target = "map", icon = "ab_legt4starfall_ult",
 			desc = "Meteors rain on an area for 8 s, each leaving a Star; a final Comet hits the centre",
-			range = 9000, radius = 750, count = lin(10, 24, 1), dmg = lin(500, 700, 50), aoe = 280, comet = lin(1500, 3500, 500),
+			range = 6900, radius = 750, count = lin(10, 24, 1), dmg = lin(500, 700, 50), aoe = 280, comet = lin(1500, 3500, 500),
 			cometAoe = 600, duration = 8, cooldown = lin(120, 80, 5),
 			text = tf("{count} meteors x {dmg} ({aoe} radius), Comet {comet} in 600, cd {cooldown} s"),
 		},
@@ -112,7 +112,7 @@ local heroes = {
 		a2 = {
 			name = "Hunter's Mark", kind = "custom", cmd = 36307, action = "hero_huntmark", target = "unit", icon = "ab_legt4longinus_a2",
 			desc = "Marks the prey: revealed, the rails focus it, Longinus deals more damage to it; a marked kill resets the cooldown and heals",
-			range = lin(2200, 3000, 50), duration = lin(6, 10, 1), bonus = lin(0.15, 0.3, 0.01), heal = lin(0.04, 0.12, 0.005),
+			range = lin(1300, 1500, 50), duration = lin(6, 10, 1), bonus = lin(0.15, 0.3, 0.01), heal = lin(0.04, 0.12, 0.005),
 			healCap = 40000, cooldown = lin(24, 12, 1),
 			text = tf("{duration} s, +{bonus%} damage to it, kill: reset + heal {heal%} of its max HP, cd {cooldown} s"),
 		},
@@ -125,8 +125,8 @@ local heroes = {
 		ult = {
 			name = "Spear of Longinus", kind = "custom", cmd = 36309, action = "hero_spear", target = "unit", icon = "ab_legt4longinus_ult",
 			desc = "A 1.5 s charge, then one rail through the target and on along a line, through shields and terrain; the line burns for 5 s",
-			range = lin(2400, 4200, 100), pct = lin(0.1, 0.25, 0.01), flat = lin(10000, 25000, 500), line = lin(4000, 7000, 100),
-			lineDmg = lin(5000, 12000, 500), burn = lin(400, 1200, 50), charge = 1.5, width = 100, cooldown = lin(100, 60, 5),
+			range = lin(1300, 1500, 50), pct = lin(0.04, 0.08, 0.005), flat = lin(5000, 12000, 500), line = lin(1600, 2400, 100),
+			lineDmg = lin(3000, 7000, 500), burn = lin(400, 1200, 50), charge = 1.5, width = 100, cooldown = lin(100, 60, 5),
 			text = tf("{pct%} max HP + {flat}; the line ({line}) shares {lineDmg} x4, burns {burn}/s, cd {cooldown} s"),
 		},
 		weaponDefs = function(T4, ud)
@@ -225,7 +225,7 @@ local heroes = {
 		a2 = {
 			name = "Death Grip", kind = "custom", cmd = 36315, action = "hero_deathgrip", target = "unit", icon = "ab_legt4keres_a2",
 			desc = "A chain hook drags the target in front of Keres and stuns it; the riot cannon fires point-blank",
-			range = lin(900, 1400, 50), stun = lin(1, 2.5, 0.1), dmg = lin(1000, 3000, 100), splash = 300, cooldown = lin(20, 10, 1),
+			range = lin(800, 950, 50), stun = lin(1, 2.5, 0.1), dmg = lin(1000, 3000, 100), splash = 300, cooldown = lin(20, 10, 1),
 			text = tf("{range} range, {stun.1} s stun, {dmg} dmg in {splash}, cd {cooldown} s"),
 		},
 		a3 = {
@@ -238,9 +238,9 @@ local heroes = {
 		ult = {
 			name = "Danse Macabre", kind = "custom", cmd = 36317, action = "hero_macabre", icon = "ab_legt4keres_ult",
 			desc = "Keres lets its Souls loose as hunting spirits that strike different enemies every second; it gains lifesteal",
-			duration = lin(8, 12, 0.5), spirits = lin(10, 24, 1), dmg = lin(300, 800, 25), radius = 1200, lifesteal = lin(0.1, 0.3, 0.01),
+			duration = lin(8, 12, 0.5), spirits = lin(10, 24, 1), dmg = lin(300, 800, 25), radius = 950, lifesteal = lin(0.1, 0.3, 0.01),
 			cooldown = lin(90, 60, 5),
-			text = tf("{duration.1} s: up to {spirits} spirits x {dmg}/s, +{lifesteal%} lifesteal, cd {cooldown} s"),
+			text = tf("{duration.1} s: up to {spirits} spirits x {dmg}/s within {radius}, +{lifesteal%} lifesteal, cd {cooldown} s"),
 		},
 	},
 
@@ -272,7 +272,7 @@ local heroes = {
 		ult = {
 			name = "Coil", kind = "custom", cmd = 36319, action = "hero_coil", target = "unit", icon = "ab_legt4mukade_ult",
 			desc = "Lunges onto a big target and coils around it: it is crushed (a share of its max HP per second) and stunned; Mukade takes less damage and keeps firing",
-			range = 700, duration = lin(4, 7, 0.5), pct = lin(0.01, 0.017, 0.001), flat = lin(500, 1500, 100), reduce = 0.4, minCost = 2000,
+			range = 700, duration = lin(3, 5, 0.5), pct = lin(0.01, 0.017, 0.001), flat = lin(500, 1500, 100), reduce = 0.4, minCost = 2000,
 			cooldown = lin(90, 60, 5),
 			text = tf("{duration.1} s: {pct%} max HP + {flat} per s, -40% damage taken, cd {cooldown} s"),
 		},
@@ -292,7 +292,7 @@ local heroes = {
 		a2 = {
 			name = "Waterspout", kind = "custom", cmd = 36320, action = "hero_waterspout", target = "map", icon = "ab_legt4charybdis_a2",
 			desc = "A waterspout erupts at the point: enemies are tossed up and stunned; a mist stays 5 s and drowns them in Undertow (bigger over water)",
-			range = 1400, radius = lin(250, 380, 10), stun = lin(1, 2, 0.1), dmg = lin(1000, 3200, 100), mist = 5, cooldown = lin(22, 12, 1),
+			range = 1100, radius = lin(250, 380, 10), stun = lin(1, 2, 0.1), dmg = lin(1000, 3200, 100), mist = 5, cooldown = lin(22, 12, 1),
 			text = tf("{radius} radius, {dmg} dmg, {stun.1} s stun, mist 5 s, cd {cooldown} s"),
 		},
 		a3 = {
@@ -305,7 +305,7 @@ local heroes = {
 		ult = {
 			name = "Maw of the Deep", kind = "custom", cmd = 36322, action = "hero_maw", target = "map", icon = "ab_legt4charybdis_ult",
 			desc = "A maelstrom pulls enemies to its maw for 7 s; the core swallows small units whole; it ends with a tidal blast",
-			range = 1600, radius = lin(700, 1000, 10), duration = 7, pull = lin(60, 130, 5), outer = lin(100, 250, 10),
+			range = 1100, radius = lin(700, 1000, 10), duration = 7, pull = lin(60, 130, 5), outer = lin(100, 250, 10),
 			core = lin(400, 1000, 50), coreRadius = 160, swallow = lin(3000, 8000, 500), blast = lin(1500, 4500, 100),
 			cooldown = lin(110, 75, 5),
 			text = tf("{radius} radius, pull {pull}/s, {outer}/s ({core}/s in the core), swallows < {swallow} HP, blast {blast}, cd {cooldown} s"),
@@ -326,20 +326,20 @@ local heroes = {
 		a2 = {
 			name = "Locust Swarm", kind = "custom", cmd = 36323, action = "hero_locusts", target = "map", icon = "ab_legt4apollyon_a2",
 			desc = "Micro-rockets in three waves, each homing on a different enemy around the point; spare ones burn the ground",
-			range = lin(1800, 2400, 50), count = lin(12, 36, 1), dmg = lin(600, 1200, 50), aoe = 120, radius = 500,
+			range = lin(1600, 2200, 50), count = lin(12, 36, 1), dmg = lin(600, 1200, 50), aoe = 120, radius = 500,
 			cooldown = lin(22, 12, 1),
 			text = tf("{count} rockets x {dmg} ({aoe} radius) in {radius}, cd {cooldown} s"),
 		},
 		a3 = {
 			name = "Siege Lockdown", kind = "custom", cmd = 36324, action = "hero_lockdown", toggle = true, icon = "ab_legt4apollyon_a3",
 			desc = "Anchors itself: immobile, armoured, longer weapon range, faster rocket racks, gatlings spun up. Cast again to end it",
-			duration = lin(8, 15, 1), armor = lin(0.25, 0.5, 0.01), range = lin(0.3, 0.6, 0.01), cooldown = lin(30, 18, 1),
+			duration = lin(8, 15, 1), armor = lin(0.25, 0.5, 0.01), range = lin(0.2, 0.35, 0.01), cooldown = lin(30, 18, 1),
 			text = tf("up to {duration} s: +{armor%} armour, +{range%} range, cd {cooldown} s"),
 		},
 		ult = {
 			name = "Plague of Locusts", kind = "custom", cmd = 36325, action = "hero_plague", target = "map", icon = "ab_legt4apollyon_ult",
 			desc = "Locks in place and rains locust rockets on an area for 10 s; every impact leaves fire",
-			range = 3000, count = lin(60, 120, 5), dmg = lin(180, 330, 10), aoe = 150, fire = lin(50, 100, 10), radius = 700,
+			range = 2200, count = lin(60, 120, 5), dmg = lin(180, 330, 10), aoe = 150, fire = lin(50, 100, 10), radius = 700,
 			duration = 10, cooldown = lin(120, 80, 5),
 			text = tf("{count} locusts x {dmg} in {radius}, fire {fire}/s, cd {cooldown} s"),
 		},
@@ -393,7 +393,51 @@ local heroes = {
 			text = tf("{radius} radius, stone {stone.1} s (+{vuln%} damage), shatter {shatterPct%} + {splash}, cd {cooldown} s"),
 		},
 	},
+
+	---------------------------------------------------------------------------- 11. Boreas
+	legt4boreas = {
+		title = "Boreas, the Firestorm", role = "Incendiary rocket artillery", aiRole = "back", aiPick = 2, xpRate = 0.5,
+		fx = 2.5,
+		weapons = { { keys = { "armtruck_rocket" }, name = "Firestorm Racks" } },
+		a1 = {
+			name = "Scorched Earth", kind = "custom", passive = true, icon = "ab_legt4helios_a1",
+			desc = "Every rocket impact leaves the ground burning for 4 s; enemies standing in the fire take more damage from Boreas",
+			dps = lin(250, 800, 25), radius = lin(160, 240, 10), vuln = lin(0.05, 0.15, 0.01), duration = 4, maxFires = 6,
+			text = tf("burning ground {dps}/s in {radius} for 4 s; +{vuln%} damage from Boreas to the burning"),
+		},
+		a2 = {
+			name = "Hellfire Volley", kind = "custom", cmd = 36329, action = "hero_hellfire", target = "map", icon = "ab_legt4apollyon_a2",
+			desc = "The racks ripple-fire a volley of incendiary rockets onto the point (within weapon range); each sets the ground on fire",
+			range = lin(2200, 2600, 50), count = lin(4, 10, 1), dmg = lin(700, 1600, 50), aoe = 200, radius = 320,
+			cooldown = lin(24, 14, 1),
+			text = tf("{count} rockets x {dmg} ({aoe} radius) in {radius} at up to {range}, cd {cooldown} s"),
+		},
+		a3 = {
+			name = "Thermal Vent", kind = "custom", cmd = 36330, action = "hero_thermalvent", icon = "ab_legt4helios_a2",
+			desc = "Vents the reactors: a burst of flame around Boreas, then it runs hot - faster and tougher for a few seconds, leaving fire behind",
+			duration = lin(3, 6, 0.5), speed = lin(0.25, 0.5, 0.05), armor = lin(0.1, 0.25, 0.01), burst = lin(400, 1200, 50),
+			burstRadius = 320, cooldown = lin(30, 16, 1),
+			text = tf("{burst} in {burstRadius}, then {duration.1} s +{speed%} speed, +{armor%} armour, cd {cooldown} s"),
+		},
+		ult = {
+			name = "Firestorm", kind = "custom", cmd = 36331, action = "hero_firestorm", target = "map", icon = "ab_legt4apollyon_ult",
+			desc = "Marks an area within weapon range; after 1.5 s a rocket storm falls on it for 6 s and the whole area burns",
+			range = 2600, radius = lin(500, 700, 25), count = lin(20, 40, 2), dmg = lin(400, 800, 50), aoe = 180,
+			burn = lin(200, 500, 25), warn = 1.5, duration = 6, cooldown = lin(110, 75, 5),
+			text = tf("after 1.5 s: {count} rockets x {dmg} in {radius} over 6 s, area burns {burn}/s, cd {cooldown} s"),
+		},
+		weaponDefs = function(T4)
+			local w = T4.missileWeapon({
+				name = "Boreas incendiary rocket", damage = 0, aoe = 16, model = "leglargerocket.s3o", velocity = 800, turnrate = 30000,
+				ceg = "custom:genericshellexplosion-large-bomb", cegtag = "missiletrailmedium", soundhit = "xplomed4", soundstart = "Rockhvy1",
+				range = 4000,
+			})
+			w.weapontimer = 0.8
+			w.customparams = { t4_ability = 1 }
+			return { firerocket = w }
+		end,
+	},
 }
 
 return heroes, { "legt4helios", "legt4starfall", "legt4longinus", "legt4tempest", "legt4myrmidon",
-	"legt4keres", "legt4mukade", "legt4charybdis", "legt4apollyon", "legt4medusa" }
+	"legt4keres", "legt4mukade", "legt4charybdis", "legt4apollyon", "legt4medusa", "legt4boreas" }
