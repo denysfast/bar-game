@@ -20,6 +20,7 @@ H.MAX_LEVEL = 100
 H.DEATH_LEVELS = 5          -- a revived hero comes back this many levels lower
 H.LEVEL_HP = 0.03           -- automatic growth per level above 1, shares of the base
 H.LEVEL_DAMAGE = 0.015      -- v19: was 0.03
+H.DAMAGE_MULT = 0.7         -- v22: all damage of every hero (weapons, abilities, items, summons); modoption hero_damage_mult
 -- experience, in units of the hero's own metal cost: reaching level L takes
 -- XP_TOTAL * ((L - 1) / XP_REF) ^ XP_EXP (modoption hero_xp_mult divides the requirement): level 30 = 50 costs, 100 = ~400
 H.XP_TOTAL = 50.0
@@ -89,7 +90,8 @@ H.BUY_COOLDOWN = 20         -- seconds between two bought levels of one hero
 H.AI_BUY_COOLDOWN = 8
 H.AI_BUY_DISCOUNT = 0.75    -- the AI pays a quarter of the price
 H.AI_BUY_MAX_LEVEL = 80     -- the AI buys levels up to this one (combat takes a hero further)
-H.AI_BUY_SAVE = 0.4         -- the AI puts aside at most this share of its metal income ...
+H.AI_BUY_SAVE = 0.5         -- the AI puts aside at most this share of its metal income for leveling (levels, ranks,
+                            -- altar upgrades: all paid only from that bank) ...
 H.AI_BUY_FULL = 0.3         -- ... and only while its storage is fuller than this (metal that would overflow)
 H.AI_BUY_INCOME = 60        -- ... and its metal income is at least this
 
