@@ -3,7 +3,7 @@
 --
 --   a1 Chain Lightning (passive): a Thunder Coil salvo that hits jumps on to 1..10 more enemies (jump range grows);
 --      the first jump carries `share` of the salvo's damage on that target, every next one 5% more than the one before.
---      Rage Mode's orb strikes chain too.
+--      (Rage Mode's orb bolt does not chain since v23.)
 --   a2 EMP Missile (active, map): a homing EMP missile (MissileLauncher hero_empmissile, never the stock starburst):
 --      damage + paralysis in the blast, heroes too (half as long, core rule).
 --   a3 Electro-Devour (active, own unit): lightning drags one of its own non-hero units in (0.4 s) and Thor eats it:
@@ -11,7 +11,7 @@
 --      (+1% Coil damage per 1% of max HP overflow, max +30%, 12 s).
 --   ult Rage Mode (active, self): Thor grows (x1.35 over 0.6 s), red lightning crawls over it; faster, hull and turret
 --      turn faster (armt4zeus.cob SetTurretTurnMult), tougher; its lightning turns red and a storm orb darts above it,
---      striking Thor's target (or the most valuable enemy) within twice the Coil's range with the Coil's salvo damage.
+--      adding one bolt per Coil reload on Thor's own target within the Coil's range (orbShare of a salvo, v23).
 
 local L = VFS.Include("luarules/heroes/armt4_lib.lua", nil, VFS.ZIP_FIRST)
 
@@ -345,7 +345,7 @@ local function rageOff(api, unitID, h, quiet)
 	api.log("armt4zeus ult rage over: orb shots=%d dmg=%d", rage.shots or 0, rage.dmg or 0)
 end
 
--- the orb strikes Thor's target within 2x Coil range, else the most valuable seen enemy there, once per Coil reload
+-- the orb strikes Thor's own target within the Coil range, once per Coil reload, with a share of a salvo
 local function rageFrame(api, unitID, h, f)
 	local rage = h.store.rage
 	local ult = b(h, "ult")
@@ -368,11 +368,13 @@ local function rageFrame(api, unitID, h, f)
 	if not range then
 		return
 	end
-	local orbRange = range * (ult.orbRange or 2)
+	-- v23: the orb is one extra bolt on Thor's own target within the Coil's range (it struck the most valuable enemy at
+	-- 2x range with a full salvo plus its chain - a second, longer-ranged Coil)
+	local orbRange = range * (ult.orbRange or 1)
 	local x, _, z = api.pos(unitID)
 	local target = api.target(unitID)
 	if not (target and L.unitDist(unitID, target) <= orbRange and Spring.GetUnitAllyTeam(target) ~= h.ally) then
-		target = api.mostValuableEnemy(x, z, orbRange, h.ally)
+		target = nil
 	end
 	if not target then
 		rage.nextOrb = f + 6
@@ -391,12 +393,11 @@ local function rageFrame(api, unitID, h, f)
 	if fx then
 		fx.bolt(ox, oy, oz, tx, ty + 25, tz, { color = RED, width = 10, branches = 3, ttl = 0.35, intensity = 1.4 })
 	end
-	local dmg = salvo * api.dmgMult(h)
+	local dmg = salvo * api.dmgMult(h) * api.val(ult.orbShare or 0.5, rage.r)
 	api.damage(target, dmg, unitID, { dtype = "electric" })
 	rage.shots = rage.shots + 1
 	rage.dmg = rage.dmg + dmg
-	local _, ct = chain(api, unitID, h, target, dmg, true, tx, ty, tz) -- the passive works for the orb's strikes too
-	api.log("armt4zeus ult orb strike dmg=%d chain=%d range=%d dist=%d", dmg, ct or 0, orbRange, L.dist(x, z, tx, tz))
+	api.log("armt4zeus ult orb strike dmg=%d range=%d dist=%d", dmg, orbRange, L.dist(x, z, tx, tz))
 end
 
 ---------------------------------------------------------------------------- hooks

@@ -48,11 +48,11 @@ heroes.armt4zeus = {
 	},
 	ult = {
 		name = "Rage Mode", kind = "custom", cmd = 36104, action = "hero_thor_rage", icon = "ab_armt4zeus_ult",
-		desc = "Thor grows, wrapped in red lightning: faster, quicker turret, tougher; a storm orb above it strikes with "
-			.. "the Coil's damage at twice its range",
+		desc = "Thor grows, wrapped in red lightning: faster, quicker turret, tougher; a storm orb above it adds one extra "
+			.. "lightning bolt per Coil salvo at Thor's own target, within the Coil's range",
 		duration = lin(6, 12, 1), scale = 1.35, speed = lin(0.25, 0.6, 0.01), turn = lin(0.5, 1.5, 0.05),
-		armor = lin(0.1, 0.25, 0.01), orbRange = 2, cooldown = lin(140, 80, 5),
-		text = tf("{duration} s: +{speed%} speed, +{turn%} turning, -{armor%} damage taken, orb at 2x range, cd {cooldown} s"),
+		armor = lin(0.1, 0.25, 0.01), orbRange = 1, orbShare = lin(0.25, 0.5, 0.01), cooldown = lin(140, 80, 5),
+		text = tf("{duration} s: +{speed%} speed, +{turn%} turning, -{armor%} damage taken, orb bolt {orbShare%} of a salvo, cd {cooldown} s"),
 	},
 	weaponDefs = function(T4)
 		local w = T4.missileWeapon({
