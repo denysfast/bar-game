@@ -331,7 +331,13 @@
 		"hero_snakepit": "Snake Pit",
 		"hero_snakepit_tooltip": "A nest of serpents circles the point and bites every enemy in it (once a second each), adding Petrify",
 		"hero_stonegarden": "Stone Garden",
-		"hero_stonegarden_tooltip": "After 1.5 s everything in the area turns to stone (structures too) and takes more damage; when the stone ends every statue shatters"
+		"hero_stonegarden_tooltip": "After 1.5 s everything in the area turns to stone (structures too) and takes more damage; when the stone ends every statue shatters",
+		"hero_hellfire": "Hellfire Volley",
+		"hero_hellfire_tooltip": "The racks ripple-fire a volley of incendiary rockets onto the point (within weapon range); each sets the ground on fire",
+		"hero_thermalvent": "Thermal Vent",
+		"hero_thermalvent_tooltip": "Vents the reactors: a burst of flame around Boreas, then it runs hot - faster and tougher for a few seconds, leaving fire behind",
+		"hero_firestorm": "Firestorm",
+		"hero_firestorm_tooltip": "Marks an area within weapon range; after 1.5 s a rocket storm falls on it for 6 s and the whole area burns"
 	},
 	"actions": {
 		"selection": {

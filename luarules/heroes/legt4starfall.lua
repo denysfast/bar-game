@@ -408,7 +408,7 @@ function M.autocast(api, unitID, h, key, rank)
 		end
 	elseif key == "ult" then
 		local ult = cfg(h, "ult")
-		local n, cx, cz, heroes = L.cluster(api, x, z, min(ult.range, api.weaponReach(h) * 1.3), ult.radius, h.ally, 3, 0.5)
+		local n, cx, cz, heroes = L.cluster(api, x, z, min(ult.range, api.weaponReach(h)), ult.radius, h.ally, 3, 0.5)
 		if cx and (n >= 8 or (heroes > 0 and n >= 6)) then
 			return cx, L.groundY(cx, cz), cz
 		end
