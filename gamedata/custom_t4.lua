@@ -253,6 +253,7 @@ T4.heroBalance = {
 	cort4deadeye    = { hp = 220000, dps = 9000, speed = 30 },  -- back: sniper 1870
 	cort4karganeth  = { hp = 340000, dps = 10000, speed = 40 }, -- center: missiles + AA (vtol only, not counted)
 	cort4cataphract = { hp = 300000, dps = 10000, speed = 64, alt = { depthcharge = true } }, -- front: hover lancer
+	cort4negotiator = { hp = 220000, dps = 7500, speed = 36, dmgScale = ARTY }, -- back: starburst rocket artillery 2360 (v23)
 }
 -- Armada (v19, doc/v19-heroes/roster_arm.md; content-arm owns these rows)
 for name, b in pairs({

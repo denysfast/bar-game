@@ -4,7 +4,8 @@
 --      the target adds 8% to the next; everything else on the line takes half. Immobile while firing.
 --   a2 Circle Beam (active, self): anchored 3 s (-25% damage taken), the twin laser sweeps 360..540 deg around it;
 --      every enemy it crosses takes the pass damage and burns for 4 s.
---   a3 Reactive Armor (passive): a hit of 300+ (not a beam) may fire a plasma shell back from the armour.
+--   a3 Reactive Armor (passive): a hit of 300+ (not a beam) may fire a plasma shell back from the armour
+--      (at most once a second, at an attacker within `reach` 1000 or the nearest enemy in 800).
 --   ult Resurrection (passive): a lethal hit drops it for 3 s (downed), then it rises with a stunning shockwave and
 --      is Unbroken for 6 s (+damage, faster reload). The rank lowers the cooldown.
 
@@ -260,7 +261,7 @@ local function reactive(api, unitID, h, dm, attackerID, weaponDefID, ax, az)
 	local target
 	if attackerID and L.alive(attackerID) and Spring.GetUnitAllyTeam(attackerID) ~= h.ally then
 		local tx, _, tz = api.pos(attackerID)
-		if L.d2(tx, tz, x, z) <= 1200 * 1200 then
+		if L.d2(tx, tz, x, z) <= (a3.reach or 1000) ^ 2 then
 			target = attackerID
 		end
 	end

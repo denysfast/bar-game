@@ -1,12 +1,12 @@
 -- Commando, the Ghost (cort4commando, cormandot4 x2.6) - doc/v19-heroes/roster_cor.md section 6.
 --   a1 Ghost Protocol (passive): cloaks (engine cloak, decloak distance 50) after 5..2.5 s without firing or being hit,
 --      +10..30% speed while cloaked. The first shot from cloak is an Ambush: +50..150% damage and a 0.5..2 s stun.
---   a2 Disruptor Mines (active, map in 700): 3..8 hidden mines (allies see them; max 16, 60 s); an enemy within 120
+--   a2 Disruptor Mines (active, map in 650): 3..8 hidden mines (allies see them; max 16, 60 s); an enemy within 120
 --      sets one off: damage in 180 + EMP 1.5..3 s.
---   a3 Shadowstep (active, enemy in 700..1100): blinks behind the target and disintegrates it point-blank; it is
+--   a3 Shadowstep (active, enemy in 550..650): blinks behind the target and disintegrates it point-blank; it is
 --      Marked for 5 s (+10..25% damage from the Commando). From cloak it is an Ambush.
---   ult Blackout (active, map in 1500): EMP storm in 600..900: damage, 3..6 s stun, enemy shields drained; the enemies
---      lose sight of the Commando for the stun + 3 s, and it deals +50% to stunned targets.
+--   ult Blackout (active, map in 650): EMP storm in 500..700: damage, 3..6 s stun, enemy shields drained; the enemies
+--      lose sight of the Commando for the stun + 3 s, and it deals +20% to stunned targets.
 
 local L = VFS.Include("luarules/heroes/cort4_lib.lua")
 local M = {}
@@ -243,7 +243,7 @@ local function blackout(api, unitID, h, r, x, z)
 		return false
 	end
 	local hx, _, hz = api.pos(unitID)
-	x, z = L.toward(hx, hz, x, z, ult.range or 1500)
+	x, z = L.toward(hx, hz, x, z, ult.range or 650)
 	local R = api.val(ult.radius, r)
 	local dmg = api.val(ult.dmg, r) * api.power(h)
 	local stun = api.val(ult.stun, r)
@@ -444,7 +444,7 @@ function M.autocast(api, unitID, h, key, rank)
 		end
 		local ult = b(h, "ult")
 		local R = api.val(ult.radius, rank)
-		local metal, cx, cz = api.bestCluster(x, z, ult.range or 1500, R, h.ally)
+		local metal, cx, cz = api.bestCluster(x, z, ult.range or 650, R, h.ally)
 		if cx and (metal >= 15000 or L.enemyHero(api, h, cx, cz, R)) then
 			return cx, L.gy(cx, cz), cz
 		end

@@ -1,4 +1,4 @@
--- Custom heroes (denysfast/bar-game), v19: the ten Cortex heroes (altar cort4gant). Included by
+-- Custom heroes (denysfast/bar-game), v19: the ten Cortex heroes (altar cort4gant; v23: + Negotiator). Included by
 -- luarules/configs/t4_heroes.lua with the shared table H as `...`; returns `defs, order`. Format: header of
 -- luarules/configs/heroes/arm.lua. Design: doc/v19-heroes/roster_cor.md. Every ability is kind = "custom": the
 -- behaviour is in luarules/heroes/<hero>.lua (shared helpers luarules/heroes/cort4_lib.lua). Numbers are per rank
@@ -21,7 +21,7 @@ local heroes = {
 		a1 = ab({
 			name = "Power Shot", cmd = 36201, action = "hero_powershot", target = "unit", icon = "ab_cort4bastion_a1",
 			desc = "Locks the turret on one target and fires a rapid series of heavy gauss shells; every shell that hits it adds 8% to the next, anything on the line takes half",
-			range = lin(970, 1370, 10), count = lin(4, 8, 1), dmg = lin(2000, 4500, 100), stack = 0.08, pierce = 0.3,
+			range = lin(800, 950, 10), count = lin(4, 8, 1), dmg = lin(2000, 4500, 100), stack = 0.08, pierce = 0.3,
 			interval = 0.25, cooldown = lin(20, 12, 1),
 			text = tf("{count} shells x {dmg} dmg (+8% per hit), range {range}, cd {cooldown} s"),
 		}),
@@ -35,9 +35,9 @@ local heroes = {
 		a3 = ab({
 			name = "Reactive Armor", passive = true, icon = "ab_cort4bastion_a3",
 			desc = "Heavy hits make the armour fire a plasma shell back at the attacker (or the nearest enemy)",
-			minHit = 300, chance = lin(0.10, 0.35, 0.01), dmg = lin(1500, 4500, 100), share = 0.5, cap = 10000,
-			shells = { 1, 1, 1, 1, 1, 2, 2, 2, 2, 2 }, icd = 0.2, aoe = 120,
-			text = tf("{chance%} per hit of 300+: {shells} shell(s) x {dmg} dmg + 50% of the hit"),
+			minHit = 300, chance = lin(0.10, 0.35, 0.01), dmg = lin(1500, 4000, 100), share = 0.5, cap = 6000,
+			shells = { 1, 1, 1, 1, 1, 2, 2, 2, 2, 2 }, icd = 1, aoe = 120, reach = 1000,
+			text = tf("{chance%} per hit of 300+ (once a second): {shells} shell(s) x {dmg} dmg + 50% of the hit (cap 6000), reach 1000"),
 		}),
 		ult = ab({
 			name = "Resurrection", passive = true, icon = "ab_cort4bastion_ult",
@@ -111,7 +111,7 @@ local heroes = {
 			name = "Hell on Earth", cmd = 36224, action = "hero_hellonearth", icon = "ab_cort4hellwalker_ult",
 			desc = "Becomes a living inferno: burns everything around, calls meteors, double Heat, and erupts at the end",
 			duration = lin(6, 10, 0.5), radius = lin(450, 700, 10), burn = lin(150, 400, 10), scale = 1.25, speed = 0.25,
-			meteor = lin(500, 900, 50), meteorAoe = 200, meteorRange = 1200, nova = lin(1500, 4000, 100), novaRadius = 600,
+			meteor = lin(500, 900, 50), meteorAoe = 200, meteorRange = 1000, nova = lin(1500, 4000, 100), novaRadius = 600,
 			cooldown = lin(110, 75, 5),
 			text = tf("{duration.1} s: {burn} dmg/s in {radius}, meteors {meteor}, eruption {nova}, cd {cooldown} s"),
 		}),
@@ -131,7 +131,7 @@ local heroes = {
 		a2 = ab({
 			name = "Doom Painter", cmd = 36232, action = "hero_doompainter", target = "unit", icon = "ab_cort4armageddon_a2",
 			desc = "Paints a target with a laser: it takes more damage from everything, and the next salvo homes on it",
-			range = 3200, duration = 4, vuln = lin(0.1, 0.25, 0.01), cooldown = lin(25, 15, 1),
+			range = 2700, duration = 4, vuln = lin(0.1, 0.25, 0.01), cooldown = lin(25, 15, 1),
 			text = tf("+{vuln%} damage taken for 4 s, salvo homes on it, range {range}, cd {cooldown} s"),
 		}),
 		a3 = ab({
@@ -143,7 +143,7 @@ local heroes = {
 		ult = ab({
 			name = "Armageddon Protocol", cmd = 36234, action = "hero_armageddon", target = "map", icon = "ab_cort4armageddon_ult",
 			desc = "Designates an area: after a warning, a rain of rockets falls on it, sealed with a tactical nuke",
-			range = lin(3200, 4200, 50), radius = 700, warn = 2, duration = 6, count = lin(24, 60, 1), dmg = lin(500, 800, 50),
+			range = lin(2400, 2700, 50), radius = 700, warn = 2, duration = 6, count = lin(24, 60, 1), dmg = lin(500, 800, 50),
 			aoe = 200, nuke = lin(3000, 7000, 500), nukeAoe = 600, cooldown = lin(120, 80, 5),
 			text = tf("{count} rockets x {dmg} + {nuke} nuke, range {range}, cd {cooldown} s"),
 		}),
@@ -177,10 +177,10 @@ local heroes = {
 		ult = ab({
 			name = "Eruption", cmd = 36244, action = "hero_eruption", target = "map", icon = "ab_cort4vesuvius_ult",
 			desc = "Lobs volcanic bombs onto an area, each leaving lava, then the ground erupts",
-			range = 2400, radius = 500, count = lin(5, 12, 1), dmg = lin(1000, 1600, 100), aoe = 300, time = 3,
+			range = 1800, radius = 500, count = lin(5, 12, 1), dmg = lin(1000, 1600, 100), aoe = 300, time = 3,
 			pool = lin(120, 280, 10), poolRadius = 220, poolTime = 6, nova = lin(1800, 4500, 100), novaRadius = 450,
 			cooldown = lin(120, 85, 5),
-			text = tf("{count} bombs x {dmg}, lava {pool} dmg/s, eruption {nova}, cd {cooldown} s"),
+			text = tf("{count} bombs x {dmg}, lava {pool} dmg/s, eruption {nova}, range 1800, cd {cooldown} s"),
 		}),
 	},
 
@@ -211,7 +211,7 @@ local heroes = {
 		ult = ab({
 			name = "Swarm Protocol", cmd = 36254, action = "hero_swarmprotocol", target = "map", icon = "ab_cort4printer_ult",
 			desc = "Prints waves of kamikaze micro-drones that dive onto an area",
-			range = 1800, radius = 450, count = lin(12, 30, 1), dmg = lin(900, 1800, 100), aoe = 120, waves = 5, time = 5,
+			range = 950, radius = 450, count = lin(12, 30, 1), dmg = lin(900, 1800, 100), aoe = 120, waves = 5, time = 5,
 			cooldown = lin(110, 80, 5),
 			text = tf("{count} drones x {dmg} dmg, range {range}, cd {cooldown} s"),
 		}),
@@ -232,23 +232,23 @@ local heroes = {
 		a2 = ab({
 			name = "Disruptor Mines", cmd = 36262, action = "hero_mines", target = "map", icon = "ab_cort4commando_a2",
 			desc = "Scatters hidden EMP mines; an enemy that comes close sets one off",
-			range = 700, count = lin(3, 8, 1), spread = 200, dmg = lin(700, 1700, 100), aoe = 180, emp = lin(1.5, 3, 0.1),
+			range = 650, count = lin(3, 8, 1), spread = 200, dmg = lin(700, 1700, 100), aoe = 180, emp = lin(1.5, 3, 0.1),
 			trigger = 120, life = 60, max = 16, cooldown = lin(20, 12, 1),
 			text = tf("{count} mines: {dmg} dmg + {emp.1} s EMP, cd {cooldown} s"),
 		}),
 		a3 = ab({
 			name = "Shadowstep", cmd = 36263, action = "hero_shadowstep", target = "unit", icon = "ab_cort4commando_a3",
 			desc = "Blinks behind an enemy and disintegrates it point-blank; it is Marked and takes more from the Commando",
-			range = lin(700, 1100, 10), dmg = lin(4000, 10000, 100), mark = lin(0.1, 0.15, 0.01), markTime = 5,
+			range = lin(550, 650, 10), dmg = lin(4000, 10000, 100), mark = lin(0.1, 0.15, 0.01), markTime = 5,
 			cooldown = lin(18, 10, 1),
 			text = tf("{dmg} dmg, Mark +{mark%} for 5 s, range {range}, cd {cooldown} s"),
 		}),
 		ult = ab({
 			name = "Blackout", cmd = 36264, action = "hero_blackout", target = "map", icon = "ab_cort4commando_ult",
 			desc = "An EMP storm: damage, a long stun, shields drained, and the enemies lose sight of the Commando",
-			range = 1500, radius = lin(600, 900, 10), dmg = lin(2000, 5000, 100), stun = lin(2, 4, 0.1), bonus = 0.2,
+			range = 650, radius = lin(500, 700, 10), dmg = lin(2000, 5000, 100), stun = lin(2, 4, 0.1), bonus = 0.2,
 			cooldown = lin(120, 80, 5),
-			text = tf("{dmg} dmg in {radius}, {stun.1} s stun, +50% vs stunned, cd {cooldown} s"),
+			text = tf("{dmg} dmg in {radius}, {stun.1} s stun, +20% vs stunned, range 650, cd {cooldown} s"),
 		}),
 	},
 
@@ -266,7 +266,7 @@ local heroes = {
 		a2 = ab({
 			name = "Recon Flare", cmd = 36272, action = "hero_reconflare", target = "map", icon = "ab_cort4deadeye_a2",
 			desc = "A flare reveals an area (cloaked units too); enemies in it are Exposed and take more damage",
-			range = 2400, radius = lin(600, 1000, 10), duration = lin(8, 15, 0.5), vuln = lin(0.08, 0.2, 0.01),
+			range = 2300, radius = lin(600, 1000, 10), duration = lin(8, 15, 0.5), vuln = lin(0.08, 0.2, 0.01),
 			cooldown = lin(25, 15, 1),
 			text = tf("reveals {radius} for {duration.1} s, +{vuln%} damage taken, cd {cooldown} s"),
 		}),
@@ -279,9 +279,9 @@ local heroes = {
 		ult = ab({
 			name = "Kill Shot", cmd = 36274, action = "hero_killshot", target = "unit", icon = "ab_cort4deadeye_ult",
 			desc = "Channels 2 s, then fires a rail round that pierces its line; a kill refunds half the cooldown",
-			range = lin(3000, 4500, 50), channel = 2, dmg = lin(40000, 90000, 1000), pct = lin(0.08, 0.2, 0.01), pctCap = 60000,
+			range = lin(2000, 2300, 50), channel = 2, dmg = lin(20000, 36000, 1000), pct = lin(0.05, 0.12, 0.01), pctCap = 20000,
 			pierce = 0.35, cooldown = lin(100, 60, 5),
-			text = tf("{dmg} + {pct%} of max HP, range {range}, cd {cooldown} s"),
+			text = tf("{dmg} + {pct%} of max HP (cap 20000), range {range}, cd {cooldown} s"),
 		}),
 	},
 
@@ -345,8 +345,41 @@ local heroes = {
 		ult = ab({
 			name = "Lancer's Gauntlet", cmd = 36294, action = "hero_gauntlet", target = "unit", icon = "ab_cort4cataphract_ult",
 			desc = "Chains lance dashes through the most valuable enemies around, untargetable meanwhile",
-			range = 900, dashes = lin(3, 7, 1), dmg = lin(9000, 21000, 500), hop = 0.4, cooldown = lin(100, 70, 5),
+			range = 900, dashes = lin(3, 7, 1), dmg = lin(8000, 16000, 500), hop = 0.4, cooldown = lin(100, 70, 5),
 			text = tf("{dashes} dashes x {dmg} dmg + Disruption, cd {cooldown} s"),
+		}),
+	},
+	------------------------------------------------------------------------------------------- 10 Negotiator (v23)
+	-- command ids 36296 + slot (a1 = 36296 unused, passive): the free slots 6..9 of row 9 (row 10 = 36301+ belongs to Legion)
+	cort4negotiator = {
+		title = "Negotiator, the Last Argument", role = "Rocket artillery", aiRole = "back", aiPick = 2, xpRate = 0.15,
+		fx = 2.2,
+		weapons = { { keys = { "cortruck_rocket" }, name = "Starburst Rockets" } },
+		a1 = ab({
+			name = "Target Lock", passive = true, icon = "ab_cort4armageddon_a2",
+			desc = "Its rockets Lock what they hit: the target takes more damage from everything and stays revealed",
+			duration = lin(4, 8, 0.5), vuln = lin(0.04, 0.12, 0.01),
+			text = tf("a rocket hit Locks for {duration.1} s: +{vuln%} damage taken, revealed"),
+		}),
+		a2 = ab({
+			name = "Missile Volley", cmd = 36297, action = "hero_missilevolley", target = "unit", icon = "ab_cort4vesuvius_a2",
+			desc = "Ripples homing rockets at one target within rocket range; +25% against a Locked one",
+			range = lin(1800, 2300, 50), count = lin(4, 10, 1), dmg = lin(900, 1500, 50), aoe = 120, time = 2, lockBonus = 0.25,
+			cooldown = lin(18, 10, 1),
+			text = tf("{count} rockets x {dmg} dmg over 2 s, range {range}, cd {cooldown} s"),
+		}),
+		a3 = ab({
+			name = "Siege Deploy", cmd = 36298, action = "hero_siegedeploy", toggle = true, icon = "ab_cort4vesuvius_a3",
+			desc = "Braces on its jacks: immobile, tougher, longer range and faster salvos. Cast again to pack up",
+			duration = lin(8, 14, 0.5), armor = 0.15, range = lin(0.1, 0.25, 0.01), reload = lin(0.15, 0.35, 0.01), cooldown = 20,
+			text = tf("up to {duration.1} s: +{range%} range, +{reload%} fire rate, -15% damage taken, cd 20 s"),
+		}),
+		ult = ab({
+			name = "Saturation Barrage", cmd = 36299, action = "hero_saturation", target = "map", icon = "ab_cort4armageddon_ult",
+			desc = "Paints an area (a 2.5 s warning everyone sees), then rockets rain on it for 5 s and Lock what they hit",
+			range = lin(2000, 2300, 50), radius = lin(450, 600, 10), warn = 2.5, duration = 5, count = lin(20, 48, 1),
+			dmg = lin(500, 800, 50), aoe = 160, cooldown = lin(120, 85, 5),
+			text = tf("{count} rockets x {dmg} in {radius} over 5 s after 2.5 s, range {range}, cd {cooldown} s"),
 		}),
 	},
 }
@@ -357,4 +390,4 @@ heroes.cort4vesuvius.weaponCopies = {
 }
 
 return heroes, { "cort4bastion", "cort4colossus", "cort4hellwalker", "cort4armageddon", "cort4vesuvius",
-	"cort4printer", "cort4commando", "cort4deadeye", "cort4karganeth", "cort4cataphract" }
+	"cort4printer", "cort4commando", "cort4deadeye", "cort4karganeth", "cort4cataphract", "cort4negotiator" }

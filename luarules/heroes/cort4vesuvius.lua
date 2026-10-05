@@ -5,7 +5,7 @@
 --   a2 Banisher Lock (active, unit in 1400): the racks ripple-fire 6..14 homing missiles over 2 s; +50% vs Shred.
 --   a3 Siege Mode (toggle): up to 8..14 s immobile, -20% damage taken, +30..60% range; the shells become magma
 --      copies (api.swapWeapons "magma") that leave lava pools. Cooldown 20 s from undeploy.
---   ult Eruption (active, map in 2400): 5..12 volcanic bombs in a high arc over 3 s, each leaves a 6 s lava pool;
+--   ult Eruption (active, map in 1800): 5..12 volcanic bombs in a high arc over 3 s, each leaves a 6 s lava pool;
 --      then the ground erupts.
 
 local L = VFS.Include("luarules/heroes/cort4_lib.lua")
@@ -181,7 +181,7 @@ local function eruption(api, unitID, h, r, x, z)
 		return false
 	end
 	local hx, _, hz = api.pos(unitID)
-	local cx, cz = L.toward(hx, hz, x, z, ult.range or 2400)
+	local cx, cz = L.toward(hx, hz, x, z, ult.range or 1800)
 	local R = ult.radius or 500
 	local count = api.val(ult.count, r)
 	local p = api.power(h)
@@ -330,7 +330,7 @@ function M.autocast(api, unitID, h, key, rank)
 		end
 	elseif key == "ult" then
 		local ult = b(h, "ult")
-		local metal, cx, cz = api.bestCluster(x, z, ult.range or 2400, ult.radius or 500, h.ally)
+		local metal, cx, cz = api.bestCluster(x, z, ult.range or 1800, ult.radius or 500, h.ally)
 		if cx and metal >= 15000 then
 			return cx, L.gy(cx, cz), cz
 		end
