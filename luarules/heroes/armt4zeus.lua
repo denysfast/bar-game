@@ -1,9 +1,10 @@
 -- Thor, the Stormbreaker (armt4zeus, armthor model x1.8): the human's concept (doc/v19-heroes/SPEC.md 1.8,
 -- roster_arm.md 1). Numbers per rank: luarules/configs/heroes/arm.lua. API: header of luarules/gadgets/unit_t4_heroes.lua.
 --
---   a1 Chain Lightning (passive): a Thunder Coil salvo that hits jumps on to 1..10 more enemies (jump range grows);
+--   a1 Chain Lightning (passive): a Thunder Coil salvo that hits jumps on to 1..8 more enemies (jump range grows);
 --      the first jump carries `share` of the salvo's damage on that target, every next one 5% more than the one before.
---      (Rage Mode's orb bolt does not chain since v23.)
+--      (Rage Mode's orb bolt does not chain since v23.) v23: jumps only reach enemies within 1.25x Thor's longest
+--      weapon range of Thor itself (10 jumps of 750 used to walk the chain 7500 deep into the enemy base).
 --   a2 EMP Missile (active, map): a homing EMP missile (MissileLauncher hero_empmissile, never the stock starburst):
 --      damage + paralysis in the blast, heroes too (half as long, core rule).
 --   a3 Electro-Devour (active, own unit): lightning drags one of its own non-hero units in (0.4 s) and Thor eats it:
@@ -47,6 +48,9 @@ local function chain(api, unitID, h, fromID, dmg, red, x, y, z)
 	local d = dmg * api.val(a1.share, r)
 	local step = 1 + (a1.stepBonus or 0.05)
 	local done = { [fromID] = true }
+	local hx, _, hz = api.pos(unitID)
+	local reach = (Spring.GetUnitRulesParam(unitID, "hero_range") or 1000) * 1.25
+	local reach2 = reach * reach
 	local points = { x, y + 30, z }
 	local first, total, n = d, 0, 0
 	for _ = 1, jumps do
@@ -55,7 +59,10 @@ local function chain(api, unitID, h, fromID, dmg, red, x, y, z)
 			if not done[uid] then
 				local ux, _, uz = api.pos(uid)
 				local dd = (ux - x) ^ 2 + (uz - z) ^ 2
-				if not bestD or dd < bestD then
+				if hx and (ux - hx) ^ 2 + (uz - hz) ^ 2 > reach2 then
+					dd = nil -- beyond Thor's reach
+				end
+				if dd and (not bestD or dd < bestD) then
 					best, bestD = uid, dd
 				end
 			end

@@ -22,6 +22,7 @@ MODELS = [
     ("armt4recluse",    "scavboss/armsptkt4",  1.6),
     ("armt4starlight",  "armmanni",        2.4),
     ("armt4hive",       "armdronecarryland", 1.5, "armdronecarry_dead"),
+    ("armt4ambassador", "armmerl",         3.0),
     # summons of the Armada heroes (no wrecks)
     ("armt4aegis_drone",        "armdrone",    1.6, None),
     ("armt4hive_drone",         "armdrone",    1.8, None),

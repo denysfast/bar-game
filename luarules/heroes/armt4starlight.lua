@@ -2,9 +2,9 @@
 -- Numbers: luarules/configs/heroes/arm.lua.
 --
 --   a1 Focusing Array (passive): each shot in a row on the same target adds damage (stacks); changing target resets.
---      The beam goes on behind the target and burns everything on that line for 50%.
+--      The beam goes on behind the target and burns everything on that line for 25%.
 --   a2 Prism Relay (active, ally): links to an allied unit; every shot also refracts from it to the most valuable enemy
---      within 700 of it. With no target of its own, Starlight fires through the prism alone.
+--      within 500 of it. With no target of its own, Starlight fires through the prism alone.
 --   a3 Phase Shift (active, map): teleports; a light mine left behind detonates a second later.
 --   ult Solar Lance (active, unit or map): charges 2 s, then holds a solar lance on the target for 3..5 s; everything
 --      else on the line takes 40%.

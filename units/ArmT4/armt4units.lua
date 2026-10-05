@@ -1,4 +1,4 @@
--- Custom T4 heroes, Armada (denysfast/bar-game), v19: the ten heroes of the altar armt4gant and their summons.
+-- Custom T4 heroes, Armada (denysfast/bar-game), v19: the ten heroes (v23: eleven, + Ambassador) of the altar armt4gant and their summons.
 -- Design: doc/v19-heroes/roster_arm.md. Built from T3 gantry / scavenger units, see gamedata/custom_t4.lua; level-1
 -- health, DPS and speed come from T4.heroBalance (gamedata/custom_t4.lua), abilities from
 -- luarules/configs/heroes/arm.lua + luarules/heroes/armt4*.lua (hero gadget luarules/gadgets/unit_t4_heroes.lua).
@@ -17,7 +17,7 @@ units.armt4gant = T4.foundry(T4.base("units/ArmBuildings/LandFactories/armshltx.
 	workertime = 12,
 	buildoptions = {
 		"armt4zeus", "armt4atlas", "armt4peewee", "armt4aegis", "armt4prowler",
-		"armt4ratte", "armt4recluse", "armt4olympus", "armt4starlight", "armt4hive",
+		"armt4ratte", "armt4recluse", "armt4olympus", "armt4starlight", "armt4hive", "armt4ambassador",
 	},
 })
 
@@ -509,5 +509,52 @@ local guardian = T4.derive(T4.base("units/ArmAircraft/armdroneold.lua", "armdron
 })
 guardian.featuredefs = nil
 units.armt4hive_guardian = guardian
+
+------------------------------------------------------------------------------------------------ 11. Ambassador
+-- armt4ambassador: Ambassador, the Rocket Marshal (armmerl x3.0, v23): back-line rocket artillery. Its stock starburst
+-- rack fires 4-rocket salvos (artillery: dmgScale 1/3, gamedata/custom_t4.lua); Target Painter, Guided Volley, Scoot
+-- Jets, Saturation Barrage (luarules/heroes/armt4ambassador.lua). The ability rockets are MissileLaunchers (api.fire
+-- refuses a starburst).
+local ambassador = T4.derive(T4.base("units/ArmVehicles/T2/armmerl.lua", "armmerl"), {
+	name = "armt4ambassador",
+	value = 40,
+	health = 40,
+	damage = 4,
+	range = 2.0, -- 2600 at level 1
+	aoe = 1.8,
+	scale = 3.0,
+	speed = 1,
+	footprint = 9,
+	movementclass = "T4TANK9",
+	turn = 0.6,
+	weapons = {
+		armtruck_rocket = { burst = 4, burstrate = 0.5, reloadtime = 10 },
+	},
+	overrides = { radardistance = 2800 },
+})
+ambassador.stealth = false
+ambassador.nochasecategory = nil
+ambassador.weapons[1].badtargetcategory = nil -- the stock Ambassador shuns mobile targets; the hero fights armies
+ambassador.sightdistance = 1300 -- the abilities reach the weapon range (radar 2800 spots for it)
+units.armt4ambassador = T4.hero(ambassador, 2.2, {
+	-- a2 Guided Volley: a homing rocket (damage from the ability)
+	hero_guided = (function()
+		local w = T4.missileWeapon({ name = "Guided volley rocket", damage = 1, aoe = 120, model = "corshiprocket.s3o",
+			ceg = "custom:genericshellexplosion-large-bomb", cegtag = "missiletrailmedium", soundhit = "xplomed4",
+			soundstart = "Rockhvy1", velocity = 1000, range = 3500, turnrate = 30000 })
+		w.smoketrail = false
+		w.customparams.t4_ability = 1
+		return w
+	end)(),
+	-- ult Saturation Barrage: rockets falling from above on the marked area
+	hero_saturation = (function()
+		local w = T4.missileWeapon({ name = "Saturation rocket", damage = 1, aoe = 160, model = "catapultmissile.s3o",
+			ceg = "custom:genericshellexplosion-catapult", cegtag = "missiletrailsmall", soundhit = "rockhit",
+			soundstart = "rocksalvo", velocity = 900, range = 4000, turnrate = 30000 })
+		w.smoketrail = false
+		w.customparams.t4_ability = 1
+		return w
+	end)(),
+})
 
 return units

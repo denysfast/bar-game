@@ -7,7 +7,7 @@
 --      (heroes 1.5 s), reflects a share of the damage (before the reduction) back at the attackers as lightning.
 --   a3 Titan Salvo (active, map; v20, replaced Seismic Charge): a salvo of guided rockets rains on the area, every hit
 --      Sunders its target (the Doom Lens value once a1 is learned), the last three rockets also slow.
---   ult Doomsday Lance (active, map): charges 0.8 s, then the Doom Laser becomes a continuous lance twice its range long
+--   ult Doomsday Lance (active, map): charges 0.8 s, then the Doom Laser becomes a continuous lance 1.25x its range long (v23: was 2x)
 --      and sweeps a 60 degree arc centred on the point; units it kills burst for 10% of their max HP.
 
 local L = VFS.Include("luarules/heroes/armt4_lib.lua", nil, VFS.ZIP_FIRST)
@@ -200,7 +200,7 @@ local function lanceOn(api, unitID, h, r, tx, tz)
 	local f = api.frame()
 	local st = {
 		r = r, start = f + 24, stop = f + 24 + math.floor(dur * 30), angle = math.atan2(tz - z, tx - x),
-		arc = math.rad(ult.arc or 60), len = 2 * doomRange(api, unitID, h), dps = api.val(ult.dps, r) * api.power(h),
+		arc = math.rad(ult.arc or 60), len = (ult.lenMult or 1.25) * doomRange(api, unitID, h), dps = api.val(ult.dps, r) * api.power(h),
 		width = ult.width or 90, dealt = 0, kills = 0, hits = 0,
 	}
 	h.store.lance = st
@@ -269,10 +269,10 @@ local function lanceFrame(api, unitID, h, f)
 	end
 end
 
--- the 60 degree cone within 2x Doom range with the most enemy metal
+-- the 60 degree cone within the lance length (1.25x Doom range, v23: was 2x) with the most enemy metal
 local function bestCone(api, unitID, h)
 	local x, _, z = api.pos(unitID)
-	local len = 2 * doomRange(api, unitID, h)
+	local len = (b(h, "ult").lenMult or 1.25) * doomRange(api, unitID, h)
 	local list = L.seenEnemies(api, x, z, len, h.ally)
 	if #list == 0 then
 		return nil

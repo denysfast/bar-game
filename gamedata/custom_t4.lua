@@ -266,6 +266,7 @@ for name, b in pairs({
 	armt4olympus   = { hp = 220000, dps = 8000, speed = 30, alt = { shocker_high = true }, dmgScale = ARTY }, -- back: artillery 3300+
 	armt4starlight = { hp = 240000, dps = 7500, speed = 40 },  -- back: Starlight, tachyon sniper 2090
 	armt4hive      = { hp = 280000, dps = 3000, speed = 34 },  -- back: Hive Mother, own laser only (drones: a1)
+	armt4ambassador = { hp = 230000, dps = 7500, speed = 34, dmgScale = ARTY }, -- back: Ambassador, rocket artillery 2600 (v23)
 }) do
 	T4.heroBalance[name] = b
 end
