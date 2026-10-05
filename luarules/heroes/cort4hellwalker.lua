@@ -5,7 +5,7 @@
 --      fire wall for 5 s; then +30% flame range for 3 s.
 --   a3 Infernal Furnace (active, self): inhales 1.5 s pulling enemies in, then a fire nova (+5 Heat).
 --   ult Hell on Earth (active, self): x1.25, +25% speed; burns everything around, double Heat, 2 meteors a second on
---      random enemies within 1200; erupts at the end.
+--      random enemies within 1000; erupts at the end.
 
 local L = VFS.Include("luarules/heroes/cort4_lib.lua")
 local M = {}
@@ -257,7 +257,7 @@ local function hellOn(api, unitID, h, r)
 	local f = api.frame()
 	local p = api.power(h)
 	local hell = { untilF = f + floor(dur * 30), R = R, burn = api.val(ult.burn, r) * p, meteor = api.val(ult.meteor, r) * p,
-		meteorAoe = ult.meteorAoe or 200, meteorRange = ult.meteorRange or 1200, nova = api.val(ult.nova, r) * p,
+		meteorAoe = ult.meteorAoe or 200, meteorRange = ult.meteorRange or 1000, nova = api.val(ult.nova, r) * p,
 		novaRadius = ult.novaRadius or 600, nextMeteor = f + 10, meteors = 0, dealt = 0, burned = 0, r = r }
 	hell.fx = {
 		L.attach(api, unitID, "aura", { radius = R, color = L.col(L.ORANGE, 0.6), pattern = "heat", ttl = dur }),

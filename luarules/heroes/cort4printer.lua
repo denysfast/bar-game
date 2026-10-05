@@ -6,7 +6,7 @@
 --      2..3 at a time (the oldest goes).
 --   a3 Repair Swarm (active, ally or self in 1000): every drone flies to the ally for 8 s (no shooting); it and the
 --      allies within 300 regain 1500..5000 HP/s in total.
---   ult Swarm Protocol (active, map in 1800): waves of kamikaze micro-drones (homing missiles) dive onto the area.
+--   ult Swarm Protocol (active, map in 950): waves of kamikaze micro-drones (homing missiles) dive onto the area.
 
 local L = VFS.Include("luarules/heroes/cort4_lib.lua")
 local M = {}
@@ -290,7 +290,7 @@ local function swarmProtocol(api, unitID, h, r, x, z)
 		return false
 	end
 	local hx, _, hz = api.pos(unitID)
-	local cx, cz = L.toward(hx, hz, x, z, ult.range or 1800)
+	local cx, cz = L.toward(hx, hz, x, z, ult.range or 950)
 	local R = ult.radius or 450
 	local count = api.val(ult.count, r)
 	local waves = ult.waves or 5
@@ -429,7 +429,7 @@ function M.autocast(api, unitID, h, key, rank)
 		end
 	elseif key == "ult" then
 		local ult = b(h, "ult")
-		local metal, cx, cz = api.bestCluster(x, z, ult.range or 1800, ult.radius or 450, h.ally)
+		local metal, cx, cz = api.bestCluster(x, z, ult.range or 950, ult.radius or 450, h.ally)
 		if cx and (metal >= 15000 or L.enemyHero(api, h, cx, cz, ult.radius or 450)) then
 			return cx, L.gy(cx, cz), cz
 		end

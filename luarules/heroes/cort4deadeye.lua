@@ -2,12 +2,12 @@
 --   a1 Focus (passive): each volley at the same target as the last adds a Focus stack (max 5, +6..15% damage each);
 --      another target resets them. The volley that reaches 5 stacks pierces a 1200 line at full damage (then the
 --      stacks reset). Targets of 50k+ max HP take +10%.
---   a2 Recon Flare (active, map in 2400): reveals 600..1000 for 8..15 s (decloaks too); enemies inside are Exposed:
+--   a2 Recon Flare (active, map in 2300): reveals 600..1000 for 8..15 s (decloaks too); enemies inside are Exposed:
 --      +8..20% damage taken from all sources.
 --   a3 Tumble (active, map): a quick hop of 350..600; the gun reloads at once and the next volley within 3 s deals
 --      +20..60%.
---   ult Kill Shot (active, unit in 3000..4500): channels 2 s (immobile, the laser sight seen by all), then a rail
---      round: 40k..90k + 8..20% of the target's max HP (cap +60k), piercing its line (others 50%). A kill refunds
+--   ult Kill Shot (active, unit in 2000..2300): channels 2 s (immobile, the laser sight seen by all), then a rail
+--      round: 20k..36k + 5..12% of the target's max HP (cap +20k), piercing its line (others 50%). A kill refunds
 --      half the cooldown.
 
 local L = VFS.Include("luarules/heroes/cort4_lib.lua")
@@ -99,7 +99,7 @@ local function reconFlare(api, unitID, h, r, x, z)
 		return false
 	end
 	local hx, hy, hz = api.pos(unitID)
-	x, z = L.toward(hx, hz, x, z, a2.range or 2400)
+	x, z = L.toward(hx, hz, x, z, a2.range or 2300)
 	local R = api.val(a2.radius, r)
 	local dur = api.val(a2.duration, r)
 	api.reveal(x, z, R, dur, h.ally)
@@ -320,7 +320,7 @@ function M.autocast(api, unitID, h, key, rank)
 	local hpf = L.hpFrac(unitID)
 	local f = api.frame()
 	if key == "a2" then
-		local range = b(h, "a2").range or 2400
+		local range = b(h, "a2").range or 2300
 		local best, bestC
 		for _, uid in ipairs(api.enemiesIn(x, z, range, h.ally)) do
 			if not api.seenBy(uid, h.ally) then

@@ -39,6 +39,7 @@ MODELS = [
     ("cort4deadeye",    "cordeadeye",      2.8),
     ("cort4karganeth",  "scavboss/corkarganetht4", 1.8),
     ("cort4cataphract", "corsok",          2.0),
+    ("cort4negotiator", "corvroc",         3.0),
     ("cort4printer_drone",  "cordrone",    1.5),
     ("cort4printer_turret", "scavbuildings/corhllllt", 1.5),
     ("legt4gant",       "leggant",         1.5),

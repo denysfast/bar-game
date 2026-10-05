@@ -1,4 +1,4 @@
--- Custom T4 heroes, Cortex (denysfast/bar-game), v19: ten heroes of the Titan Crucible. Built from the T3 gantry,
+-- Custom T4 heroes, Cortex (denysfast/bar-game), v19: ten heroes of the Titan Crucible (v23: + Negotiator). Built from the T3 gantry,
 -- scavenger and T2 units, see gamedata/custom_t4.lua. Design doc/v19-heroes/roster_cor.md; abilities
 -- luarules/configs/heroes/cor.lua + luarules/heroes/cort4*.lua; levels and stats luarules/gadgets/unit_t4_heroes.lua.
 -- HP, DPS and speed come from T4.heroBalance (the per-weapon damage multipliers here only shape the split).
@@ -49,7 +49,7 @@ units.cort4gant = T4.foundry(T4.base("units/CorBuildings/LandFactories/corgant.l
 	scale = 1.5,
 	workertime = 12,
 	buildoptions = { "cort4bastion", "cort4colossus", "cort4hellwalker", "cort4armageddon", "cort4vesuvius",
-		"cort4printer", "cort4commando", "cort4deadeye", "cort4karganeth", "cort4cataphract" },
+		"cort4printer", "cort4commando", "cort4deadeye", "cort4karganeth", "cort4cataphract", "cort4negotiator" },
 })
 
 ----------------------------------------------------------------------------------------------- 0 Juggernaut
@@ -449,6 +449,44 @@ do
 	d.customparams.t4_summon = 1
 	d.sightdistance = 400
 	units.cort4cataphract_decoy = d
+end
+
+----------------------------------------------------------------------------------------------- 10 Negotiator
+-- Negotiator, the Last Argument (Negotiator x3, v23): Target Lock, Missile Volley, Siege Deploy, Saturation Barrage.
+-- Back-line rocket artillery: T4.heroBalance dmgScale 1/3 like Armageddon.
+local negotiatorBase = T4.base("units/CorVehicles/T2/corvroc.lua", "corvroc")
+negotiatorBase.weapons[1].badtargetcategory = nil -- a hero engages its army, not only buildings
+local negotiator = T4.derive(negotiatorBase, {
+	name = "cort4negotiator",
+	value = 100,
+	health = 150,
+	damage = 1,
+	range = 1.8, -- 2360 at level 1
+	aoe = 1.6,
+	scale = 3.0,
+	speed = 1.0,
+	sight = 2.6,
+	footprint = 9,
+	movementclass = "T4TANK9",
+	weapons = {
+		-- a ripple of four starburst rockets every 10 s instead of one every 16
+		cortruck_rocket = { burst = 4, burstrate = 0.5, reloadtime = 10 },
+	},
+	overrides = { radardistance = 2600 },
+})
+freeShots(negotiator)
+do
+	local volleyRocket = T4.missileWeapon({ name = "Negotiator Volley", damage = 1, aoe = 120, model = "corvrocket.s3o", velocity = 900,
+		ceg = "custom:blank", cegtag = "missiletrailmedium-starburst", soundhit = "xplomed4", soundstart = "Rockhvy1",
+		range = 3000, turnrate = 32000 })
+	volleyRocket.smoketrail = false
+	volleyRocket.customparams = { t4_ability = 1 }
+	local barrageRocket = T4.missileWeapon({ name = "Saturation Barrage", damage = 1, aoe = 160, model = "corvrocket.s3o", velocity = 1100,
+		ceg = "custom:blank", cegtag = "missiletrailsmall-red", soundhit = "rockhit", soundstart = "rapidrocket3", range = 5000 })
+	barrageRocket.smoketrail = false
+	barrageRocket.customparams = { t4_ability = 1 }
+	groundOnly(barrageRocket)
+	units.cort4negotiator = T4.hero(negotiator, 2.2, { volley = volleyRocket, barrage = barrageRocket })
 end
 
 return units

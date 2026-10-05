@@ -1,7 +1,7 @@
 -- Armageddon, the Doomsayer (cort4armageddon, corcat x2) - doc/v19-heroes/roster_cor.md section 3.
 --   a1 Cluster Warheads (passive): every 2nd rocket of a salvo splits on impact into 2..5 bomblets (aoe 90, scatter
 --      150), each 10..25% of the rocket's damage; at most 60 bomblets per salvo.
---   a2 Doom Painter (active, unit in 3200): a painter laser holds the target 4 s: +15..40% damage taken from all
+--   a2 Doom Painter (active, unit in 2700): a painter laser holds the target 4 s: +15..40% damage taken from all
 --      sources, and the rockets fired meanwhile home on it (on a neighbour if it dies).
 --   a3 Retro Rockets (active, map): leaps 500..900; the takeoff spot burns (300) and slows 50% for 3 s.
 --   ult Armageddon Protocol (active, map, radius 700): 2 s warning, 6 s of rocket rain, then a tactical nuke.
@@ -290,7 +290,7 @@ function M.autocast(api, unitID, h, key, rank)
 	end
 	local hpf = L.hpFrac(unitID)
 	if key == "a2" then
-		local range = b(h, "a2").range or 3200
+		local range = b(h, "a2").range or 2700
 		local t = L.enemyHero(api, h, x, z, range)
 		if not t then
 			local best, cost = L.mostValuable(api, h, x, z, range)
