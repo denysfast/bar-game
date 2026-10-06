@@ -561,6 +561,15 @@ if gadgetHandler:IsSyncedCode() then
 		return d and d[dtype] or 0
 	end
 
+	-- the engine reads AddUnitDamage's paralyze time as an integer: a fraction below 1 s turned the paralysis into plain
+	-- damage (a stun of 3x max HP killed outright - a hero stunned for < 2 s, since heroes take half the time)
+	local function paraSeconds(t)
+		if not t or t <= 0 then
+			return 0
+		end
+		return max(1, floor(t + 0.5))
+	end
+
 	-- ability damage to one unit: no hero multipliers, never to allies of `ally` (UnitPreDamaged drops it too)
 	local function abilityHurt(uid, dmg, ownerID, paraTime, ally)
 		if not dmg or dmg <= 0 or not alive(uid) then
@@ -579,7 +588,7 @@ if gadgetHandler:IsSyncedCode() then
 		end
 		local prev = inAbility
 		inAbility = true
-		Spring.AddUnitDamage(uid, dmg, paraTime or 0, (ownerID and spValidUnitID(ownerID)) and ownerID or nil)
+		Spring.AddUnitDamage(uid, dmg, paraSeconds(paraTime), (ownerID and spValidUnitID(ownerID)) and ownerID or nil)
 		inAbility = prev
 		return true
 	end
@@ -627,7 +636,7 @@ if gadgetHandler:IsSyncedCode() then
 		end
 		local prev = inStun
 		inStun = true
-		Spring.AddUnitDamage(uid, maxHp * 3, seconds, (ownerID and spValidUnitID(ownerID)) and ownerID or nil)
+		Spring.AddUnitDamage(uid, maxHp * 3, paraSeconds(seconds), (ownerID and spValidUnitID(ownerID)) and ownerID or nil)
 		inStun = prev
 		return true
 	end
