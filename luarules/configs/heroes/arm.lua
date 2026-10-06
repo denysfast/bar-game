@@ -382,33 +382,12 @@ heroes.armt4ambassador = {
 	xpRate = 0.25,
 	fx = 2.2,
 	weapons = { { keys = { "armtruck_rocket" }, name = "Starburst Rack" } },
-	a1 = {
-		name = "Target Painter", kind = "custom", passive = true, icon = "ab_armt4olympus_a2",
-		desc = "Rocket hits paint the target for 6 s: revealed, and it takes more damage from every source; Guided Volley hunts painted targets first",
-		vuln = lin(0.04, 0.12, 0.01), time = 6,
-		text = tf("painted 6 s: +{vuln%} damage taken, revealed"),
-	},
-	a2 = {
-		name = "Guided Volley", kind = "custom", cmd = 36142, action = "hero_ambassador_volley", target = "map", icon = "ab_armt4recluse_ult",
-		desc = "A volley of homing rockets at the enemies around the point, painted ones first, spread over the targets (at most a third of the volley on one)",
-		range = lin(1800, 2400, 50), count = lin(4, 10, 1), dmg = lin(1500, 3000, 100), aoe = 120, radius = lin(350, 500, 10),
-		cooldown = lin(22, 12, 1),
-		text = tf("{count} rockets x {dmg} dmg at enemies within {radius}, range {range}, cd {cooldown} s"),
-	},
-	a3 = {
-		name = "Scoot Jets", kind = "custom", cmd = 36143, action = "hero_ambassador_scoot", target = "map", icon = "ab_armt4peewee_a2",
-		desc = "Booster jets hop the launcher to a point; it lands reloaded and drives faster for 4 s",
-		range = lin(400, 700, 10), speed = lin(0.2, 0.5, 0.01), speedTime = 4, cooldown = lin(24, 12, 1),
-		text = tf("hop up to {range}, rack reloaded, +{speed%} speed for 4 s, cd {cooldown} s"),
-	},
-	ult = {
-		name = "Saturation Barrage", kind = "custom", cmd = 36144, action = "hero_ambassador_saturation", target = "map", icon = "ab_armt4ratte_a2",
-		desc = "Plants itself and marks an area with a red ring for 2 s, then rockets rain on it; the area is visible to the enemy the whole time",
-		range = lin(2200, 2600, 50), warn = 2, duration = lin(5, 8, 0.5), count = lin(30, 60, 1), dmg = lin(1200, 2000, 50),
-		radius = lin(450, 600, 10), aoe = 160, cooldown = lin(140, 90, 5),
-		text = tf("2 s warning, then {count} rockets x {dmg} dmg over {duration.1} s in {radius}, range {range}, cd {cooldown} s"),
-	},
 }
+
+-- v23: the rocket-artillery kit (warhead toggles + passive Rocket Mastery)
+for k, v in pairs(H.rocketModes({ 36141, 36142, 36143 }, "hero_ambassador", { "ab_armt4recluse_ult", "ab_armt4ratte_a2", "ab_armt4olympus_ult", "ab_armt4olympus_a2" })) do
+	heroes.armt4ambassador[k] = v
+end
 
 return heroes, { "armt4zeus", "armt4atlas", "armt4peewee", "armt4aegis", "armt4prowler", "armt4ratte", "armt4recluse",
 	"armt4olympus", "armt4starlight", "armt4hive", "armt4ambassador" }

@@ -355,32 +355,6 @@ local heroes = {
 		title = "Negotiator, the Last Argument", role = "Rocket artillery", aiRole = "back", aiPick = 2, xpRate = 0.15,
 		fx = 2.2,
 		weapons = { { keys = { "cortruck_rocket" }, name = "Starburst Rockets" } },
-		a1 = ab({
-			name = "Target Lock", passive = true, icon = "ab_cort4armageddon_a2",
-			desc = "Its rockets Lock what they hit: the target takes more damage from everything and stays revealed",
-			duration = lin(4, 8, 0.5), vuln = lin(0.04, 0.12, 0.01),
-			text = tf("a rocket hit Locks for {duration.1} s: +{vuln%} damage taken, revealed"),
-		}),
-		a2 = ab({
-			name = "Missile Volley", cmd = 36297, action = "hero_missilevolley", target = "unit", icon = "ab_cort4vesuvius_a2",
-			desc = "Ripples homing rockets at one target within rocket range; +25% against a Locked one",
-			range = lin(1800, 2300, 50), count = lin(4, 10, 1), dmg = lin(900, 1500, 50), aoe = 120, time = 2, lockBonus = 0.25,
-			cooldown = lin(18, 10, 1),
-			text = tf("{count} rockets x {dmg} dmg over 2 s, range {range}, cd {cooldown} s"),
-		}),
-		a3 = ab({
-			name = "Siege Deploy", cmd = 36298, action = "hero_siegedeploy", toggle = true, icon = "ab_cort4vesuvius_a3",
-			desc = "Braces on its jacks: immobile, tougher, longer range and faster salvos. Cast again to pack up",
-			duration = lin(8, 14, 0.5), armor = 0.15, range = lin(0.1, 0.25, 0.01), reload = lin(0.15, 0.35, 0.01), cooldown = 20,
-			text = tf("up to {duration.1} s: +{range%} range, +{reload%} fire rate, -15% damage taken, cd 20 s"),
-		}),
-		ult = ab({
-			name = "Saturation Barrage", cmd = 36299, action = "hero_saturation", target = "map", icon = "ab_cort4armageddon_ult",
-			desc = "Paints an area (a 2.5 s warning everyone sees), then rockets rain on it for 5 s and Lock what they hit",
-			range = lin(2000, 2300, 50), radius = lin(450, 600, 10), warn = 2.5, duration = 5, count = lin(20, 48, 1),
-			dmg = lin(500, 800, 50), aoe = 160, cooldown = lin(120, 85, 5),
-			text = tf("{count} rockets x {dmg} in {radius} over 5 s after 2.5 s, range {range}, cd {cooldown} s"),
-		}),
 	},
 }
 
@@ -388,6 +362,11 @@ local heroes = {
 heroes.cort4vesuvius.weaponCopies = {
 	magma = { keys = { "corlevlr_weapon" }, set = { rgbcolor = "1 0.35 0.05", name = "Magma shell" } },
 }
+
+-- v23: the rocket-artillery kit (warhead toggles + passive Rocket Mastery)
+for k, v in pairs(H.rocketModes({ 36296, 36297, 36298 }, "hero_negotiator", { "ab_cort4armageddon_a2", "ab_cort4vesuvius_a2", "ab_cort4armageddon_ult", "ab_cort4vesuvius_a3" })) do
+	heroes.cort4negotiator[k] = v
+end
 
 return heroes, { "cort4bastion", "cort4colossus", "cort4hellwalker", "cort4armageddon", "cort4vesuvius",
 	"cort4printer", "cort4commando", "cort4deadeye", "cort4karganeth", "cort4cataphract", "cort4negotiator" }

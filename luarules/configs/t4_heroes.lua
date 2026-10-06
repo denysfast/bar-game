@@ -191,6 +191,32 @@ function H.textf(template)
 	end
 end
 
+-- v23: the rocket-artillery kit (luarules/heroes/t4_rocketmodes.lua): three warhead toggles + a passive ultimate.
+-- cmds = { a1, a2, a3 } command ids, act = action prefix, icons = { a1, a2, a3, ult }
+function H.rocketModes(cmds, act, icons)
+	local lin, tf = H.lin, H.textf
+	return {
+		a1 = { name = "Long-Range Rockets", kind = "custom", toggle = true, cmd = cmds[1], action = act .. "_long", icon = icons[1],
+			desc = "Switches the rack to long-range rockets until another warhead is chosen: much longer range, 15% less damage",
+			range = lin(0.3, 0.6, 0.01), dmgCut = 0.15, cooldown = 3,
+			text = tf("+{range%} rocket range, -15% damage (toggle)") },
+		a2 = { name = "Cluster Warheads", kind = "custom", toggle = true, cmd = cmds[2], action = act .. "_cluster", icon = icons[2],
+			desc = "Switches the rack to cluster warheads: 35% less direct damage, every rocket scatters bomblets over an area",
+			bomblets = lin(4, 10, 1), dmg = lin(400, 900, 50), spread = lin(200, 320, 10), aoe = lin(90, 130, 5),
+			dmgCut = 0.35, cooldown = 3,
+			text = tf("{bomblets} bomblets x {dmg} dmg ({aoe} radius) within {spread} of each impact (toggle)") },
+		a3 = { name = "Tactical Nukes", kind = "custom", toggle = true, cmd = cmds[3], action = act .. "_nuke", icon = icons[3],
+			desc = "Switches the rack to tactical nuclear warheads: very slow reload, heavy hits; each salvo opens with a nuclear blast",
+			slow = lin(0.7, 0.6, 0.01), damage = lin(0.5, 1.0, 0.05), blast = lin(8000, 20000, 500), radius = lin(300, 450, 10),
+			cooldown = 3,
+			text = tf("-{slow%} fire rate, +{damage%} damage, blast {blast} in {radius} per salvo (toggle)") },
+		ult = { name = "Rocket Mastery", kind = "custom", passive = true, icon = icons[4],
+			desc = "Mastery of the rack: more range, faster reload and more damage for every warhead",
+			range = lin(0.03, 0.2, 0.01), reload = lin(0.05, 0.3, 0.01), damage = lin(0.05, 0.4, 0.01),
+			text = tf("+{range%} range, +{reload%} fire rate, +{damage%} damage") },
+	}
+end
+
 -- the data files live next to this one; each chunk gets H as `...` (the earlier parts already filled in)
 local function part(path)
 	local fn = assert(loadstring(VFS.LoadFile(path), path))

@@ -224,7 +224,7 @@ T4.HERO_COST = { metal = 100000, energy = 2000000, buildtime = 2500000 }
 -- front: their WHOLE damage - weapons and abilities - is scaled by `dmgScale` (customparam t4_dmg_scale, applied by the
 -- hero gadget: UnitPreDamaged for weapon hits, abilityHurt for ability damage). The weapondefs keep the balanced
 -- numbers so the ability modules that derive from them are scaled once.
-local ARTY = 1 / 3
+local ARTY = 2.5 / 3 -- v23: x2.5 (was 1 / 3)
 T4.heroBalance = {
 	--                  health     dps      speed (elmos/s)
 	armt4atlas      = { hp = 420000, dps = 11000, speed = 36 }, -- front: assault anchor

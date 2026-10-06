@@ -399,33 +399,6 @@ local heroes = {
 		title = "Boreas, the Firestorm", role = "Incendiary rocket artillery", aiRole = "back", aiPick = 2, xpRate = 0.5,
 		fx = 2.5,
 		weapons = { { keys = { "armtruck_rocket" }, name = "Firestorm Racks" } },
-		a1 = {
-			name = "Scorched Earth", kind = "custom", passive = true, icon = "ab_legt4helios_a1",
-			desc = "Every rocket impact leaves the ground burning for 4 s; enemies standing in the fire take more damage from Boreas",
-			dps = lin(250, 800, 25), radius = lin(160, 240, 10), vuln = lin(0.05, 0.15, 0.01), duration = 4, maxFires = 6,
-			text = tf("burning ground {dps}/s in {radius} for 4 s; +{vuln%} damage from Boreas to the burning"),
-		},
-		a2 = {
-			name = "Hellfire Volley", kind = "custom", cmd = 36329, action = "hero_hellfire", target = "map", icon = "ab_legt4apollyon_a2",
-			desc = "The racks ripple-fire a volley of incendiary rockets onto the point (within weapon range); each sets the ground on fire",
-			range = lin(2200, 2600, 50), count = lin(4, 10, 1), dmg = lin(700, 1600, 50), aoe = 200, radius = 320,
-			cooldown = lin(24, 14, 1),
-			text = tf("{count} rockets x {dmg} ({aoe} radius) in {radius} at up to {range}, cd {cooldown} s"),
-		},
-		a3 = {
-			name = "Thermal Vent", kind = "custom", cmd = 36330, action = "hero_thermalvent", icon = "ab_legt4helios_a2",
-			desc = "Vents the reactors: a burst of flame around Boreas, then it runs hot - faster and tougher for a few seconds, leaving fire behind",
-			duration = lin(3, 6, 0.5), speed = lin(0.25, 0.5, 0.05), armor = lin(0.1, 0.25, 0.01), burst = lin(400, 1200, 50),
-			burstRadius = 320, cooldown = lin(30, 16, 1),
-			text = tf("{burst} in {burstRadius}, then {duration.1} s +{speed%} speed, +{armor%} armour, cd {cooldown} s"),
-		},
-		ult = {
-			name = "Firestorm", kind = "custom", cmd = 36331, action = "hero_firestorm", target = "map", icon = "ab_legt4apollyon_ult",
-			desc = "Marks an area within weapon range; after 1.5 s a rocket storm falls on it for 6 s and the whole area burns",
-			range = 2600, radius = lin(500, 700, 25), count = lin(20, 40, 2), dmg = lin(400, 800, 50), aoe = 180,
-			burn = lin(200, 500, 25), warn = 1.5, duration = 6, cooldown = lin(110, 75, 5),
-			text = tf("after 1.5 s: {count} rockets x {dmg} in {radius} over 6 s, area burns {burn}/s, cd {cooldown} s"),
-		},
 		weaponDefs = function(T4)
 			local w = T4.missileWeapon({
 				name = "Boreas incendiary rocket", damage = 0, aoe = 16, model = "leglargerocket.s3o", velocity = 800, turnrate = 30000,
@@ -438,6 +411,11 @@ local heroes = {
 		end,
 	},
 }
+
+-- v23: the rocket-artillery kit (warhead toggles + passive Rocket Mastery)
+for k, v in pairs(H.rocketModes({ 36329, 36330, 36331 }, "hero_boreas", { "ab_legt4apollyon_a2", "ab_legt4helios_a1", "ab_legt4apollyon_ult", "ab_legt4helios_a2" })) do
+	heroes.legt4boreas[k] = v
+end
 
 return heroes, { "legt4helios", "legt4starfall", "legt4longinus", "legt4tempest", "legt4myrmidon",
 	"legt4keres", "legt4mukade", "legt4charybdis", "legt4apollyon", "legt4medusa", "legt4boreas" }
