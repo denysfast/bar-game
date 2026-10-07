@@ -3960,7 +3960,11 @@
 		},
 		"ai_techup": {
 			"name": "AI Bonus: Tech follows economy",
-			"desc": "AI teams stop building T1 factories and recycle them (90% refund) once they earn 150 metal/s with two T2 factories, and do the same with T2 land factories at 800 metal/s with two T3 gantries."
+			"desc": "AI teams stop building T1 factories and recycle them (90% refund) once they earn 150 metal/s with two T2 factories."
+		},
+		"ai_late_t2": {
+			"name": "AI: No T2 armies in the late game (metal/s)",
+			"desc": "Once an AI team earns this much metal per second and has a T3 gantry, it stops making T1/T2 land armies (T3/T4 only, T2 land factories make constructors). They only lag the late game. 0 = off."
 		},
 		"ai_unjam": {
 			"name": "AI Bonus: Keep base exits clear",

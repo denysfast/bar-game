@@ -1,0 +1,38 @@
+// Mono-space font required
+// v23: epic fusion reactors chain epic energy converters (Scavengers Units Pack only, see economy_scav.json)
+{
+"build_chain": {
+	"energy": {
+		"armafust3": {
+			"hub": [
+				[  // epic converters (6000 E each) around the reactor (30000 E): two always, two more on spare energy
+					{"unit": "armmmkrt3", "category": "convert", "offset": [170, 170]},
+					{"unit": "armmmkrt3", "category": "convert", "offset": [-170, 170]},
+					{"unit": "armmmkrt3", "category": "convert", "offset": [170, -170], "condition": {"energy": true}},
+					{"unit": "armmmkrt3", "category": "convert", "offset": [-170, -170], "condition": {"energy": true}}
+				]
+			]
+		},
+		"corafust3": {
+			"hub": [
+				[  // epic converters (6000 E each) around the reactor (30000 E): two always, two more on spare energy
+					{"unit": "cormmkrt3", "category": "convert", "offset": [170, 170]},
+					{"unit": "cormmkrt3", "category": "convert", "offset": [-170, 170]},
+					{"unit": "cormmkrt3", "category": "convert", "offset": [170, -170], "condition": {"energy": true}},
+					{"unit": "cormmkrt3", "category": "convert", "offset": [-170, -170], "condition": {"energy": true}}
+				]
+			]
+		},
+		"legafust3": {
+			"hub": [
+				[  // epic converters (6000 E each) around the reactor (30000 E): two always, two more on spare energy
+					{"unit": "legadveconvt3", "category": "convert", "offset": [170, 170]},
+					{"unit": "legadveconvt3", "category": "convert", "offset": [-170, 170]},
+					{"unit": "legadveconvt3", "category": "convert", "offset": [170, -170], "condition": {"energy": true}},
+					{"unit": "legadveconvt3", "category": "convert", "offset": [-170, -170], "condition": {"energy": true}}
+				]
+			]
+		}
+	}
+}
+}

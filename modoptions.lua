@@ -665,10 +665,23 @@ local options = {
 	{
 		key = "ai_techup",
 		name = "AI Bonus: Tech follows economy",
-		desc = "AI teams stop building T1 factories and recycle them (90% refund) once they earn 150 metal/s with two T2 factories, and do the same with T2 land factories at 800 metal/s with two T3 gantries.",
+		desc = "AI teams stop building T1 factories and recycle them (90% refund) once they earn 150 metal/s with two T2 factories.",
 		type = "bool",
 		section = "ai_bonus",
 		def = true,
+	},
+
+	-- NOTE: update language/en/interface.json when you change name or desc
+	{
+		key = "ai_late_t2",
+		name = "AI: No T2 armies in the late game (metal/s)",
+		desc = "Once an AI team earns this much metal per second and has a T3 gantry, it stops making T1/T2 land armies (T3/T4 only, T2 land factories make constructors). They only lag the late game. 0 = off.",
+		type = "number",
+		section = "ai_bonus",
+		def = 2000,
+		min = 0,
+		max = 20000,
+		step = 100,
 	},
 
 	-- NOTE: update language/en/interface.json when you change name or desc

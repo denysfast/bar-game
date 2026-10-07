@@ -1,0 +1,21 @@
+// Mono-space font required
+// v23: the top rung of the energy ladder - epic fusion reactors (90k metal, 30000 E) for the Scavengers Units Pack
+// (modoption scavunitsforplayers; init.as inserts this profile only then). Gates as in economy.json (15 x real
+// m/s): 1200 m/s of metal income and 36000 E income (~12 adv fusions) first.
+{
+"economy": {
+	"energy": {
+		"land": {
+			// "<energy_def>": [<lower limit>, <upper limit>, <m-income>, <e-income>, <efficiency>]
+			"armafust3": [20, 40, 18000, 36000, 20.0],
+			"corafust3": [20, 40, 18000, 36000, 20.0],
+			"legafust3": [20, 40, 18000, 36000, 20.0]
+		},
+		"water": {
+			"armafust3": [20, 40, 18000, 36000, 20.0],
+			"corafust3": [20, 40, 18000, 36000, 20.0],
+			"legafust3": [20, 40, 18000, 36000, 20.0]
+		}
+	}
+}
+}

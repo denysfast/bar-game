@@ -24,7 +24,7 @@ SInitInfo AiInit()
 	}
 	if (string(aiSetupMgr.GetModOptions()["scavunitsforplayers"]) == "1") {
 		AiLog("Inserting Scav Units");
-		data.profile.insertAt(data.profile.length(), {"behaviour_scav_units"});
+		data.profile.insertAt(data.profile.length(), {"behaviour_scav_units", "economy_scav", "build_chain_scav"});  // v23: epic fusion rung + epic converters
 	} else {
 		AiLog("Ignoring Scav Units");
 	}

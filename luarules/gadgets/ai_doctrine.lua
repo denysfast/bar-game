@@ -89,6 +89,12 @@ local LATE_BUDGET = 4                         -- budget hi x (1 + LATE_BUDGET * 
 local LATE_UNITS = 2.5                        -- unit cap x (1 + LATE_UNITS * late): a T2 army up to 140 units
 local LATE_ARMIES = 3                         -- MAX_ARMIES + LATE_ARMIES * late
 local LATE_T2 = 1.2                           -- T2 weight + LATE_T2 * late (T2 spam)
+-- v23 late game without T2/T1 land armies (they only lag the game): from NO_LOW_INCOME m/s of metal income
+-- (modoption ai_late_t2, 0 = off) with a finished T3 gantry, plans skip T1/T2 land factories (T3/T4 armies only,
+-- their T2 parts are left out) and the stock AI gets TeamRulesParam ai_no_t2 = 1 (factory.as: T2 land factories
+-- make constructors only). Off again below NO_LOW_OFF of that income or without a gantry
+local NO_LOW_INCOME = tonumber(Spring.GetModOptions().ai_late_t2) or 2000
+local NO_LOW_OFF = 0.7
 -- v22 levy: the stock AI's own army idling at home is taken into a doctrine army and sent
 local LEVY_FROM = 18 * 60 * GAME_SPEED
 local LEVY_MIN = 6000                         -- metal of idle stock army before a levy
@@ -141,7 +147,10 @@ for _, n in ipairs({ "armt4gant", "cort4gant", "legt4gant" }) do
 	FACTORY_TIER[n] = 4
 end
 
+local LOW_AIR = { armap = true, armaap = true, corap = true, coraap = true, legap = true, legaap = true }
+
 local unitCost, unitSpeed, unitRange, unitRole, isStructure, isFactory, factoryBuilds = {}, {}, {}, {}, {}, {}, {}
+local isLowLand = {} -- v23: T1/T2 land factory udid (quiet in the late game, see NO_LOW_INCOME)
 local unitSize = {} -- elmos between two of them in a formation line
 local ecoDefs = {}
 for udid, ud in pairs(UnitDefs) do
@@ -189,6 +198,7 @@ for udid, ud in pairs(UnitDefs) do
 	local tier = FACTORY_TIER[ud.name]
 	if tier then
 		isFactory[udid] = tier
+		isLowLand[udid] = tier <= 2 and not LOW_AIR[ud.name] or nil
 		factoryBuilds[udid] = {}
 		for _, b in ipairs(ud.buildOptions or {}) do
 			factoryBuilds[udid][b] = true
@@ -367,7 +377,7 @@ local function teamFactories(t)
 	for uid, tier in pairs(t.factories) do
 		if spValidUnitID(uid) and not spGetUnitIsDead(uid) then
 			local _, _, _, _, bp = spGetUnitHealth(uid)
-			if bp and bp >= 1 then
+			if bp and bp >= 1 and not (t.noLow and isLowLand[spGetUnitDefID(uid)]) then
 				out[#out + 1] = uid
 				if tier > maxTier then
 					maxTier = tier
@@ -445,12 +455,14 @@ local function feasibility(comp, facs, teamID, t)
 	return total > 0 and ok / total or 0
 end
 
-local function pickTier(maxTier, late)
+local function pickTier(maxTier, late, noLow)
 	local w = {}
 	for i, x in ipairs(TIER_ODDS[min(4, max(1, maxTier))]) do
 		w[i] = x
 	end
-	if w[2] then
+	if noLow and maxTier >= 3 then
+		w[1], w[2] = 0, 0 -- v23: T3/T4 armies only
+	elseif w[2] then
 		w[2] = w[2] + LATE_T2 * (late or 0) -- late game: mass T2 armies
 	end
 	local sum = 0
@@ -537,9 +549,12 @@ local function newArmy(teamID, t, f)
 	local late, income = lateOf(teamID)
 	-- the tier: the best one available, sometimes a cheaper army for variety; T4 needs a living hero
 	for try = 1, 8 do
-		local tier = try <= 6 and pickTier(maxTier, late) or (try == 7 and 2 or 1)
+		local tier = try <= 6 and pickTier(maxTier, late, t.noLow) or (try == 7 and 2 or 1)
 		if try <= 3 and t.dir and t.dir.tier then
 			tier = min(maxTier, t.dir.tier) -- the general's tier, while it is buildable
+		end
+		if t.noLow and maxTier >= 3 then
+			tier = max(3, tier) -- v23: no T1/T2 armies in the late game, the general's pick and the last tries too
 		end
 		local list = comps[t.side]["t" .. tier] or {}
 		local cands, sum = {}, 0
@@ -671,8 +686,9 @@ local function updateProduction(teamID, t)
 			facState[uid] = fs
 		end
 		local nextName = ""
-		if not fs.skip and tier < 4 then
-			local b = factoryBuilds[spGetUnitDefID(uid) or -1]
+		local fdid = spGetUnitDefID(uid) or -1
+		if not fs.skip and tier < 4 and not (t.noLow and isLowLand[fdid]) then
+			local b = factoryBuilds[fdid]
 			local best, bestShare
 			for udid, nd in pairs(needs) do
 				if b and b[udid] then
@@ -1851,6 +1867,20 @@ function gadget:GameFrame(f)
 			t.side = sideOf(teamID)
 		end
 		if t.side and f >= START_FRAME then
+			-- v23: late game without T1/T2 land armies (NO_LOW_INCOME), with a hysteresis
+			if NO_LOW_INCOME > 0 then
+				-- the income averaged over ~30 s: recycled factories (ai_techup) and reclaim spike it for a second
+				local _, income = lateOf(teamID)
+				t.incAvg = (t.incAvg or income) + (income - (t.incAvg or income)) / 30
+				income = t.incAvg
+				local _, maxTier = teamFactories(t)
+				local noLow = maxTier >= 3 and income >= NO_LOW_INCOME * (t.noLow and NO_LOW_OFF or 1)
+				if noLow ~= (t.noLow or false) then
+					t.noLow = noLow or nil
+					Spring.SetTeamRulesParam(teamID, "ai_no_t2", noLow and 1 or 0)
+					log("t=%d team=%d late game: T1/T2 land armies %s (income %d m/s)", floor(f / 1800), teamID, noLow and "off" or "back on", income)
+				end
+			end
 			-- threatened: enemies at home (the start and every factory), every 5 s
 			if f % 150 == 17 then
 				local hx, hz = startPos(teamID)
