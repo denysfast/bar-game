@@ -56,6 +56,20 @@ const float ECO_ENERGY_MARGIN   = 0.85f; // build more energy while income < mar
 const int   ECO_CONVERT_BASE    = 2;     // converter cap: base + per minute
 const float ECO_CONVERT_PER_MIN = 1.0f;
 const int   ECO_CONVERT_MAX     = 60;
+// v23 energy ladder: v8-v22 queued an advanced fusion (9.7k metal) at EVERY base (= factory) every 40 s from
+// the first T2 constructor on - the AI started generators it could not pay for and built them for ages. Now
+// the best rung the income pays for: adv solar -> fusion -> adv fusion (after ECO_AFUS_AFTER fusions) -> epic
+// fusion (Scavengers Units Pack, after ECO_EPIC_AFTER adv fusions and from ECO_EPIC_INCOME m/s). A locked rung
+// gets maxThisUnit = its count, so CircuitAI's own energy picks (economy.json) keep to the ladder too (its
+// e-income gates alone do not: the AI bonus inflates energy, 5000 E at minute 5 with no fusion at all). A rung
+// is ordered only when its metal cost is <= ECO_AFFORD_SEC of metal income, out of a budget of ECO_SHARE of it
+const float ECO_AFFORD_SEC      = 75.f;
+const float ECO_SHARE           = 0.25f;
+const float ECO_FUS_E           = 500.f;
+const int   ECO_AFUS_AFTER      = 4;
+const int   ECO_EPIC_AFTER      = 8;
+const float ECO_EPIC_INCOME     = 1200.f;
+const int   ECO_EPIC_CONVERTERS = 4;     // epic converters (6000 E each) per epic fusion (30000 E)
 
 // production expansion: CircuitAI adds factories far slower than income grows (measured: one T1
 // factory at 12 min with 300 m/s income), so metal ends up in towers instead of an army.
@@ -83,6 +97,11 @@ int lastWaveFrame = 0;
 int lastShieldFrame = 0;
 int lastScoutPulseFrame = 0;
 int lastEcoFrame = 0;
+float ecoBudget = 0.f;  // v23: metal set aside for generators (not saved: starts again at 0 after a load)
+uint ecoBaseIdx = 0;
+int scavUnits = -1;     // modoption scavunitsforplayers (epic fusion / epic converters), read on first use
+int afusMax = -1;       // the unlocked maxThisUnit of the adv fusion / epic fusion (read before the first lock)
+int epicMax = -1;
 int lastProdFrame = 0;
 int lastAltarFrame = -10 * MINUTE;
 int altarTries = -1;
@@ -315,7 +334,8 @@ bool HasT2Builder()
 {
 	CCircuitDef@ a = SideDef("armack", "corack", "legack");
 	CCircuitDef@ v = SideDef("armacv", "coracv", "legacv");
-	return (a !is null && a.count > 0) || (v !is null && v.count > 0);
+	CCircuitDef@ p = SideDef("armaca", "coraca", "legaca");  // v23: T2 air constructors build fusions too
+	return (a !is null && a.count > 0) || (v !is null && v.count > 0) || (p !is null && p.count > 0);
 }
 
 CCircuitDef@ FirstAvailable(const string& in arm, const string& in cor, const string& in leg)
@@ -326,9 +346,52 @@ CCircuitDef@ FirstAvailable(const string& in arm, const string& in cor, const st
 	return cdef;
 }
 
+bool ScavUnits()
+{
+	if (scavUnits < 0)
+		scavUnits = (string(aiSetupMgr.GetModOptions()["scavunitsforplayers"]) == "1") ? 1 : 0;
+	return scavUnits == 1;
+}
+
+// v23: lock the upper rungs of the energy ladder until the rung below is built up
+void LadderLocks(float mInc)
+{
+	CCircuitDef@ fus = SideDef("armfus", "corfus", "legfus");
+	CCircuitDef@ afus = SideDef("armafus", "corafus", "legafus");
+	if (fus !is null && afus !is null) {
+		if (afusMax < 0)
+			afusMax = afus.maxThisUnit;
+		afus.maxThisUnit = (fus.count >= ECO_AFUS_AFTER) ? afusMax : afus.count;
+	}
+	CCircuitDef@ epic = ScavUnits() ? SideDef("armafust3", "corafust3", "legafust3") : null;
+	if (epic !is null && afus !is null) {
+		if (epicMax < 0)
+			epicMax = epic.maxThisUnit;
+		epic.maxThisUnit = (afus.count >= ECO_EPIC_AFTER && mInc >= ECO_EPIC_INCOME) ? epicMax : epic.count;
+	}
+}
+
+// v23: the highest rung of the energy ladder the economy has grown into and can pay for (locks: LadderLocks)
+CCircuitDef@ PickGenerator(float mInc, float eInc, bool t2)
+{
+	array<CCircuitDef@> rungs;
+	if (t2 && ScavUnits())
+		rungs.insertLast(FirstAvailable("armafust3", "corafust3", "legafust3"));
+	if (t2)
+		rungs.insertLast(FirstAvailable("armafus", "corafus", "legafus"));
+	if (t2 && eInc >= ECO_FUS_E)
+		rungs.insertLast(FirstAvailable("armfus", "corfus", "legfus"));
+	rungs.insertLast(FirstAvailable("armadvsol", "coradvsol", "legadvsol"));
+	for (uint i = 0; i < rungs.length(); ++i) {
+		if (rungs[i] !is null && rungs[i].costM <= mInc * ECO_AFFORD_SEC)
+			return rungs[i];
+	}
+	return null;  // not even an adv solar pays off yet: CircuitAI's own wind/solar picks (economy.json)
+}
+
 /*
  * Keep scaling the economy for the whole game instead of stopping at the opening base:
- *  - more energy while income lags the target factor (advanced fusion first, then fusion);
+ *  - more energy while income lags the target factor, up the ladder the income pays for (v23, PickGenerator);
  *  - metal makers whenever energy outruns metal (that is what "secondary economy" means here);
  * All of it goes in at NORMAL/LOW priority next to the bases, so it competes with defence
  * spending rather than with the factory queue.
@@ -345,27 +408,47 @@ void UpdateEcoExpansion()
 	const SResourceInfo@ metal = aiEconomyMgr.metal;
 	const SResourceInfo@ energy = aiEconomyMgr.energy;
 
-	// 1. energy: chase the target factor, newest available generator first
+	// 1. energy: chase the target factor up the ladder (v23), paid out of the generator budget
+	LadderLocks(metal.income);
 	const float target = metal.income * EnergyTargetFactor();
 	if (energy.income < target * ECO_ENERGY_MARGIN) {
-		const bool t2 = HasT2Builder();
-		CCircuitDef@ gen = t2 ? FirstAvailable("armafus", "corafus", "legafus") : null;
-		if (gen is null && t2) @gen = FirstAvailable("armfus", "corfus", "legfus");
-		if (gen is null) @gen = FirstAvailable("armadvsol", "coradvsol", "legadvsol");
+		CCircuitDef@ gen = PickGenerator(metal.income, energy.income, HasT2Builder());
 		if (gen !is null) {
-			EnqueueAtBasesAs(Task::BuildType::ENERGY, gen, 1, Task::Priority::NORMAL, SQUARE_SIZE * 48);
-			AiLog("[custom] eco: +energy " + gen.GetName() + " e-income=" + int(energy.income)
-				+ "/" + int(target) + " m-income=" + int(metal.income));
+			ecoBudget += metal.income * ECO_SHARE * float(ECO_STEP) / float(SECOND);
+			if (ecoBudget > gen.costM * 2.f)
+				ecoBudget = gen.costM * 2.f;  // no burst of saved-up orders
+			const uint nb = Base::positions.length();
+			int n = 0;
+			while (ecoBudget >= gen.costM && uint(n) < nb) {
+				ecoBudget -= gen.costM;
+				aiBuilderMgr.Enqueue(TaskB::Common(Task::BuildType::ENERGY, Task::Priority::NORMAL, gen,
+					Base::positions[ecoBaseIdx % nb], SQUARE_SIZE * 48));
+				++ecoBaseIdx;
+				++n;
+			}
+			AiLog("[custom] eco: energy " + gen.GetName() + " x" + n + " have=" + gen.count
+				+ " e-income=" + int(energy.income) + "/" + int(target) + " m-income=" + int(metal.income)
+				+ " budget=" + int(ecoBudget));
 		}
+	} else {
+		ecoBudget = 0.f;
 	}
 
 	// 2. converters: surplus energy turned into metal, capped by game time
 	if (energy.income > metal.income * ECO_CONVERT_E_RATIO || aiEconomyMgr.isEnergyFull) {
-		CCircuitDef@ conv = HasT2Builder() ? FirstAvailable("armmmkr", "cormmkr", "legadveconv") : null;
+		// v23: next to epic fusions, epic converters (9k metal, 6000 E each), ECO_EPIC_CONVERTERS per reactor
+		CCircuitDef@ epic = ScavUnits() ? SideDef("armafust3", "corafust3", "legafust3") : null;
+		CCircuitDef@ conv = null;
+		int cap = ECO_CONVERT_BASE + int(ECO_CONVERT_PER_MIN * minutes);
+		if (cap > ECO_CONVERT_MAX) cap = ECO_CONVERT_MAX;
+		if (epic !is null && epic.count > 0) {
+			@conv = FirstAvailable("armmmkrt3", "cormmkrt3", "legadveconvt3");
+			if (conv !is null)
+				cap = ECO_EPIC_CONVERTERS * epic.count;
+		}
+		if (conv is null && HasT2Builder()) @conv = FirstAvailable("armmmkr", "cormmkr", "legadveconv");
 		if (conv is null) @conv = FirstAvailable("armmakr", "cormakr", "legeconv");
 		if (conv !is null) {
-			int cap = ECO_CONVERT_BASE + int(ECO_CONVERT_PER_MIN * minutes);
-			if (cap > ECO_CONVERT_MAX) cap = ECO_CONVERT_MAX;
 			conv.maxThisUnit = cap;
 			if (conv.count < cap) {
 				EnqueueAtBasesAs(Task::BuildType::CONVERT, conv, 1, Task::Priority::NORMAL, SQUARE_SIZE * 32);

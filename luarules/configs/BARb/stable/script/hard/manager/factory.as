@@ -108,6 +108,13 @@ IUnitTask@ AiMakeTask(CCircuitUnit@ unit)
 		}
 		return null;  // every hero is alive: the altar idles instead of the stock pick
 	}
+	// v23: late game (ai_doctrine.lua publishes TeamRulesParam ai_no_t2) T1/T2 land factories make constructors only
+	if (IsLowLand(unit.circuitDef) && ai.GetTeamRulesParam("ai_no_t2", 0.f) > 0.f) {
+		CCircuitDef@ b = aiFactoryMgr.GetRoleDef(unit.circuitDef, Unit::Role::BUILDER.type);
+		if (b !is null && b.IsAvailable(ai.frame) && b.count < LATE_BUILDERS)
+			return aiFactoryMgr.Enqueue(TaskS::Recruit(Task::RecruitType::BUILDPOWER, Task::Priority::NORMAL, b, unit.GetPos(ai.frame), 64.f));
+		return null;  // no T2 army: it only lags the game
+	}
 	// custom (ai_doctrine.lua): the planned army of the AI - the gadget names the next unit this factory builds
 	// in the factory's unit rules param "doctrine_next" ("" = the stock pick: builders, defence, BARb's own army)
 	const string planned = unit.GetRulesParam("doctrine_next", "");
@@ -208,6 +215,18 @@ const float TECH_T2_INCOME = 150.f;
 const float TECH_T3_INCOME = 400.f;  // v19-ai2: was 800 - Armada/Cortex sat on T2 labs while Legion's stock picks were T3 gantries by minute 10 (Legion won every game vs Armada, v18 too)
 const float TECH_T4_INCOME = 700.f;  // custom T4 heroes: a gantry pick becomes the hero altar
 
+// v23: late game no T1/T2 land armies (ai_doctrine.lua sets TeamRulesParam ai_no_t2); constructors of such a
+// factory are still made up to this many of a kind
+const int LATE_BUILDERS = 8;
+
+bool IsLowLand(const CCircuitDef@ d)
+{
+	const string n = d.GetName();
+	return n == armlab || n == armvp || n == armalab || n == armavp || n == "armhp" || n == "armfhp"
+		|| n == corlab || n == corvp || n == coralab || n == coravp || n == "corhp" || n == "corfhp"
+		|| n == leglab || n == legvp || n == legalab || n == legavp || n == "leghp" || n == "legfhp";
+}
+
 CCircuitDef@ Upgrade(CCircuitDef@ d, const string& in from, const string& in to)
 {
 	if (d.GetName() != from)
@@ -285,7 +304,13 @@ CCircuitDef@ AiGetFactoryToBuild(const AIFloat3& in pos, bool isStart, bool isRe
 		@d = null;
 	if (d is null)  // every usual factory at its limit: the T4 foundry still grows the production
 		return T4Foundry();
-	return TechUp(d);
+	@d = TechUp(d);
+	// v23: no new T1/T2 land factory in the late game (it could make constructors only)
+	if (d !is null && IsLowLand(d) && ai.GetTeamRulesParam("ai_no_t2", 0.f) > 0.f) {
+		CCircuitDef@ t4 = T4Foundry();
+		return t4;
+	}
+	return d;
 }
 
 /* --- Utils --- */
