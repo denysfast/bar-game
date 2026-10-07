@@ -22,6 +22,7 @@ MODELS = [
     ("armt4recluse",    "scavboss/armsptkt4",  1.6),
     ("armt4starlight",  "armmanni",        2.4),
     ("armt4hive",       "armdronecarryland", 1.5, "armdronecarry_dead"),
+    ("armt4ambassador", "armmerl",         3.0),
     # summons of the Armada heroes (no wrecks)
     ("armt4aegis_drone",        "armdrone",    1.6, None),
     ("armt4hive_drone",         "armdrone",    1.8, None),
@@ -38,6 +39,7 @@ MODELS = [
     ("cort4deadeye",    "cordeadeye",      2.8),
     ("cort4karganeth",  "scavboss/corkarganetht4", 1.8),
     ("cort4cataphract", "corsok",          2.0),
+    ("cort4negotiator", "corvroc",         3.0),
     ("cort4printer_drone",  "cordrone",    1.5),
     ("cort4printer_turret", "scavbuildings/corhllllt", 1.5),
     ("legt4gant",       "leggant",         1.5),
@@ -51,6 +53,7 @@ MODELS = [
     ("legt4charybdis",  "legehovertank",   2.4),
     ("legt4apollyon",   "legapollyon",     2.0),
     ("legt4medusa",     "legmed",          3.0),
+    ("legt4boreas",     "legavroc",        3.2),
     ("legt4myrmdrone",  "legheavydronesmall", 1.5),
     ("legt4myrmmite",   "legdrone",        1.6),
 ]

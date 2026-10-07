@@ -3,7 +3,7 @@
 -- (unit_carrier_spawner) is not used: the drones are hero summons (api.summon) managed here.
 --
 --   a1 Drone Bay (passive): keeps 6..16 laser drones (armt4hive_drone) in the air, one rebuilt every 6..3 s; together
---      they deal 3500..9000 DPS (unit damage buff over the drone weapon, HP and damage grow with the level). They attack
+--      they deal 4000..11000 DPS (unit damage buff over the drone weapon, HP and damage grow with the level). They attack
 --      the Hive's target, else the nearest enemy within 1250 of the Hive; leash 1300.
 --   a2 Swarm Directive (active, enemy unit): every drone focuses the target for 8 s with more damage; their hits slow it
 --      (up to 45%) and it is revealed.
