@@ -7,8 +7,8 @@
 --           * Diablo tooltips: name in the rarity colour, base type + item level, implicit, affixes, unique powers,
 --             set name with the pieces worn and the 2/3/4-piece bonuses lit when active, salvage value / price
 --           * the team stash window (36): equip by click or by drag into a slot, salvage with a confirm
---           * the shop window (the team's shop building, items_shop_unit): shelf of 9, prices, buy, refresh with a
---             fee, the timer to the free refresh
+--           * the shop window (the team's shop building, items_shop_unit): shelf of 9 of the shop's faction, prices,
+--             buy, five paid refresh levels (I.SHOP_LEVELS, items_shop_level), the timer to the free refresh
 --           * items on the ground in rarity colours with a name label on hover (all labels while Alt is held)
 --           * toasts of the item events (pickup, buy, salvage, scrap, procs ...)
 --  Protocol, rules params and events: the header of luarules/gadgets/unit_t4_hero_items.lua; data and the
@@ -466,7 +466,7 @@ local function shopSize()
 	local cw, ch = floor(c * 3.6), floor(c * 1.3)
 	local g = floor(c * 0.18)
 	local head = floor(c * 0.95)
-	local foot = floor(c * 1.05)
+	local foot = floor(c * 1.9) -- two rows: shelf level + timer, the five refresh level buttons
 	local W = cw * 3 + g * 2 + pad * 2
 	local Ht = head + ch * 3 + g * 2 + pad * 2 + foot
 	return W, Ht, c, cw, ch, g, pad, head, foot
@@ -642,13 +642,13 @@ local function drawShop(x1, yBottom)
 	local y2 = y1 + Ht
 	local f = spGetGameFrame()
 	local shopUnit = spGetTeamRulesParam(team, "items_shop_unit") or 0
-	local faction = factionOf(shopUnit > 0 and shopUnit or uid, team)
+	local faction = I.factionOrder[spGetTeamRulesParam(team, "items_shop_faction") or 0] or factionOf(uid, team)
 	local metal = Spring.GetTeamResources(team, "metal") or 0
 	local stashN = spGetTeamRulesParam(team, "items_stash_n") or 0
 	K.panel(x1, y1, x2, y2)
 	addBox(x1, y1, x2, y2, nil, nil)
 	tex(ART .. "ui/ui_shop.png", x1 + pad, y2 - head + 4, x1 + pad + head - 8, y2 - 4)
-	text("Item shop", x1 + pad + head, y2 - head * 0.68, head * 0.42, GOLD)
+	text(I.factions[faction].label .. " item shop", x1 + pad + head, y2 - head * 0.68, head * 0.42, GOLD)
 	text(string.format("%s metal    stash %d / %d", fmtNum(metal), stashN, I.STASH_SIZE), x2 - pad - head * 0.7, y2 - head * 0.62, head * 0.32, WHITE, "ro")
 	K.closeButton(x2 - pad * 0.6, y2 - pad * 0.6, floor(head * 0.5), function() showShop = false end)
 	local spec = select(1, Spring.GetSpectatingState())
@@ -697,18 +697,42 @@ local function drawShop(x1, yBottom)
 			text("SOLD", cx + cw / 2, cy + ch * 0.38, ch * 0.26, { 0.4, 0.37, 0.3, 1 }, "co")
 		end
 	end
-	-- footer: refresh with the fee, timer to the free refresh
-	local fy1, fy2 = y1 + pad * 0.6, y1 + pad * 0.6 + foot * 0.72
+	-- footer: shelf level and the timer to the free refresh, then the five paid refresh levels
+	local level = spGetTeamRulesParam(team, "items_shop_level") or 1
+	local fd = I.factions[faction]
+	local rowH = foot * 0.4
+	local ty1 = y1 + pad * 0.6 + rowH + pad * 0.4
 	local nextF = spGetTeamRulesParam(team, "items_shop_next") or 0
 	local left = max(0, (nextF - f) / 30)
-	text(string.format("New items in %s", K.time(left)), x1 + pad, fy1 + (fy2 - fy1) * 0.3, (fy2 - fy1) * 0.46, { 0.8, 0.8, 0.8, 1 })
-	local fee = I.SHOP_REFRESH_FEE
-	local ok = not spec and metal >= fee
-	K.button(string.format("Refresh now  %s M", I.fmtNum(fee)), x2 - pad - floor(W * 0.42), fy1, x2 - pad, fy2, ok and GOLD or RED, not spec, ok and function()
-		Spring.SendLuaRulesMsg("t4hero:shoprefresh")
-		sound("beep6.wav", 0.6)
-	end or nil, string.format("Reroll the whole shelf now for %s metal.\nThe shelf also refreshes by itself every %d minutes.", I.fmtNum(fee), floor(I.SHOP_REFRESH / 60 + 0.5)),
-		{ textColor = ok and GOLD or RED, size = (fy2 - fy1) * 0.46 })
+	text(string.format("Shelf level %d (items up to ilvl %d)", level, level), x1 + pad, ty1 + rowH * 0.25, rowH * 0.5, { 0.85, 0.85, 0.85, 1 })
+	text(string.format(level > 1 and "Sold slots restock in %s" or "New items in %s", K.time(left)), x2 - pad, ty1 + rowH * 0.25, rowH * 0.5,
+		{ 0.75, 0.75, 0.75, 1 }, "ro")
+	local n = #I.SHOP_LEVELS
+	local bg = floor(g * 0.6)
+	local bw = (W - pad * 2 - bg * (n - 1)) / n
+	local by1, by2 = y1 + pad * 0.6, y1 + pad * 0.6 + rowH
+	for l = 1, n do
+		local lv = I.SHOP_LEVELS[l]
+		local ok = not spec and metal >= lv.fee
+		local bx1 = floor(x1 + pad + (l - 1) * (bw + bg))
+		local odds = {}
+		for _, r in ipairs(I.rarityOrder) do
+			if (lv.rarity[r] or 0) > 0 then
+				odds[#odds + 1] = string.format("%s %d%%", I.rarities[r].label, lv.rarity[r])
+			end
+		end
+		local feeS = lv.fee >= 1000000 and string.format("%gM", lv.fee / 1000000) or string.format("%gk", lv.fee / 1000)
+		K.button(string.format("Lv%d  %s", l, feeS), bx1, by1, floor(bx1 + bw), by2,
+			ok and GOLD or RED, not spec, ok and function()
+				Spring.SendLuaRulesMsg("t4hero:shoprefresh:" .. l)
+				sound("beep6.wav", 0.6)
+			end or nil,
+			string.format("Refresh level %d: reroll the whole shelf for %s metal.\nItems up to item level %d, %s items (%s).\n%s%s",
+				l, I.fmtNum(lv.fee), l, fd.label, table.concat(odds, ", "),
+				l >= 2 and ("Sets and uniques: only " .. fd.label .. "'s own.\n") or "",
+				string.format("The shelf refreshes by itself every %d minutes at level 1.", floor(I.SHOP_REFRESH / 60 + 0.5))),
+			{ textColor = ok and GOLD or RED, size = rowH * 0.42 })
+	end
 	return y2
 end
 
@@ -873,7 +897,7 @@ function widget:T4HeroItemEvent(kind, teamID, unitID, str, num)
 	elseif kind == "scrap" and it then
 		toast(string.format("Stash full: %s scrapped for %s metal", I.name(it), I.fmtNum(num)), { 1, 0.6, 0.3 }, icon)
 	elseif kind == "refresh" and mine and num > 0 then
-		toast(string.format("Shop refreshed for %s metal", I.fmtNum(num)), GOLD, ART .. "ui/ui_shop.png")
+		toast(string.format("Shop refreshed at level %d for %s metal", unitID, I.fmtNum(num)), GOLD, ART .. "ui/ui_shop.png")
 	elseif kind == "nometal" and mine then
 		toast(it and string.format("Not enough metal for %s (%s)", I.name(it), I.fmtNum(num)) or string.format("Not enough metal (%s)", I.fmtNum(num)), RED)
 		sound("cantdothat.wav", 0.6)

@@ -1037,9 +1037,9 @@
 			"legt4skyeye": "Deep Sky Eye"
 		},
 		"descriptions": {
-			"armt4shop": "Hero item shop: sells magic and rare hero items (item level 1-3) into the team stash. Shelf of 9, restocks every 3 min",
-			"cort4shop": "Hero item shop: sells magic and rare hero items (item level 1-3) into the team stash. Shelf of 9, restocks every 3 min",
-			"legt4shop": "Hero item shop: sells magic and rare hero items (item level 1-3) into the team stash. Shelf of 9, restocks every 3 min",
+			"armt4shop": "Hero item shop: Armada hero items into the team stash. Shelf of 9 (free level 1 restock every 3 min); paid refresh levels 1-5 (25k-1M metal) raise the item level and open Armada sets and uniques",
+			"cort4shop": "Hero item shop: Cortex hero items into the team stash. Shelf of 9 (free level 1 restock every 3 min); paid refresh levels 1-5 (25k-1M metal) raise the item level and open Cortex sets and uniques",
+			"legt4shop": "Hero item shop: Legion hero items into the team stash. Shelf of 9 (free level 1 restock every 3 min); paid refresh levels 1-5 (25k-1M metal) raise the item level and open Legion sets and uniques",
 			"legsplab": "Constructs Seaplanes",
 			"legspcon": "Tech 1 Constructor",
 			"legspsurfacegunship": "Riot Cannon Seaplane Gunship",

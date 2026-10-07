@@ -177,8 +177,10 @@ GG.HeroFX.hit(id, x, y, z)                  -- ripple on a sphere
   serialised into rules params as a compact string; the team stash (36) and hero slots hold instances.
 - Salvage: any stash item → metal (`rarity x ilvl` table). Protocol `t4hero:salvage:<teamStashIndex>`.
 - Shop: one building per faction (`armt4shop`, `cort4shop`, `legt4shop`), built by T2 constructors; a shelf of
-  9 rolled items (ilvl 1–3, magic/rare, 3 per category) refreshed every 3 min or on demand for a fee; buy for
-  metal into the team stash. Icons: one per base type per faction (faction palette), uniques/sets their own.
+  9 rolled items (3 per category) of the shop's faction; buy for metal into the team stash. v24: the shelf is rerolled
+  at a refresh level 1..5 (`I.SHOP_LEVELS`, 25k..1M metal; level = highest ilvl, sets/uniques from level 2, only the
+  faction's own); the free 3-minute refresh is level 1. Icons: one per base type per faction (faction palette),
+  uniques/sets their own.
 - Drops (as v15): heroes and big units killed by heroes; ilvl from the victim (cost / hero level); rarity odds
   magic 60 / rare 28 / set 6 / unique 6, rarer with higher ilvl.
 - Hooks for core (items gadget `luarules/gadgets/unit_t4_hero_items.lua` publishes `GG.T4HeroItems`):
