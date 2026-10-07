@@ -34,6 +34,12 @@
 --   e.g. "2,5,r,71,1043,r3:9,1.5.88/20.4.12/25.5.40"
 -- I.decode(str) -> item table, I.encode(item) -> str, I.name(item), I.lines(item) (tooltip lines with colors),
 -- I.stats(item), I.powers(item), I.icon(item, faction), I.price(item), I.salvage(item), I.score(...).
+--
+-- v24 shop rework: an optional 8th field is the item's faction (a|c|l): the faction whose shop sold it or whose
+-- hero dropped it - base items show that faction's icon, affixes lean to the faction (I.factions[f].affixW).
+-- Uniques and sets with `faction` are that faction's own (only its shop sells them, drops go to its heroes); the
+-- rest are neutral (drops only). The shelf is rerolled at a refresh LEVEL 1..5 (I.SHOP_LEVELS): the level is the
+-- highest item level on the shelf and opens sets/uniques; I.rollShop(rnd, level, cat, faction) rolls one item.
 
 local I = {}
 
@@ -46,10 +52,16 @@ I.DROP_CHANCE = 1 / 150000       -- per metal of a non-hero unit a hero kills (a
 I.DROP_MAX = 0.35                -- ... at most
 I.PROC_ICD = 1.2                 -- seconds between two procs of the same power on one hero
 I.SHOP_SIZE = 9                  -- 3 per category
-I.SHOP_REFRESH = 180             -- seconds between two free shelf refreshes
-I.SHOP_REFRESH_FEE = 2500        -- metal for a refresh on demand
-I.SHOP_ILVL_WEIGHTS = { 45, 35, 20 } -- ilvl 1..3 on the shelf
-I.SHOP_RARE_CHANCE = 0.3         -- else magic
+I.SHOP_REFRESH = 180             -- seconds between two free shelf refreshes (a level 1 shelf)
+-- refresh levels: fee (metal), rarity weights; the level is the highest item level, ilvl k <= level weighs k^2
+I.SHOP_LEVELS = {
+	{ fee = 25000, rarity = { magic = 75, rare = 25 } },
+	{ fee = 80000, rarity = { magic = 50, rare = 40, set = 6, unique = 4 } },
+	{ fee = 200000, rarity = { magic = 30, rare = 45, set = 13, unique = 12 } },
+	{ fee = 450000, rarity = { magic = 15, rare = 45, set = 20, unique = 20 } },
+	{ fee = 1000000, rarity = { magic = 5, rare = 40, set = 27, unique = 28 } },
+}
+I.SHOP_REFRESH_FEE = I.SHOP_LEVELS[1].fee
 I.SHOPS = { arm = "armt4shop", cor = "cort4shop", leg = "legt4shop" }
 I.ICON_DIR = "bitmaps/t4heroes/items/"
 
@@ -66,6 +78,32 @@ for cat, c in pairs(I.categories) do
 	end
 end
 
+-- factions: their shop leans affixes by affixW (affix id -> weight multiplier) and sells only their own uniques/sets;
+-- art = the style line of the faction's item icons (tools/heroes/item_art.py)
+I.factionOrder = { "arm", "cor", "leg" }
+I.factions = {
+	arm = { code = "a", label = "Armada", color = { 0.45, 0.75, 1.0 },
+		blurb = "precision: lightning, lasers, rails, range, criticals, mobility",
+		affixW = { ele = 2.5, lsr = 2.5, rai = 2.5, emp = 2, rng = 2.5, crt = 2.5, cdm = 2, nim = 2, sig = 2, spd = 2, cdr = 2,
+			pow = 1.5, pla = 0.3, flm = 0.3, rkt = 0.4 },
+		art = "Armada faction style: clean white and steel-blue armor panels, cyan-blue glowing lights, sleek precise high-tech" },
+	cor = { code = "c", label = "Cortex", color = { 1.0, 0.45, 0.25 },
+		blurb = "brute force: plasma, rockets, blast radius, armor, HP, thorns, salvage",
+		affixW = { pla = 2.5, rkt = 2.5, aoe = 2.5, hp = 2.5, arm = 2, blw = 2.5, thn = 2.5, reg = 2, inc = 2, lif = 2, dmg = 1.5,
+			ele = 0.3, lsr = 0.4, rai = 0.4, emp = 0.3 },
+		art = "Cortex faction style: dark gunmetal and black armor with red-orange hazard stripes, glowing orange-red energy, heavy brutal industrial" },
+	leg = { code = "l", label = "Legion", color = { 0.85, 0.75, 0.35 },
+		blurb = "aggression: fire, heat rays, damage, life steal, penetration, experience",
+		affixW = { flm = 2.5, lsr = 2, pla = 2, dmg = 2.5, lst = 2.5, prc = 2, cdm = 2, xp = 2, spd = 1.5, thn = 1.5,
+			ele = 0.3, rai = 0.4, emp = 0.3 },
+		art = "Legion faction style: olive green and brass-gold armor, warm amber-gold glow, ornate roman legion military engravings" },
+}
+I.factionByCode = {}
+for f, d in pairs(I.factions) do
+	d.id = f
+	I.factionByCode[d.code] = f
+end
+
 local function hex(s)
 	return { tonumber(s:sub(2, 3), 16) / 255, tonumber(s:sub(4, 5), 16) / 255, tonumber(s:sub(6, 7), 16) / 255 }
 end
@@ -74,13 +112,13 @@ end
 I.rarityOrder = { "magic", "rare", "set", "unique" }
 I.rarities = {
 	magic = { code = "m", label = "Magic", hex = "#6969FF", weight = 60, perIlvl = 0, rank = 1,
-		salvage = { 1500, 2500, 4000, 6000, 8500 }, price = { 4000, 7000, 11000, 16000, 22000 } },
+		salvage = { 1500, 2500, 4000, 6000, 8500 }, price = { 8000, 18000, 40000, 80000, 140000 } },
 	rare = { code = "r", label = "Rare", hex = "#FFFF64", weight = 28, perIlvl = 0.15, rank = 2,
-		salvage = { 3000, 5000, 8000, 11000, 15000 }, price = { 9000, 15000, 22000, 30000, 40000 } },
+		salvage = { 3000, 5000, 8000, 11000, 15000 }, price = { 15000, 35000, 75000, 140000, 240000 } },
 	set = { code = "s", label = "Set", hex = "#00FF00", weight = 6, perIlvl = 0.25, rank = 3,
-		salvage = { 5000, 8000, 12000, 17000, 24000 }, price = { 15000, 24000, 36000, 50000, 70000 } },
+		salvage = { 5000, 8000, 12000, 17000, 24000 }, price = { 25000, 55000, 120000, 220000, 380000 } },
 	unique = { code = "u", label = "Unique", hex = "#C7B377", weight = 6, perIlvl = 0.25, rank = 4,
-		salvage = { 6000, 10000, 15000, 21000, 30000 }, price = { 18000, 28000, 42000, 60000, 85000 } },
+		salvage = { 6000, 10000, 15000, 21000, 30000 }, price = { 30000, 70000, 150000, 280000, 480000 } },
 }
 I.rarityByCode = {}
 for name, r in pairs(I.rarities) do
@@ -368,6 +406,162 @@ I.uniques = {
 		fixed = { power = { 0.06, 0.12 } },
 		flavor = "The air around it never stops crackling.",
 		art = "a fusion cell radiating a ring of purple static lightning, legendary relic" },
+
+
+	-- v24 faction uniques: only that faction's shop sells them; drops go to that faction's heroes
+	-- Armada: lightning, lasers, rails, precision, mobility
+	{ id = "arm_zeus_wrath", name = "Wrath of Zeus", base = "capacitor_bank", faction = "arm",
+		powers = { { key = "chain", roll = { 1400, 2400 }, chance = 0.18, jumps = 4, radius = 500 } },
+		fixed = { dtype = { electric = { 0.20, 0.35 } } },
+		flavor = "The sky answers in Armada blue.",
+		art = "a towering lightning capacitor coil crowned with forked blue lightning bolts" },
+	{ id = "arm_gauss_lance", name = "Cryo Gauss Lance", base = "rail_accelerator", faction = "arm",
+		powers = { { key = "slayer", roll = { 0.25, 0.40 }, minCost = 4000 } },
+		fixed = { dtype = { rail = { 0.15, 0.30 } } },
+		flavor = "Supercooled, superfast, superfluous armor.",
+		art = "a long cryogenic gauss rail lance barrel with frost-blue magnetic rings and icy vapor" },
+	{ id = "arm_prism", name = "Prism Overdrive", base = "targeting_core", faction = "arm",
+		powers = { { key = "orbital", roll = { 6000, 10000 }, period = 5 } },
+		fixed = { range = { 0.04, 0.07 } },
+		flavor = "One lens on the ground, a thousand in orbit.",
+		art = "a crystal prism targeting core splitting a beam into a rainbow of laser light" },
+	{ id = "arm_marksman", name = "Marksman's Oath", base = "targeting_core", faction = "arm",
+		powers = { { key = "execute", roll = { 0.20, 0.35 }, below = 0.35 } },
+		fixed = { crit = { 0.05, 0.09 }, critMult = { 0.20, 0.40 } },
+		flavor = "One shot. The second is a courtesy.",
+		art = "a precision sniper scope module with a glowing blue crosshair and range readouts" },
+	{ id = "arm_aegis_lattice", name = "Aegis Lattice", base = "deflector_array", faction = "arm",
+		powers = { { key = "guardAura", roll = { 0.10, 0.16 }, radius = 900 } },
+		fixed = { armor = { 0.03, 0.05 } },
+		flavor = "A shield shared is a shield doubled.",
+		art = "a hexagonal lattice shield generator projecting a wide dome of blue hexagons" },
+	{ id = "arm_photon_mirror", name = "Photon Mirror", base = "reactive_shell", faction = "arm",
+		powers = { { key = "reflect", roll = { 0.25, 0.40 } } },
+		fixed = { hp = { 10000, 20000 } },
+		flavor = "Every shot it takes comes back polished.",
+		art = "a mirrored chrome armor shell reflecting bright blue laser beams" },
+	{ id = "arm_restoration", name = "Restoration Matrix", base = "nanite_reservoir", faction = "arm",
+		powers = { { key = "lowShield", roll = { 0.20, 0.30 }, below = 0.40, duration = 6, cooldown = 45 } },
+		fixed = { regen = { 80, 150 } },
+		flavor = "Field repairs, at the speed of thought.",
+		art = "a clean medical nanite matrix canister with a glowing blue repair cross hologram" },
+	{ id = "arm_skywalker", name = "Skywalker Jets", base = "servo_actuator", faction = "arm",
+		powers = { { key = "blink", roll = { 800, 1100 }, cooldown = 20 } },
+		fixed = { speed = { 5, 9 } },
+		flavor = "Gravity is a suggestion.",
+		art = "a pair of mechanical leg servos with blue jump-jet thrusters firing" },
+	{ id = "arm_overwatch", name = "Overwatch Array", base = "sensor_mast", faction = "arm",
+		powers = { { key = "mark", roll = { 0.10, 0.18 }, duration = 6 } },
+		fixed = { sight = { 350, 600 }, range = { 0.02, 0.04 } },
+		flavor = "Nothing moves unseen. Nothing seen survives.",
+		art = "a tall white radar overwatch mast with a blue scanning beam and satellite dish" },
+	{ id = "arm_ion_core", name = "Ion Storm Core", base = "fusion_cell", faction = "arm",
+		powers = { { key = "staticWake", roll = { 1500, 2500 }, period = 2, targets = 4, radius = 600 } },
+		fixed = { dtype = { emp = { 0.15, 0.30 } } },
+		flavor = "Circuits for miles around fall silent.",
+		art = "a spherical ion reactor core inside a cage, crackling with white-blue EMP arcs" },
+	-- Cortex: plasma, rockets, explosions, armor, salvage
+	{ id = "cor_doomsday", name = "Doomsday Payload", base = "warhead_rack", faction = "cor",
+		powers = { { key = "blastKill", roll = { 0.30, 0.45 }, radius = 350, cap = 20000 } },
+		fixed = { dtype = { rocket = { 0.15, 0.30 } } },
+		flavor = "Cortex does not do surgical.",
+		art = "a rack of huge rocket warheads with radiation symbols and red hazard stripes" },
+	{ id = "cor_magma", name = "Magma Breech", base = "capacitor_bank", faction = "cor",
+		powers = { { key = "slayer", roll = { 0.20, 0.30 }, minCost = 6000 } },
+		fixed = { dtype = { plasma = { 0.20, 0.35 } }, damage = { 0.04, 0.07 } },
+		flavor = "It loads molten rock and fires judgement.",
+		art = "a heavy plasma cannon breech glowing with molten orange magma" },
+	{ id = "cor_hellstorm", name = "Hellstorm Rack", base = "warhead_rack", faction = "cor",
+		powers = { { key = "orbital", roll = { 7000, 12000 }, period = 7 } },
+		fixed = { splash = { 0.12, 0.22 } },
+		flavor = "The forecast: shells, then more shells.",
+		art = "an artillery rocket pod launching a barrage of fiery missiles into a red sky" },
+	{ id = "cor_skullcrusher", name = "Skullcrusher Driver", base = "rail_accelerator", faction = "cor",
+		powers = { { key = "execute", roll = { 0.30, 0.45 }, below = 0.25 } },
+		fixed = { pierce = { 0.06, 0.12 } },
+		flavor = "Built to finish what the artillery started.",
+		art = "a brutal piledriver rail cannon with a skull-shaped muzzle and red glow" },
+	{ id = "cor_iron_maw", name = "Iron Maw Plating", base = "armor_plating", faction = "cor",
+		powers = { { key = "reflect", roll = { 0.15, 0.25 } } },
+		fixed = { hp = { 25000, 40000 } },
+		flavor = "It does not block the bite. It bites back.",
+		art = "a massive black armor plate shaped like a fanged iron jaw with glowing red eyes" },
+	{ id = "cor_furnace_heart", name = "Furnace Heart", base = "nanite_reservoir", faction = "cor",
+		powers = { { key = "cheatDeath", roll = { 0.35, 0.50 }, cooldown = 120, invuln = 3 } },
+		fixed = { hp = { 10000, 20000 } },
+		flavor = "The furnace never goes out. Neither does its owner.",
+		art = "an industrial furnace reactor heart blazing with orange fire behind a grate" },
+	{ id = "cor_spiked_hull", name = "Spiked Siege Hull", base = "reactive_shell", faction = "cor",
+		powers = { { key = "lowShield", roll = { 0.15, 0.25 }, below = 0.30, duration = 8, cooldown = 60 } },
+		fixed = { thorns = { 0.08, 0.15 }, armor = { 0.03, 0.05 } },
+		flavor = "Siege engines do not knock.",
+		art = "a black siege hull section covered in long iron spikes with red warning lights" },
+	{ id = "cor_warmonger", name = "Warmonger's Banner", base = "tactical_processor", faction = "cor",
+		powers = { { key = "warAura", roll = { 0.10, 0.16 }, radius = 900 } },
+		fixed = { income = { 3, 6 } },
+		flavor = "Profit follows the front line.",
+		art = "a tattered red war banner on a mechanical pole with a glowing processor" },
+	{ id = "cor_scrap_engine", name = "Scrap Reclaimer", base = "fusion_cell", faction = "cor",
+		powers = { { key = "souls", roll = { 0.012, 0.020 }, stacks = 25, decay = 3 } },
+		fixed = { income = { 4, 8 } },
+		flavor = "Every wreck is a down payment.",
+		art = "a grinding reclaimer engine chewing scrap metal with orange sparks" },
+	{ id = "cor_tremor_treads", name = "Tremor Treads", base = "servo_actuator", faction = "cor",
+		powers = { { key = "lifeOnHit", roll = { 200, 350 }, perSecond = 6 } },
+		fixed = { speed = { 3, 6 }, hp = { 15000, 25000 } },
+		flavor = "The ground shakes. The enemy too.",
+		art = "colossal black tank treads cracking the ground with orange glowing seams" },
+	-- Legion: fire, heat rays, aggression, life steal, glory
+	{ id = "leg_sol_invictus", name = "Sol Invictus", base = "targeting_core", faction = "leg",
+		powers = { { key = "orbital", roll = { 5500, 9500 }, period = 5 } },
+		fixed = { dtype = { laser = { 0.18, 0.30 } } },
+		flavor = "The unconquered sun marches with the Legion.",
+		art = "a golden sun-disc heat ray emitter with radiating spikes of amber light" },
+	{ id = "leg_phlegethon", name = "Phlegethon Nozzle", base = "warhead_rack", faction = "leg",
+		powers = { { key = "blastKill", roll = { 0.25, 0.40 }, radius = 320, cap = 15000 } },
+		fixed = { dtype = { flame = { 0.20, 0.35 } } },
+		flavor = "A river of fire, bottled for the march.",
+		art = "an ornate brass flamethrower nozzle spewing a roaring river of fire" },
+	{ id = "leg_gladius", name = "Gladius of the Ninth", base = "rail_accelerator", faction = "leg",
+		powers = { { key = "lifeOnHit", roll = { 200, 400 }, perSecond = 6 } },
+		fixed = { damage = { 0.05, 0.09 } },
+		flavor = "The Ninth never lost a standard.",
+		art = "a short roman gladius-shaped rail blade cannon with a glowing amber edge" },
+	{ id = "leg_centurion", name = "Centurion's Verdict", base = "capacitor_bank", faction = "leg",
+		powers = { { key = "execute", roll = { 0.25, 0.40 }, below = 0.30 } },
+		fixed = { dtype = { plasma = { 0.15, 0.25 } }, crit = { 0.03, 0.06 } },
+		flavor = "Thumbs down.",
+		art = "a brass shotgun capacitor drum engraved with a centurion helmet crest" },
+	{ id = "leg_scutum", name = "Scutum of the Legion", base = "armor_plating", faction = "leg",
+		powers = { { key = "guardAura", roll = { 0.08, 0.14 }, radius = 800 } },
+		fixed = { hp = { 18000, 32000 } },
+		flavor = "Lock shields. Hold the line.",
+		art = "a curved roman scutum tower shield of olive armor with a golden eagle boss" },
+	{ id = "leg_lorica", name = "Bloodied Lorica", base = "deflector_array", faction = "leg",
+		powers = { { key = "cheatDeath", roll = { 0.25, 0.40 }, cooldown = 160, invuln = 2 } },
+		fixed = { lifesteal = { 0.020, 0.035 } },
+		flavor = "Its owner has died eleven times. Officially.",
+		art = "a segmented roman lorica armor plate stained with dark red, glowing amber runes" },
+	{ id = "leg_brazier", name = "Eternal Brazier", base = "nanite_reservoir", faction = "leg",
+		powers = { { key = "lowShield", roll = { 0.15, 0.25 }, below = 0.35, duration = 7, cooldown = 55 } },
+		fixed = { regen = { 100, 180 } },
+		flavor = "The camp fire that heals the cohort.",
+		art = "a bronze temple brazier holding an eternal golden flame of nanites" },
+	{ id = "leg_aquila", name = "Aquila Standard", base = "tactical_processor", faction = "leg",
+		powers = { { key = "warAura", roll = { 0.10, 0.16 }, radius = 1000 } },
+		fixed = { xp = { 0.15, 0.25 } },
+		flavor = "Follow the eagle.",
+		art = "a golden roman eagle aquila standard on a pole with a glowing holographic laurel" },
+	{ id = "leg_triumph", name = "Triumph Laurel", base = "fusion_cell", faction = "leg",
+		powers = { { key = "souls", roll = { 0.014, 0.022 }, stacks = 20, decay = 4 } },
+		fixed = { power = { 0.08, 0.14 } },
+		flavor = "Every victory feeds the next.",
+		art = "a fusion cell wrapped in a golden laurel wreath glowing with captured spirits" },
+	{ id = "leg_charger", name = "Charger's Greaves", base = "servo_actuator", faction = "leg",
+		powers = { { key = "blink", roll = { 700, 1000 }, cooldown = 22 } },
+		fixed = { speed = { 4, 7 }, critMult = { 0.15, 0.30 } },
+		flavor = "First into the breach, first to the spoils.",
+		art = "bronze roman greaves on mechanical legs with fiery charge thrusters" },
 }
 
 ---------------------------------------------------------------------------------------------------- sets
@@ -439,6 +633,151 @@ I.sets = {
 		},
 		bonuses = {
 			[2] = { stats = { income = 6, xp = 0.15 } },
+		} },
+
+
+	-- v24 faction sets (only that faction's shop sells them) and one neutral 4-piece set (drops only)
+	{ id = "thunderlord", name = "Thunderlord's Panoply", faction = "arm",
+		pieces = {
+			{ id = "thunder_coil", name = "Thunderlord's Coil", base = "capacitor_bank", stats = { dtype = { electric = 0.14 }, damage = 0.04 },
+				art = "an ornate white and blue tesla coil with a lightning crown" },
+			{ id = "thunder_aegis", name = "Thunderlord's Aegis", base = "deflector_array", stats = { armor = 0.03, hp = 10000 },
+				art = "a white and blue deflector shield emblem with lightning bolts" },
+			{ id = "thunder_dynamo", name = "Thunderlord's Dynamo", base = "fusion_cell", stats = { power = 0.05, cdr = 0.03 },
+				art = "a spinning white and blue dynamo reactor full of lightning" },
+		},
+		bonuses = {
+			[2] = { stats = { dtype = { electric = 0.15 }, cdr = 0.05 } },
+			[3] = { stats = { power = 0.10 }, powers = { { key = "chain", v = 1800, chance = 0.15, jumps = 5, radius = 550 } } },
+		} },
+	{ id = "longshot", name = "Longshot Doctrine", faction = "arm",
+		pieces = {
+			{ id = "longshot_scope", name = "Longshot Scope", base = "targeting_core", stats = { range = 0.04, crit = 0.03 },
+				art = "a long white sniper scope with a blue rangefinder lens" },
+			{ id = "longshot_rail", name = "Longshot Rail", base = "rail_accelerator", stats = { dtype = { rail = 0.14 }, pierce = 0.04 },
+				art = "an extremely long slender white gauss rifle barrel with blue rings" },
+			{ id = "longshot_mast", name = "Longshot Spotter", base = "sensor_mast", stats = { sight = 300, range = 0.02 },
+				art = "a white spotter sensor mast with a blue targeting laser" },
+			{ id = "longshot_servos", name = "Longshot Stabilizers", base = "servo_actuator", stats = { speed = 4 },
+				art = "white stabilizer servo legs with blue gyroscopes" },
+		},
+		bonuses = {
+			[2] = { stats = { range = 0.05 } },
+			[3] = { stats = { crit = 0.06, critMult = 0.30 } },
+			[4] = { powers = { { key = "mark", v = 0.15, duration = 6 }, { key = "slayer", v = 0.20, minCost = 5000 } } },
+		} },
+	{ id = "vanguard", name = "Starfall Vanguard", faction = "arm",
+		pieces = {
+			{ id = "vanguard_plate", name = "Vanguard Plate", base = "armor_plating", stats = { hp = 16000 },
+				art = "a sleek white chest armor plate with a blue star emblem" },
+			{ id = "vanguard_jets", name = "Vanguard Jets", base = "servo_actuator", stats = { speed = 5, cdr = 0.03 },
+				art = "white jet-boosted mech legs with a blue star emblem" },
+			{ id = "vanguard_uplink", name = "Vanguard Uplink", base = "tactical_processor", stats = { cdr = 0.04, xp = 0.06 },
+				art = "a white tactical uplink module with a blue star hologram" },
+		},
+		bonuses = {
+			[2] = { stats = { speed = 5, armor = 0.04 } },
+			[3] = { powers = { { key = "guardAura", v = 0.10, radius = 800 } } },
+		} },
+	{ id = "siegebreaker", name = "Siegebreaker Arsenal", faction = "cor",
+		pieces = {
+			{ id = "siege_rack", name = "Siegebreaker Rack", base = "warhead_rack", stats = { dtype = { rocket = 0.14 }, splash = 0.06 },
+				art = "a black and red siege rocket rack with a battering ram emblem" },
+			{ id = "siege_breech", name = "Siegebreaker Breech", base = "capacitor_bank", stats = { dtype = { plasma = 0.14 }, damage = 0.04 },
+				art = "a black and red heavy plasma breech with a battering ram emblem" },
+			{ id = "siege_core", name = "Siegebreaker Core", base = "fusion_cell", stats = { power = 0.05, hp = 8000 },
+				art = "a black and red armored reactor core with a battering ram emblem" },
+		},
+		bonuses = {
+			[2] = { stats = { dtype = { rocket = 0.12, plasma = 0.12 }, splash = 0.08 } },
+			[3] = { stats = { damage = 0.08 }, powers = { { key = "blastKill", v = 0.30, radius = 340, cap = 18000 } } },
+		} },
+	{ id = "ironclad", name = "Ironclad Fortress", faction = "cor",
+		pieces = {
+			{ id = "ironclad_plate", name = "Ironclad Plate", base = "armor_plating", stats = { hp = 20000 },
+				art = "a monstrous riveted black iron plate with a red fortress tower emblem" },
+			{ id = "ironclad_shell", name = "Ironclad Shell", base = "reactive_shell", stats = { thorns = 0.07, armor = 0.02 },
+				art = "a black reactive shell with red spikes and a fortress tower emblem" },
+			{ id = "ironclad_reservoir", name = "Ironclad Reservoir", base = "nanite_reservoir", stats = { regen = 90 },
+				art = "a black iron nanite tank with red glow and a fortress tower emblem" },
+			{ id = "ironclad_treads", name = "Ironclad Treads", base = "servo_actuator", stats = { speed = 3, hp = 10000 },
+				art = "heavy black iron treads with red lights and a fortress tower emblem" },
+		},
+		bonuses = {
+			[2] = { stats = { hp = 25000 } },
+			[3] = { stats = { armor = 0.08, thorns = 0.10 } },
+			[4] = { powers = { { key = "reflect", v = 0.20 }, { key = "cheatDeath", v = 0.35, invuln = 2, cooldown = 150 } } },
+		} },
+	{ id = "scrapper", name = "Scrapper's Industry", faction = "cor",
+		pieces = {
+			{ id = "scrapper_ledger", name = "Scrapper's Ledger", base = "tactical_processor", stats = { income = 4, cdr = 0.03 },
+				art = "a grimy black industrial processor with orange gauges and a gear emblem" },
+			{ id = "scrapper_furnace", name = "Scrapper's Smelter", base = "fusion_cell", stats = { income = 4, power = 0.04 },
+				art = "a black smelter cell pouring molten orange metal, gear emblem" },
+			{ id = "scrapper_magnet", name = "Scrapper's Magnet", base = "sensor_mast", stats = { income = 3, sight = 200 },
+				art = "a black salvage crane magnet mast lifting scrap, orange lights" },
+		},
+		bonuses = {
+			[2] = { stats = { income = 6, xp = 0.12 } },
+			[3] = { stats = { income = 6 }, powers = { { key = "souls", v = 0.015, stacks = 20, decay = 3 } } },
+		} },
+	{ id = "ashen", name = "Ashen Cohort", faction = "leg",
+		pieces = {
+			{ id = "ashen_nozzle", name = "Ashen Nozzle", base = "warhead_rack", stats = { dtype = { flame = 0.14 }, splash = 0.05 },
+				art = "an olive and brass flamethrower nozzle trailing ash and embers" },
+			{ id = "ashen_ray", name = "Ashen Heat Ray", base = "targeting_core", stats = { dtype = { laser = 0.14 }, range = 0.03 },
+				art = "an olive and brass heat ray lens glowing amber with rising ash" },
+			{ id = "ashen_brazier", name = "Ashen Brazier", base = "nanite_reservoir", stats = { regen = 80, hp = 8000 },
+				art = "an olive and brass brazier with smoldering ashes and embers" },
+		},
+		bonuses = {
+			[2] = { stats = { dtype = { flame = 0.15, laser = 0.15 } } },
+			[3] = { powers = { { key = "blastKill", v = 0.25, radius = 320, cap = 15000 }, { key = "orbital", v = 6000, period = 6 } } },
+		} },
+	{ id = "praetorian", name = "Praetorian Guard", faction = "leg",
+		pieces = {
+			{ id = "praetor_scutum", name = "Praetorian Scutum", base = "armor_plating", stats = { hp = 15000, armor = 0.02 },
+				art = "an ornate olive and gold praetorian shield with a scorpion emblem" },
+			{ id = "praetor_lorica", name = "Praetorian Lorica", base = "deflector_array", stats = { armor = 0.03, lifesteal = 0.01 },
+				art = "ornate olive and gold segmented armor with a scorpion emblem" },
+			{ id = "praetor_standard", name = "Praetorian Standard", base = "tactical_processor", stats = { cdr = 0.03, power = 0.04 },
+				art = "an olive and gold praetorian banner standard with a scorpion emblem" },
+			{ id = "praetor_greaves", name = "Praetorian Greaves", base = "servo_actuator", stats = { speed = 4 },
+				art = "ornate olive and gold mechanical greaves with a scorpion emblem" },
+		},
+		bonuses = {
+			[2] = { stats = { armor = 0.05 } },
+			[3] = { stats = { hp = 20000 }, powers = { { key = "guardAura", v = 0.10, radius = 850 } } },
+			[4] = { powers = { { key = "warAura", v = 0.12, radius = 850 }, { key = "lifeOnHit", v = 250, perSecond = 6 } } },
+		} },
+	{ id = "champion", name = "Arena Champion", faction = "leg",
+		pieces = {
+			{ id = "champion_gladius", name = "Champion's Gladius", base = "rail_accelerator", stats = { damage = 0.05, pierce = 0.04 },
+				art = "a brass gladiator blade cannon with a red plume and amber glow" },
+			{ id = "champion_carapace", name = "Champion's Carapace", base = "reactive_shell", stats = { thorns = 0.05, lifesteal = 0.01 },
+				art = "a brass gladiator shoulder armor with spikes and a red plume" },
+			{ id = "champion_laurel", name = "Champion's Laurel", base = "fusion_cell", stats = { xp = 0.10, power = 0.04 },
+				art = "a fusion cell inside a golden victor's laurel with a red ribbon" },
+		},
+		bonuses = {
+			[2] = { stats = { lifesteal = 0.03, damage = 0.06 } },
+			[3] = { powers = { { key = "souls", v = 0.015, stacks = 20, decay = 4 }, { key = "execute", v = 0.25, below = 0.30 } } },
+		} },
+	{ id = "warmaster", name = "Warmaster's Regalia",
+		pieces = {
+			{ id = "warmaster_crown", name = "Warmaster's Crown", base = "sensor_mast", stats = { sight = 250, cdr = 0.03 },
+				art = "a mechanical war crown sensor array with green glowing gems" },
+			{ id = "warmaster_heart", name = "Warmaster's Heart", base = "nanite_reservoir", stats = { regen = 100, hp = 10000 },
+				art = "a regal mechanical heart reservoir with green glowing nanites" },
+			{ id = "warmaster_blade", name = "Warmaster's Blade", base = "capacitor_bank", stats = { damage = 0.06 },
+				art = "a regal energy blade capacitor with a green glowing edge" },
+			{ id = "warmaster_mantle", name = "Warmaster's Mantle", base = "deflector_array", stats = { armor = 0.04 },
+				art = "a regal armored mantle deflector with green glowing trim" },
+		},
+		bonuses = {
+			[2] = { stats = { damage = 0.06, hp = 15000 } },
+			[3] = { stats = { cdr = 0.06, power = 0.08 } },
+			[4] = { powers = { { key = "warAura", v = 0.10, radius = 900 }, { key = "guardAura", v = 0.08, radius = 900 } } },
 		} },
 }
 
@@ -540,22 +879,23 @@ function I.encode(it)
 	for i, a in ipairs(it.affixes) do
 		aff[i] = a[1] .. "." .. a[2] .. "." .. a[3]
 	end
+	local f = it.faction and I.factions[it.faction]
 	return string.format("%d,%d,%s,%d,%d,%s,%s", it.base, it.ilvl, I.rarities[it.rarity].code, it.impQ or 50, it.uid or 0,
-		special, table.concat(aff, "/"))
+		special, table.concat(aff, "/")) .. (f and ("," .. f.code) or "")
 end
 
 function I.decode(str)
 	if type(str) ~= "string" or str == "" then
 		return nil
 	end
-	local b, l, r, q, uid, special, aff = str:match("^(%d+),(%d+),(%a),(%d+),(%d+),([^,]*),(.*)$")
+	local b, l, r, q, uid, special, aff, fc = str:match("^(%d+),(%d+),(%a),(%d+),(%d+),([^,]*),([^,]*),?(%a*)$")
 	b, l, q, uid = tonumber(b), tonumber(l), tonumber(q), tonumber(uid)
 	local rarity = r and I.rarityByCode[r]
 	if not b or not I.bases[b] or not rarity then
 		return nil
 	end
 	local it = { base = b, ilvl = math.max(1, math.min(I.MAX_ILVL, l)), rarity = rarity, impQ = q, uid = uid, affixes = {},
-		cat = I.bases[b].cat, str = str }
+		cat = I.bases[b].cat, str = str, faction = I.factionByCode[fc or ""] }
 	local kind = special:sub(1, 1)
 	local nums = {}
 	for n in special:sub(2):gmatch("%d+") do
@@ -810,8 +1150,9 @@ function I.lines(it, wornPieces)
 	if it.rarity ~= "magic" then
 		lines[#lines + 1] = { text = I.baseName(it), color = rc, kind = "base" }
 	end
-	lines[#lines + 1] = { text = string.format("%s %s - item level %d", I.rarities[it.rarity].label,
-		I.categories[it.cat].label:lower(), it.ilvl), color = I.colors.grey, kind = "info" }
+	local own = I.itemFaction(it)
+	lines[#lines + 1] = { text = string.format("%s%s %s - item level %d", own and (I.factions[own].label .. " ") or "",
+		I.rarities[it.rarity].label, I.categories[it.cat].label:lower(), it.ilvl), color = I.colors.grey, kind = "info" }
 	statLines(lines, I.implicitStats(it), I.colors.white, "implicit")
 	if it.rarity == "unique" then
 		local pw, st = I.uniqueRolls(it)
@@ -864,7 +1205,17 @@ function I.icon(it, faction)
 	elseif it.rarity == "set" then
 		return I.ICON_DIR .. "s_" .. I.sets[it.set].pieces[it.piece].id .. ".png"
 	end
-	return I.ICON_DIR .. I.bases[it.base].id .. "_" .. (faction or "arm") .. ".png"
+	return I.ICON_DIR .. I.bases[it.base].id .. "_" .. (it.faction or faction or "arm") .. ".png"
+end
+
+-- the faction an item belongs to: its unique / set's own faction, else the faction that sold or dropped it (nil)
+function I.itemFaction(it)
+	if it.rarity == "unique" then
+		return I.uniques[it.unique].faction or it.faction
+	elseif it.rarity == "set" then
+		return I.sets[it.set].faction or it.faction
+	end
+	return it.faction
 end
 
 function I.factionOf(unitDefName)
@@ -934,7 +1285,8 @@ local function rollAffixes(rnd, it, n, maxPre, maxSuf)
 			if def.kind == "prefix" and pre >= maxPre or def.kind == "suffix" and suf >= maxSuf then
 				return 0
 			end
-			return def.w[it.cat] or 0
+			local fw = it.faction and I.factions[it.faction].affixW[def.id] or 1
+			return (def.w[it.cat] or 0) * fw
 		end)
 		if not a then
 			break
@@ -949,15 +1301,30 @@ local function rollAffixes(rnd, it, n, maxPre, maxSuf)
 	end
 end
 
--- roll an item. opts: ilvl (1..5), rarity (else rolled from ilvl), cat (else random), uid
+-- uniques / set pieces of category cat a roll may give. faction: that faction's own + neutral; own = true: only the
+-- faction's own (the shop). Falls back to the whole category when the filter leaves nothing.
+local function pool(list, cat, faction, own, factionOf)
+	local out = {}
+	for _, x in ipairs(list[cat]) do
+		local f = factionOf(x)
+		if not faction or f == faction or (not own and f == nil) then
+			out[#out + 1] = x
+		end
+	end
+	return #out > 0 and out or list[cat]
+end
+
+-- roll an item. opts: ilvl (1..5), rarity (else rolled from ilvl), cat (else random), uid, faction ("arm"|"cor"|"leg":
+-- stamps the item, leans its affixes, limits uniques/sets to that faction's + neutral), own (only the faction's own)
 function I.roll(rnd, opts)
 	opts = opts or {}
 	local L = math.max(1, math.min(I.MAX_ILVL, math.floor(opts.ilvl or 1)))
 	local rarity = opts.rarity or I.rollRarity(rnd, L)
 	local cat = opts.cat or I.categoryOrder[rnd(3)]
-	local it = { ilvl = L, rarity = rarity, cat = cat, affixes = {}, impQ = rnd(100) - 1, uid = opts.uid or 0 }
+	local faction = opts.faction and I.factions[opts.faction] and opts.faction or nil
+	local it = { ilvl = L, rarity = rarity, cat = cat, affixes = {}, impQ = rnd(100) - 1, uid = opts.uid or 0, faction = faction }
 	if rarity == "unique" then
-		local list = I.uniquesByCat[cat]
+		local list = pool(I.uniquesByCat, cat, faction, opts.own, function(ui) return I.uniques[ui].faction end)
 		local ui = list[rnd(#list)]
 		local u = I.uniques[ui]
 		it.unique = ui
@@ -968,7 +1335,7 @@ function I.roll(rnd, opts)
 		end
 		rollAffixes(rnd, it, rnd(3), 2, 2)
 	elseif rarity == "set" then
-		local list = I.piecesByCat[cat]
+		local list = pool(I.piecesByCat, cat, faction, opts.own, function(sp) return I.sets[sp[1]].faction end)
 		local sp = list[rnd(#list)]
 		it.set, it.piece = sp[1], sp[2]
 		it.base = I.baseIndex[I.sets[sp[1]].pieces[sp[2]].base]
@@ -1007,6 +1374,20 @@ function I.ilvlForCost(cost)
 end
 function I.ilvlForHero(level)
 	return math.max(1, math.min(5, 1 + math.floor((level or 1) / 20)))
+end
+
+-- one shelf item of a refresh level (I.SHOP_LEVELS): ilvl k <= level with weight k^2, rarity by the level's
+-- weights, uniques / sets only the faction's own
+function I.rollShop(rnd, level, cat, faction, uid)
+	level = math.max(1, math.min(#I.SHOP_LEVELS, math.floor(level or 1)))
+	local lv = I.SHOP_LEVELS[level]
+	local ilvls = {}
+	for k = 1, level do
+		ilvls[k] = k
+	end
+	local ilvl = pickWeighted(rnd, ilvls, function(k) return k * k end)
+	local rarity = pickWeighted(rnd, I.rarityOrder, function(r) return lv.rarity[r] or 0 end)
+	return I.roll(rnd, { ilvl = ilvl, rarity = rarity, cat = cat, faction = faction, own = true, uid = uid })
 end
 
 ---------------------------------------------------------------------------------------------------- AI value

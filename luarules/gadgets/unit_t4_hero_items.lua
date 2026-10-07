@@ -37,11 +37,13 @@ end
 --   t4hero:use:<unitID>:<slot>                          use the active power of a worn item (Blink)
 --   t4hero:salvage:<stashIndex>[_<uid>]                 stash item -> metal (I.salvage)
 --   t4hero:shopbuy:<shelfIndex>[_<uid>]                 buy a shelf item into the stash (needs a finished shop)
---   t4hero:shoprefresh                                  reroll the shelf for I.SHOP_REFRESH_FEE metal
+--   t4hero:shoprefresh[:<level>]                        reroll the shelf at refresh level 1..5 for
+--                                                       I.SHOP_LEVELS[level].fee metal (level = highest item level)
 -- Rules params (item strings: see the header of the config):
 --   team (allied):  items_stash_n, items_stash_<1..n> (item string), items_stash_ver
 --                   items_shop ("|"-joined 9 item strings, "" = sold), items_shop_next (frame of the free refresh),
---                   items_shop_ver, items_shop_unit (unitID of a finished shop of the team, 0 = none)
+--                   items_shop_ver, items_shop_unit (unitID of a finished shop of the team, 0 = none),
+--                   items_shop_level (refresh level of the shelf), items_shop_faction (1 arm, 2 cor, 3 leg)
 --   unit (in LOS):  items_slot_<1..9> (item string, "" = empty), items_ver, items_sets ("<set>:<count>,...")
 --                   items_shield (shield HP left), items_souls (soul stacks)
 --   unit (allied):  items_cd_<slot> (frame the active is ready), items_cdlen_<slot>, items_cheat (frame Phoenix
@@ -87,10 +89,12 @@ if gadgetHandler:IsSyncedCode() then
 	local unitCost, unitHealth, isHeroDef, maxRange = {}, {}, {}, {}
 	local shopDefs, builderShop = {}, {} -- shop unitDefID -> true; builder unitDefID -> shop unitDefID it can build
 	local altarDefs = {}
+	local shopFaction = {} -- shop unitDefID -> "arm" | "cor" | "leg"
 	for name, sname in pairs(I.SHOPS) do
 		local sd = UnitDefNames[sname]
 		if sd then
 			shopDefs[sd.id] = true
+			shopFaction[sd.id] = name
 		end
 	end
 	for udid, ud in pairs(UnitDefs) do
@@ -166,7 +170,7 @@ if gadgetHandler:IsSyncedCode() then
 	local nextUid = 1
 	local stash = {}       -- teamID -> { item, ... } (item = decoded table with .str), oldest first
 	local stashVer = {}
-	local shelf = {}       -- teamID -> { items = { [1..9] = item | false }, next = frame, ver }
+	local shelf = {}       -- teamID -> { items = { [1..9] = item | false }, next = frame, ver, level, faction }
 	local shops = {}       -- teamID -> { [unitID] = true } finished shops
 	local ground = {}      -- id -> { item, x, z, expire }
 	local groundDirty = false
@@ -222,6 +226,13 @@ if gadgetHandler:IsSyncedCode() then
 		opts = opts or {}
 		opts.uid = newUid()
 		return I.roll(random, opts)
+	end
+	local FACTION_NUM = { arm = 1, cor = 2, leg = 3 }
+	-- the faction of a hero (its unitdef prefix), nil when unknown: drops lean to the killer's faction
+	local function heroFaction(unitID)
+		local ud = unitID and UnitDefs[spGetUnitDefID(unitID) or -1]
+		local f = ud and ud.name:sub(1, 3)
+		return FACTION_NUM[f] and f or nil
 	end
 	local function isEnemy(uid, ally)
 		local a = spGetUnitAllyTeam(uid)
@@ -615,30 +626,36 @@ if gadgetHandler:IsSyncedCode() then
 		spSetTeamRulesParam(teamID, "items_shop_next", sh.next, ALLIED)
 		spSetTeamRulesParam(teamID, "items_shop_ver", sh.ver, ALLIED)
 		spSetTeamRulesParam(teamID, "items_shop_unit", shopUnit(teamID) or 0, ALLIED)
+		spSetTeamRulesParam(teamID, "items_shop_level", sh.level or 1, ALLIED)
+		spSetTeamRulesParam(teamID, "items_shop_faction", FACTION_NUM[sh.faction] or 1, ALLIED)
 	end
 
-	local function shopIlvl()
-		local w = I.SHOP_ILVL_WEIGHTS
-		local r = random() * (w[1] + w[2] + w[3])
-		for l = 1, 3 do
-			r = r - w[l]
-			if r <= 0 then
-				return l
-			end
+	-- the faction of the team's shop: its shop building, else the team's side
+	local function shopFactionOf(teamID)
+		local uid = shopUnit(teamID)
+		local f = uid and shopFaction[spGetUnitDefID(uid)]
+		if f then
+			return f
 		end
-		return 1
+		local side = select(5, Spring.GetTeamInfo(teamID, false))
+		side = type(side) == "string" and side:lower() or ""
+		return side:find("cor") and "cor" or side:find("leg") and "leg" or "arm"
 	end
 
-	local function rollShelf(teamID)
+	-- a shelf of the team's shop faction at refresh level 1..5: 3 items per category
+	local function rollShelf(teamID, level)
+		level = level or 1
+		local faction = shopFactionOf(teamID)
 		local items = {}
 		local i = 0
 		for _, cat in ipairs(I.categoryOrder) do
 			for _ = 1, I.SHOP_SIZE / 3 do
 				i = i + 1
-				items[i] = rollItem({ cat = cat, ilvl = shopIlvl(), rarity = random() < I.SHOP_RARE_CHANCE and "rare" or "magic" })
+				items[i] = I.rollShop(random, level, cat, faction, newUid())
 			end
 		end
-		shelf[teamID] = { items = items, next = frameNow() + I.SHOP_REFRESH * GAME_SPEED, ver = shelf[teamID] and shelf[teamID].ver or 0 }
+		shelf[teamID] = { items = items, next = frameNow() + I.SHOP_REFRESH * GAME_SPEED, level = level, faction = faction,
+			ver = shelf[teamID] and shelf[teamID].ver or 0, aiRefreshed = shelf[teamID] and shelf[teamID].aiRefreshed }
 		publishShelf(teamID)
 	end
 
@@ -668,17 +685,35 @@ if gadgetHandler:IsSyncedCode() then
 		return true
 	end
 
-	local function shopRefresh(teamID, free)
+	-- the free timer on a paid higher-level shelf keeps its unsold items and fills only the sold slots (level 1 items)
+	local function restockShelf(teamID)
+		local sh = shelf[teamID]
+		for i, cat in ipairs(I.categoryOrder) do
+			for k = 1, I.SHOP_SIZE / 3 do
+				local idx = (i - 1) * (I.SHOP_SIZE / 3) + k
+				if not sh.items[idx] then
+					sh.items[idx] = I.rollShop(random, 1, cat, sh.faction, newUid())
+				end
+			end
+		end
+		sh.next = frameNow() + I.SHOP_REFRESH * GAME_SPEED
+		publishShelf(teamID)
+	end
+
+	-- reroll the shelf at refresh level 1..5 (free: the timer's level 1 shelf, or already paid by the AI)
+	local function shopRefresh(teamID, free, level)
 		if not shopUnit(teamID) then
 			toUI("noshop", teamID)
 			return false
 		end
-		if not free and not Spring.UseTeamResource(teamID, "metal", I.SHOP_REFRESH_FEE) then
-			toUI("nometal", teamID, -1, "", I.SHOP_REFRESH_FEE)
+		level = max(1, min(#I.SHOP_LEVELS, floor(level or 1)))
+		local fee = I.SHOP_LEVELS[level].fee
+		if not free and not Spring.UseTeamResource(teamID, "metal", fee) then
+			toUI("nometal", teamID, -1, "", fee)
 			return false
 		end
-		rollShelf(teamID)
-		toUI("refresh", teamID, -1, "", free and 0 or I.SHOP_REFRESH_FEE)
+		rollShelf(teamID, level)
+		toUI("refresh", teamID, level, "", free and 0 or fee)
 		return true
 	end
 
@@ -1021,7 +1056,7 @@ if gadgetHandler:IsSyncedCode() then
 		if not x then
 			return
 		end
-		drops[#drops + 1] = rollItem({ ilvl = I.ilvlForHero(level) }) -- the trophy
+		drops[#drops + 1] = rollItem({ ilvl = I.ilvlForHero(level), faction = heroFaction(unitID) }) -- the trophy
 		for i, it in ipairs(drops) do
 			local a = i / #drops * 6.283
 			local d = #drops > 1 and 160 or 0
@@ -1075,7 +1110,7 @@ if gadgetHandler:IsSyncedCode() then
 		if x and not isHeroDef[victimDefID] and (pk == nil or pk.team ~= (s and s.team or spGetUnitTeam(heroID))) then
 			local cost = unitCost[victimDefID] or 0
 			if random() < min(I.DROP_MAX, cost * I.DROP_CHANCE) then
-				local it = rollItem({ ilvl = I.ilvlForCost(cost) })
+				local it = rollItem({ ilvl = I.ilvlForCost(cost), faction = heroFaction(heroID) })
 				dropItem(it, x, z)
 				log("drop: %s (%s ilvl %d) from %s killed by hero %d", I.name(it), it.rarity, it.ilvl,
 					UnitDefs[victimDefID] and UnitDefs[victimDefID].name or "?", heroID)
@@ -1392,6 +1427,19 @@ if gadgetHandler:IsSyncedCode() then
 	local ITEM_FLOOR = 8000
 	local ITEM_FILL = 0.12    -- take only while storage is fuller than this
 	local itemBank = {}
+	local AI_BANK_INCOME_S = 240 -- the item bank aims at up to this many seconds of metal income
+
+	-- the highest refresh level the AI pays for: its fee at most half the item bank (the rest buys from the shelf)
+	local function aiRefreshLevel(teamID)
+		local b = itemBank[teamID] or 0
+		local level = 0
+		for l, lv in ipairs(I.SHOP_LEVELS) do
+			if lv.fee * 2 <= b then
+				level = l
+			end
+		end
+		return level
+	end
 
 	local function aiBankTick(teamID, heroes)
 		local cur, stor, _, inc = Spring.GetTeamResources(teamID, "metal")
@@ -1405,7 +1453,9 @@ if gadgetHandler:IsSyncedCode() then
 					want = max(want, I.price(it))
 				end
 			end
-			want = max(15000, want * 1.3)
+			-- enough for the dearest item on the shelf, a level 1 refresh with a purchase after it, and with a big
+			-- economy a few minutes of income (that is what pays for the higher refresh levels)
+			want = max(2 * I.SHOP_LEVELS[1].fee, want * 1.3, inc * AI_BANK_INCOME_S)
 		end
 		if b < want and inc > 0 and cur > stor * ITEM_FILL then
 			local take = min(inc * ITEM_SHARE * 10, cur - stor * ITEM_FILL, want - b)
@@ -1468,13 +1518,14 @@ if gadgetHandler:IsSyncedCode() then
 					itemBank[teamID] = (itemBank[teamID] or 0) + bestPrice -- not sold: keep the metal for items
 				end
 			end
-		elseif (itemBank[teamID] or 0) >= 15000 and f - (sh.aiRefreshed or 0) > 120 * GAME_SPEED
-			and aiPay(teamID, I.SHOP_REFRESH_FEE, true) then
-			-- nothing worth buying and the budget is full: pay for a new shelf
+		elseif aiRefreshLevel(teamID) > 0 and f - (sh.aiRefreshed or 0) > 120 * GAME_SPEED then
+			-- nothing worth buying and the budget allows: pay for a new shelf at the best level it affords
+			local level = aiRefreshLevel(teamID)
+			local fee = I.SHOP_LEVELS[level].fee
 			sh.aiRefreshed = f
-			if aiPay(teamID, I.SHOP_REFRESH_FEE) then
-				shopRefresh(teamID, true)
-				log("AI team %d refreshes the shelf (item bank %d)", teamID, itemBank[teamID] or 0)
+			if aiPay(teamID, fee) then
+				shopRefresh(teamID, true, level)
+				log("AI team %d refreshes the shelf at level %d for %d (item bank %d)", teamID, level, fee, itemBank[teamID] or 0)
 			end
 		end
 	end
@@ -1808,7 +1859,7 @@ if gadgetHandler:IsSyncedCode() then
 			end
 			return true
 		elseif what == "shoprefresh" then
-			shopRefresh(teamID)
+			shopRefresh(teamID, false, tonumber(rest) or 1)
 			return true
 		end
 		return false
@@ -1944,7 +1995,11 @@ if gadgetHandler:IsSyncedCode() then
 			end
 			for teamID, sh in pairs(shelf) do
 				if sh.next <= f and shopUnit(teamID) then
-					shopRefresh(teamID, true)
+					if (sh.level or 1) > 1 then
+						restockShelf(teamID)
+					else
+						shopRefresh(teamID, true)
+					end
 				end
 			end
 			for unitID in pairs(state) do
